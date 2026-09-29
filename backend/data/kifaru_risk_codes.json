@@ -1,0 +1,146 @@
+{
+  "standard": "KIFARU Central Fraud Standard",
+  "version": "1.0",
+  "codes": {
+    "IP-401": {
+      "family": "Identity & Profile",
+      "name": "Shared device across unrelated customers",
+      "severity_base": 0.3,
+      "evidence_fields": [
+        "device_profile_hash",
+        "device_id"
+      ]
+    },
+    "IP-402": {
+      "family": "Identity & Profile",
+      "name": "Recent SIM swap preceding transaction",
+      "severity_base": 0.35,
+      "evidence_fields": [
+        "sim_swap_age_days"
+      ]
+    },
+    "IP-403": {
+      "family": "Identity & Profile",
+      "name": "Emulator or rooted device",
+      "severity_base": 0.25,
+      "evidence_fields": [
+        "is_emulator",
+        "is_rooted"
+      ]
+    },
+    "IP-404": {
+      "family": "Identity & Profile",
+      "name": "Access from foreign or anonymising ASN",
+      "severity_base": 0.22,
+      "evidence_fields": [
+        "ip_asn",
+        "ip_org"
+      ]
+    },
+    "VEL-429": {
+      "family": "Velocity",
+      "name": "Transaction burst within one hour",
+      "severity_base": 0.28,
+      "evidence_fields": [
+        "velocity_1h"
+      ]
+    },
+    "VEL-430": {
+      "family": "Velocity",
+      "name": "Beneficiary added and used within minutes",
+      "severity_base": 0.3,
+      "evidence_fields": [
+        "is_new_beneficiary"
+      ]
+    },
+    "VEL-431": {
+      "family": "Velocity",
+      "name": "Structuring below reporting threshold",
+      "severity_base": 0.26,
+      "evidence_fields": [
+        "amount"
+      ]
+    },
+    "MUL-440": {
+      "family": "Mule Network",
+      "name": "New account, high fan-in from unrelated senders",
+      "severity_base": 0.38,
+      "evidence_fields": [
+        "account_age_days",
+        "distinct_senders_7d"
+      ]
+    },
+    "MUL-441": {
+      "family": "Mule Network",
+      "name": "Flow-through ratio near unity",
+      "severity_base": 0.34,
+      "evidence_fields": [
+        "flow_through_ratio"
+      ]
+    },
+    "MUL-442": {
+      "family": "Mule Network",
+      "name": "Dwell time under ten minutes",
+      "severity_base": 0.3,
+      "evidence_fields": [
+        "dwell_minutes"
+      ]
+    },
+    "MUL-443": {
+      "family": "Mule Network",
+      "name": "Cash-out MSISDN reused across institutions",
+      "severity_base": 0.36,
+      "evidence_fields": [
+        "beneficiary_msisdn"
+      ]
+    },
+    "BEN-450": {
+      "family": "Beneficiary",
+      "name": "New beneficiary, high-value first transfer",
+      "severity_base": 0.24,
+      "evidence_fields": [
+        "is_new_beneficiary",
+        "amount"
+      ]
+    },
+    "BEN-451": {
+      "family": "Beneficiary",
+      "name": "Multiple unrelated senders converging on one destination",
+      "severity_base": 0.4,
+      "evidence_fields": [
+        "beneficiary_id"
+      ]
+    },
+    "ATO-460": {
+      "family": "Account Takeover",
+      "name": "New device followed by beneficiary change",
+      "severity_base": 0.42,
+      "evidence_fields": [
+        "is_new_device",
+        "is_new_beneficiary"
+      ]
+    },
+    "ATO-461": {
+      "family": "Account Takeover",
+      "name": "Off-hours session with credential change",
+      "severity_base": 0.2,
+      "evidence_fields": [
+        "timestamp"
+      ]
+    }
+  },
+  "bank_rule_mapping": {
+    "DEV_UNRECOGNISED_DEVICE": "IP-401",
+    "SIM_RECENT_SWAP": "IP-402",
+    "DEV_EMULATOR_DETECTED": "IP-403",
+    "DEV_ROOTED_DEVICE": "IP-403",
+    "NET_FOREIGN_ASN": "IP-404",
+    "VEL_BURST_1H": "VEL-429",
+    "BEN_NEW_BENEFICIARY": "BEN-450",
+    "AMT_HIGH_VALUE": "BEN-450",
+    "AMT_ELEVATED": "VEL-431",
+    "ACCT_NEW_INBOUND": "MUL-440",
+    "TIME_OFF_HOURS": "ATO-461",
+    "ANOM_STATISTICAL_OUTLIER": null
+  }
+}

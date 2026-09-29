@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>KIFARU — Shared Platform</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;background:#f4f7f8;color:#24353f;font-size:14px}
+header{background:#0f2230;color:#fff;padding:14px 22px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+header h1{margin:0;font-size:19px;letter-spacing:-.3px}
+header .sub{color:#8fa9b3;font-size:12px}
+select{background:#1b3446;color:#fff;border:1px solid #2f5162;padding:6px 10px;border-radius:4px;font-size:13px}
+.live{margin-left:auto;font-size:11px;color:#6fd3c3;display:flex;align-items:center;gap:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:#6fd3c3;animation:p 1.6s infinite}
+@keyframes p{50%{opacity:.25}}
+.bar{display:flex;gap:10px;padding:14px 22px;flex-wrap:wrap}
+.kpi{background:#fff;border:1px solid #dde6e9;border-top:3px solid #12796d;border-radius:4px;padding:10px 14px;min-width:118px}
+.kpi b{display:block;font-size:21px;color:#0f2230}
+.kpi span{font-size:11px;color:#5b737e}
+nav{display:flex;gap:2px;padding:0 22px;border-bottom:1px solid #dde6e9}
+nav button{background:none;border:none;border-bottom:3px solid transparent;padding:10px 16px;cursor:pointer;font-size:13px;color:#5b737e;font-family:inherit}
+nav button.on{color:#0f2230;border-bottom-color:#12796d;font-weight:600}
+main{padding:18px 22px}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #dde6e9;font-size:12.5px}
+th{background:#0f2230;color:#fff;text-align:left;padding:8px 10px;font-size:11.5px;font-weight:600}
+td{padding:8px 10px;border-bottom:1px solid #eef3f4;vertical-align:top}
+tr:nth-child(even) td{background:#fafcfc}
+.pill{display:inline-block;padding:2px 7px;border-radius:3px;font-size:10.5px;font-weight:700;letter-spacing:.3px}
+.VALIDATED_FRAUD{background:#fdeceb;color:#b4231f}
+.NOT_FRAUD{background:#eaf5f1;color:#12796d}
+.INSUFFICIENT_EVIDENCE{background:#fdf4e7;color:#996515}
+code{background:#eef3f4;padding:1px 5px;border-radius:3px;font-size:11px}
+.expl{color:#4a636e;font-style:italic;max-width:440px}
+.empty{padding:30px;text-align:center;color:#8b9ba3;background:#fff;border:1px dashed #cfdcdf}
+#toast{position:fixed;right:20px;bottom:20px;background:#0f2230;color:#fff;padding:12px 16px;border-radius:5px;max-width:330px;display:none;border-left:4px solid #6fd3c3}
+label{font-size:12px;color:#5b737e;display:block;margin:12px 0 4px}
+input[type=range]{width:260px}
+</style></head><body>
+
+<header>
+  <h1>KIFARU</h1>
+  <span class="sub">Shared fraud validation platform</span>
+  <select id="inst"></select>
+  <div class="live"><span class="dot"></span><span id="live">connecting…</span></div>
+</header>
+
+<div class="bar" id="kpis"></div>
+<nav>
+  <button class="on" data-t="alerts">Alerts received</button>
+  <button data-t="reports">Flags submitted</button>
+  <button data-t="history">Related history</button>
+  <button data-t="admin">Admin</button>
+</nav>
+<main id="view"></main>
+<div id="toast"></div>
+
+<script>
+const API = location.origin;
+let inst = "psp_c", tab = "alerts", es = null;
+
+const money = (a,c)=> a ? (c||"KES")+" "+Number(a).toLocaleString() : "—";
+const codes = s => { try { return JSON.parse(s).map(c=>`<code>${c}</code>`).join(" "); } catch { return ""; } };
+const pill  = s => s ? `<span class="pill ${s}">${s.replace(/_/g," ")}</span>` : "—";
+const short = t => (t||"").replace("T"," ").replace("Z","");
+
+async function get(p){ const r = await fetch(API+p); return r.json(); }
+
+async function boot(){
+  const list = await get("/v1/institutions");
+  document.getElementById("inst").innerHTML =
+    list.map(i=>`<option value="${i.code}" ${i.code===inst?"selected":""}>${i.name}</option>`).join("");
+  document.getElementById("inst").onchange = e => { inst = e.target.value; connect(); render(); };
+  document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+    document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on"); tab = b.dataset.t; render();
+  });
+  connect(); render(); setInterval(kpis, 5000);
+}
+
+async function kpis(){
+  const s = await get("/v1/stats");
+  const mine = s.alerts_by_institution[inst] || 0;
+  document.getElementById("kpis").innerHTML = [
+    ["Reports received", s.reports], ["Validated fraud", s.validated_fraud],
+    ["Insufficient evidence", s.insufficient], ["Marked not fraud", s.not_fraud],
+    ["Alerts routed", s.alerts], ["Alerts to you", mine],
+    ["Agent latency", s.avg_latency_ms + " ms"]
+  ].map(([l,v])=>`<div class="kpi"><b>${v}</b><span>${l}</span></div>`).join("");
+}
+
+async function render(){
+  kpis();
+  const v = document.getElementById("view");
+  if (tab === "admin") return renderAdmin(v);
+
+  const d = await get(`/v1/${tab}?institution=${inst}`);
+  const rows = d[tab] || [];
+  if (!rows.length) return v.innerHTML = `<div class="empty">Nothing here for this institution yet.</div>`;
+
+  if (tab === "alerts") v.innerHTML = table(
+    ["Issued","From","Amount","Score","Risk codes","Validated by","Explanation","State"],
+    rows.map(r=>[short(r.issued_at), r.reporting_institution, money(r.amount,r.currency),
+      r.validation_score, codes(r.risk_codes), r.validated_by,
+      `<span class="expl">${r.explanation||""}</span>`, r.state]));
+
+  else if (tab === "reports") v.innerHTML = table(
+    ["Submitted","Channel","Txn ref","Amount","Bank score","Status","Agent score","Reason codes"],
+    rows.map(r=>[short(r.submitted_at), `<code>${r.submission_channel}</code>`,
+      `<code>${r.transaction_ref}</code>`, money(r.amount,r.currency), r.bank_risk_score,
+      pill(r.status), r.validation_score ?? "—", codes(r.reason_codes)]));
+
+  else v.innerHTML = table(
+    ["Submitted","Reporting","Destination","Amount","Risk codes","Status","Score","Corroborated by","Alert"],
+    rows.map(r=>[short(r.submitted_at), r.reporting_institution, r.destination_institution||"—",
+      money(r.amount,r.currency), codes(r.risk_codes), pill(r.status),
+      r.validation_score ?? "—", r.corroboration_count ?? 0,
+      r.alert_id ? `<code>${r.alert_id}</code>` : "not sent"]));
+}
+
+function table(head, rows){
+  return `<table><thead><tr>${head.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>` +
+    rows.map(r=>`<tr>${r.map(c=>`<td>${c ?? ""}</td>`).join("")}</tr>`).join("") + `</tbody></table>`;
+}
+
+async function renderAdmin(v){
+  const cfg = await get("/v1/admin/config");
+  const kb  = await get("/v1/admin/kb");
+  v.innerHTML = `
+    <label>Validation threshold — above this, an alert is routed to the receiving institution</label>
+    <input type="range" id="th" min="0.3" max="0.95" step="0.01" value="${cfg.validated_threshold}">
+    <b id="thv">${cfg.validated_threshold}</b>
+    <label>Enabled input sources</label>
+    ${["soc_connector","rest","webhook","batch"].map(s=>
+      `<label style="display:inline-block;margin-right:16px"><input type="checkbox" data-src="${s}"
+        ${cfg.enabled_sources.includes(s)?"checked":""}> ${s}</label>`).join("")}
+    <label>Knowledge base — ${kb.length} artefacts</label>
+    ${table(["Artefact","List","Label","Added by"],
+      kb.slice(0,25).map(k=>[`<code>${k.artefact_hash.slice(0,26)}…</code>`, k.list_name, k.label, k.added_by]))}`;
+
+  const th = document.getElementById("th");
+  th.oninput = () => document.getElementById("thv").textContent = th.value;
+  th.onchange = async () => {
+    await fetch(API+"/v1/admin/config", {method:"PATCH", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({validated_threshold: parseFloat(th.value)})});
+    toast(`Validation threshold set to ${th.value}. New reports are scored against it immediately.`);
+  };
+  v.querySelectorAll("[data-src]").forEach(cb => cb.onchange = async () => {
+    const on = [...v.querySelectorAll("[data-src]")].filter(x=>x.checked).map(x=>x.dataset.src);
+    await fetch(API+"/v1/admin/config", {method:"PATCH", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({enabled_sources: on})});
+    toast(`Enabled sources: ${on.join(", ") || "none"}`);
+  });
+}
+
+function connect(){
+  if (es) es.close();
+  es = new EventSource(`${API}/v1/stream/${inst}`);
+  es.onopen = () => document.getElementById("live").textContent = `live · ${inst}`;
+  es.onerror = () => document.getElementById("live").textContent = "reconnecting…";
+  es.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type === "alert") {
+      toast(`<b>Validated fraud alert</b><br>${money(m.amount,m.currency)} from ${m.reporting_institution}<br>
+             <small>score ${m.validation_score} · validated by KIFARU agent</small>`);
+      render();
+    } else if (m.type === "validation") { render(); }
+  };
+}
+
+function toast(html){
+  const t = document.getElementById("toast");
+  t.innerHTML = html; t.style.display = "block";
+  clearTimeout(t._h); t._h = setTimeout(()=>t.style.display="none", 6000);
+}
+
+boot();
+</script></body></html>
