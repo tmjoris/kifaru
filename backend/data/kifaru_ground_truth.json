@@ -1,0 +1,165 @@
+{
+  "campaigns": [
+    {
+      "campaign_id": "CAMP-001",
+      "typology": "shared_device",
+      "description": "Three unrelated bank_a customers operated from one device profile, funds converging.",
+      "detection_note": "Detectable by bank_a alone. This is the publishing event in the demo.",
+      "event_ids": [
+        "evt-c0e86302a841",
+        "evt-c1fb84fc82d7",
+        "evt-0bdc2d1b97da",
+        "evt-e231481177c2",
+        "evt-a76620503bf8",
+        "evt-72d8127c78ab",
+        "evt-34ff5e210a20",
+        "evt-0bed034c9e37",
+        "evt-eafb0532ac58"
+      ]
+    },
+    {
+      "campaign_id": "CAMP-002",
+      "typology": "mule_profile",
+      "description": "Layering ring using 6 distinct, newly-opened psp_c wallets. No shared destination, no shared device. Linked only by mule behavioural signature: new account, high fan-in from unrelated senders, flow-through ratio near 1.0, dwell under 10 minutes.",
+      "detection_note": "Undetectable by destination or device matching. Requires the mule_profile signature.",
+      "event_ids": [
+        "evt-5e3617b7316d",
+        "evt-1d7886bbb4f5",
+        "evt-dcc9932a41c2",
+        "evt-d0806fe6fd4e",
+        "evt-aac656a5ced4",
+        "evt-23f903188df0",
+        "evt-e02d95af240d",
+        "evt-e8b1eb1c8533",
+        "evt-1b0bc8737203",
+        "evt-13823b7afacd",
+        "evt-df5ca7621c8b",
+        "evt-745608053451",
+        "evt-cfe5a5c464e4",
+        "evt-43cc63546fc4",
+        "evt-5e3e0f4ccffd",
+        "evt-967f3d349fa2",
+        "evt-edaf679edf39",
+        "evt-5ed1a4bd69f9",
+        "evt-1c9fb8c16f77",
+        "evt-140901bc5ae7",
+        "evt-1bfd77d42a2d",
+        "evt-42634799b3ee",
+        "evt-7edc31cb63e8",
+        "evt-62fb7d487c17",
+        "evt-f8ce2f972fb7",
+        "evt-6a4dc90320f1",
+        "evt-e6042d411140",
+        "evt-511ac69acff6",
+        "evt-58818168831c",
+        "evt-d6f42f2bb6dd",
+        "evt-390edb39930a",
+        "evt-22d0a07ec8dc",
+        "evt-3320c4c8d979",
+        "evt-150e2277bd12",
+        "evt-a6f40d3342a9",
+        "evt-ff313c1b38ab",
+        "evt-2fb116643443",
+        "evt-be5595ce49ac",
+        "evt-40d1f9c0de18",
+        "evt-1e8a3bd89048",
+        "evt-9db8db53b4ca",
+        "evt-00964bcb7474",
+        "evt-3377f41925b7",
+        "evt-5224a8aa46eb",
+        "evt-d845c2cc0469",
+        "evt-fc10f5631cab",
+        "evt-ca61e49c2e59",
+        "evt-1c6ef972ac21",
+        "evt-7e45a404db9b",
+        "evt-b80c4cdb7b89"
+      ]
+    },
+    {
+      "campaign_id": "CAMP-003",
+      "typology": "sim_swap_takeover",
+      "description": "SIM swap at bank_b, then account takeover and onward transfer to psp_c. The receiving PSP transaction scores LOW on its own engine.",
+      "detection_note": "HERO PATH: psp_c local score is Informational/APPROVE. Only the indicator published by bank_a (CAMP-001 device profile) flips it to HOLD.",
+      "event_ids": [
+        "evt-98ba071ffa5c",
+        "evt-3620a2714f73",
+        "evt-37e25625f0e1",
+        "evt-8a91d4e57958",
+        "evt-641d30e0229e",
+        "evt-f70ea90221ab"
+      ],
+      "hero_event_id": "evt-f70ea90221ab",
+      "hero_local_score": 0.2,
+      "hero_local_verdict": "APPROVE"
+    },
+    {
+      "campaign_id": "CAMP-004",
+      "typology": "msisdn_reuse",
+      "description": "Same two cash-out MSISDNs receive funds via different accounts at bank_b and sacco_d.",
+      "detection_note": "Accounts and devices all differ. Only the recipient MSISDN links the two institutions.",
+      "event_ids": [
+        "evt-6bde3274325a",
+        "evt-e6a1f3f46d5c",
+        "evt-370bbee1aa9b",
+        "evt-9c73cc3e220a",
+        "evt-a86380593d5e",
+        "evt-2c81c66076fa",
+        "evt-f011631c4a24",
+        "evt-2cbbb8622ec2"
+      ]
+    }
+  ],
+  "legit_fanin_decoys": [
+    {
+      "id": "paybill-400200-schoolfees",
+      "label": "Secondary school fees collection",
+      "age_days": 1840,
+      "merchant": true
+    },
+    {
+      "id": "paybill-247247-utility",
+      "label": "Utility paybill",
+      "age_days": 2600,
+      "merchant": true
+    },
+    {
+      "id": "psp_c-acct-chama-0001",
+      "label": "Registered chama group account",
+      "age_days": 900,
+      "merchant": false
+    },
+    {
+      "id": "sacco_d-acct-dividend",
+      "label": "SACCO dividend disbursement",
+      "age_days": 2200,
+      "merchant": true
+    },
+    {
+      "id": "paybill-888880-church",
+      "label": "Church offertory paybill",
+      "age_days": 1500,
+      "merchant": true
+    },
+    {
+      "id": "psp_c-acct-NEWMERCH-01",
+      "label": "New online retailer, onboarded day 3",
+      "age_days": 3,
+      "merchant": true,
+      "hard": true
+    },
+    {
+      "id": "bank_b-acct-NEWSACCO-02",
+      "label": "New chama, first contribution cycle",
+      "age_days": 6,
+      "merchant": false,
+      "hard": true
+    },
+    {
+      "id": "psp_c-acct-NEWEVENT-03",
+      "label": "Funeral contribution drive (harambee)",
+      "age_days": 2,
+      "merchant": false,
+      "hard": true
+    }
+  ]
+}

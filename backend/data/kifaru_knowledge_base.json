@@ -1,0 +1,36 @@
+{
+  "known_good": [
+    "sha256:ba8504938e4cb6275809",
+    "sha256:c8a5c084b032f2e9c2ec",
+    "sha256:306e5944a6e218b13c0f",
+    "sha256:5779c2ef342cf93d2b6d",
+    "sha256:8867484e4cbbc2617dd2",
+    "sha256:cdbf452d3becd6e15bf1",
+    "sha256:bb59ac657c996cf7e01f",
+    "sha256:0baaa7439959b0f58744"
+  ],
+  "known_good_labels": {
+    "sha256:ba8504938e4cb6275809": "Secondary school fees collection",
+    "sha256:c8a5c084b032f2e9c2ec": "Utility paybill",
+    "sha256:306e5944a6e218b13c0f": "Registered chama group account",
+    "sha256:5779c2ef342cf93d2b6d": "SACCO dividend disbursement",
+    "sha256:8867484e4cbbc2617dd2": "Church offertory paybill",
+    "sha256:cdbf452d3becd6e15bf1": "New online retailer, onboarded day 3",
+    "sha256:bb59ac657c996cf7e01f": "New chama, first contribution cycle",
+    "sha256:0baaa7439959b0f58744": "Funeral contribution drive (harambee)"
+  },
+  "known_bad": [
+    "sha256:19a087f108f4ea5c69cc",
+    "sha256:20ddbdaef531153450f4",
+    "sha256:3ce7212e87afc8815872",
+    "sha256:4360d47c8267950795c9",
+    "sha256:4f2b6f0c005163e4827f",
+    "sha256:65de9d372e4972cca2a8",
+    "sha256:84b577b6e07fc1cf7692",
+    "sha256:8eb9b7e24592598252dd",
+    "sha256:9185fbde67e99b336e0d",
+    "sha256:b9b33fefc185885e27ef",
+    "sha256:d4d25d741ce35144cdf3"
+  ],
+  "version": "kb-2026.09.1"
+}

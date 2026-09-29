@@ -1,0 +1,455 @@
+alert_id,timestamp,institution_id,source_platform,related_event_id,rule_ids,entity_type,entity_value,risk_score,severity,verdict,status,analyst_disposition,queue_age_minutes
+alrt-3c8ffb198b,2026-09-01T00:27:25Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-2fb1b97aa430,AMT_HIGH_VALUE|TIME_OFF_HOURS,account,bank_a-acct-01013,0.32,Low,MONITOR,closed,false_positive,3434
+alrt-ad6ab21f5a,2026-09-01T02:36:30Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-9747e4cd4748,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-00774,0.25,Low,MONITOR,closed,false_positive,2205
+alrt-146e659678,2026-09-01T04:25:36Z,bank_b,Vendor SIEM (rules only),evt-b67a41456334,TIME_OFF_HOURS|VEL_BURST_1H,account,bank_b-acct-00645,0.26,Low,MONITOR,closed,false_positive,2119
+alrt-376cc22872,2026-09-01T04:27:48Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-20b1b8292f99,TIME_OFF_HOURS|VEL_BURST_1H,account,bank_a-acct-01778,0.26,Low,MONITOR,in_progress,pending,1285
+alrt-20ab4abcb3,2026-09-01T04:46:38Z,psp_c,In-house risk engine,evt-8da5038df251,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-00412,0.25,Low,MONITOR,new,false_positive,493
+alrt-c7b3d9c7b1,2026-09-01T04:54:34Z,psp_c,In-house risk engine,evt-893dee256f3c,AMT_ELEVATED|BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-01524,0.37,Low,MONITOR,closed,false_positive,954
+alrt-2d8f2c1a67,2026-09-01T04:57:20Z,psp_c,In-house risk engine,evt-dd1b02e6b2a4,AMT_HIGH_VALUE|TIME_OFF_HOURS,account,psp_c-acct-01703,0.32,Low,MONITOR,in_progress,false_positive,2066
+alrt-e55a0c93bb,2026-09-01T07:20:54Z,psp_c,In-house risk engine,evt-5d88e1df4b20,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-03605,0.26,Low,MONITOR,in_progress,false_positive,1856
+alrt-01b5a9de01,2026-09-01T08:31:09Z,psp_c,In-house risk engine,evt-95ba260880a3,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,psp_c-acct-00564,0.31,Low,MONITOR,in_progress,false_positive,2357
+alrt-9fcfbfc07d,2026-09-01T08:37:10Z,psp_c,In-house risk engine,evt-a367524ca003,BEN_NEW_BENEFICIARY|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03522,0.5,Medium,REVIEW,closed,false_positive,545
+alrt-daa8b6f7c8,2026-09-01T10:42:14Z,bank_b,Vendor SIEM (rules only),evt-710d58f39e56,ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00854,0.35,Low,MONITOR,new,false_positive,552
+alrt-68981c4ed9,2026-09-01T11:17:29Z,psp_c,In-house risk engine,evt-bd667ea2a10d,AMT_ELEVATED|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-00023,0.47,Medium,REVIEW,closed,benign_true_positive,1326
+alrt-38213a15aa,2026-09-01T12:53:59Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-d621e72158fc,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-01221,0.27,Low,MONITOR,closed,benign_true_positive,613
+alrt-1e43617dc2,2026-09-01T12:58:30Z,bank_b,Vendor SIEM (rules only),evt-774a5582d036,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,bank_b-acct-00554,0.37,Low,MONITOR,new,benign_true_positive,1549
+alrt-fd17691270,2026-09-01T14:42:08Z,sacco_d,Core banking alerts only,evt-4f78496a2e8b,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE,account,sacco_d-acct-00271,0.36,Low,MONITOR,in_progress,benign_true_positive,1449
+alrt-4ebc4c75bf,2026-09-01T15:51:41Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-5db5e0964d81,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-00242,0.29,Low,MONITOR,closed,false_positive,3940
+alrt-23f1db5f17,2026-09-01T15:52:34Z,sacco_d,Core banking alerts only,evt-9b1fca6dfaf9,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,sacco_d-acct-00316,0.31,Low,MONITOR,closed,false_positive,1852
+alrt-338f25b7e7,2026-09-01T17:04:41Z,psp_c,In-house risk engine,evt-f279a22a64a7,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-02630,0.27,Low,MONITOR,closed,benign_true_positive,3543
+alrt-5c0389a0cc,2026-09-01T17:54:29Z,psp_c,In-house risk engine,evt-cf4e8f500b4d,VEL_BURST_1H|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03622,0.51,Medium,REVIEW,in_progress,false_positive,1094
+alrt-4659613b92,2026-09-01T18:10:53Z,psp_c,In-house risk engine,evt-bfc6f21a2282,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-02198,0.26,Low,MONITOR,in_progress,false_positive,4063
+alrt-bdf891d2d1,2026-09-01T18:25:53Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-9da1acceff10,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-00270,0.26,Low,MONITOR,new,false_positive,3911
+alrt-1151721fdb,2026-09-01T18:26:26Z,bank_b,Vendor SIEM (rules only),evt-2a27da682f4f,AMT_ELEVATED|VEL_BURST_1H,account,bank_b-acct-00167,0.28,Low,MONITOR,closed,benign_true_positive,1735
+alrt-a28caee885,2026-09-01T18:51:46Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-a6006d18c1d6,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-00027,0.26,Low,MONITOR,new,false_positive,4188
+alrt-a35b43d2f5,2026-09-01T20:07:04Z,psp_c,In-house risk engine,evt-50d55fd40c4b,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-01353,0.27,Low,MONITOR,closed,false_positive,1607
+alrt-eb7245b6d0,2026-09-01T20:25:12Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-993688ebd71e,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01205,0.35,Low,MONITOR,in_progress,false_positive,440
+alrt-964521e9e4,2026-09-01T20:25:45Z,sacco_d,Core banking alerts only,evt-353e7a4f774b,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,sacco_d-acct-00187,0.31,Low,MONITOR,new,false_positive,1122
+alrt-314692cbda,2026-09-01T20:56:02Z,bank_b,Vendor SIEM (rules only),evt-dd38e0d58ab2,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,bank_b-acct-00384,0.26,Low,MONITOR,closed,false_positive,1643
+alrt-8dc74f083e,2026-09-01T21:34:55Z,psp_c,In-house risk engine,evt-3decf8facbc7,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03560,0.35,Low,MONITOR,new,false_positive,3379
+alrt-3b5063771c,2026-09-01T22:03:00Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-0b38de08afee,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-02495,0.27,Low,MONITOR,in_progress,pending,1179
+alrt-1d41ece850,2026-09-01T22:41:54Z,psp_c,In-house risk engine,evt-e8f27665e410,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-00757,0.35,Low,MONITOR,in_progress,false_positive,1923
+alrt-6bd9418848,2026-09-02T00:02:15Z,psp_c,In-house risk engine,evt-d7fd252bbc0f,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-04078,0.25,Low,MONITOR,new,false_positive,3072
+alrt-7777ead67d,2026-09-02T00:05:12Z,psp_c,In-house risk engine,evt-916206afbb03,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE|TIME_OFF_HOURS|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-01052,0.81,High,BLOCK,closed,false_positive,2802
+alrt-b113c16ec4,2026-09-02T00:11:48Z,psp_c,In-house risk engine,evt-61b99396c4d9,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-00616,0.25,Low,MONITOR,closed,false_positive,4034
+alrt-996a8c5bb6,2026-09-02T00:15:59Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-229b6feb0b56,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-02160,0.25,Low,MONITOR,closed,false_positive,2362
+alrt-4aebb7a7c0,2026-09-02T02:01:37Z,bank_b,Vendor SIEM (rules only),evt-5af99d6872cb,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_b-acct-00297,0.47,Medium,REVIEW,new,pending,636
+alrt-c1ff1c5109,2026-09-02T02:07:32Z,psp_c,In-house risk engine,evt-911cec4e57d0,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-01522,0.25,Low,MONITOR,closed,false_positive,821
+alrt-245f9f54f4,2026-09-02T02:12:13Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-0f0a5af54c8f,AMT_ELEVATED|BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-01248,0.37,Low,MONITOR,in_progress,false_positive,1301
+alrt-8d2e68a4b1,2026-09-02T02:19:32Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-fe960b6ce947,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-00012,0.25,Low,MONITOR,in_progress,pending,2888
+alrt-1845918e1e,2026-09-02T03:08:07Z,sacco_d,Core banking alerts only,evt-8fddc96fcd28,TIME_OFF_HOURS|VEL_BURST_1H,account,sacco_d-acct-00350,0.26,Low,MONITOR,new,false_positive,1757
+alrt-8a06b45580,2026-09-02T03:19:04Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-bcf35179272b,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-00949,0.25,Low,MONITOR,new,false_positive,802
+alrt-4395ca6621,2026-09-02T03:34:42Z,bank_b,Vendor SIEM (rules only),evt-b17f94eb98ff,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_b-acct-00474,0.25,Low,MONITOR,in_progress,false_positive,218
+alrt-9579f01692,2026-09-02T07:17:25Z,psp_c,In-house risk engine,evt-31b5b6650986,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-03095,0.29,Low,MONITOR,new,pending,3565
+alrt-db68449ecc,2026-09-02T07:58:57Z,bank_b,Vendor SIEM (rules only),evt-194ca5590407,ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00011,0.35,Low,MONITOR,in_progress,false_positive,2077
+alrt-28972bb851,2026-09-02T08:20:17Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-7cb62793453e,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01105,0.35,Low,MONITOR,in_progress,false_positive,908
+alrt-8f9ea557a4,2026-09-02T08:26:26Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-0b8bfa002355,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-00134,0.35,Low,MONITOR,closed,false_positive,4131
+alrt-af6157d5ea,2026-09-02T08:45:43Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-8a55b604f959,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01450,0.35,Low,MONITOR,closed,false_positive,3963
+alrt-5cc5df0a2e,2026-09-02T09:24:31Z,psp_c,In-house risk engine,evt-79fbd5312797,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-00040,0.35,Low,MONITOR,closed,false_positive,359
+alrt-2840e1fc93,2026-09-02T10:50:53Z,bank_b,Vendor SIEM (rules only),evt-694099db276c,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,bank_b-acct-00052,0.29,Low,MONITOR,new,false_positive,3792
+alrt-b3d1191831,2026-09-02T10:56:00Z,psp_c,In-house risk engine,evt-030ae380fa2b,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-01021,0.35,Low,MONITOR,new,false_positive,3456
+alrt-6339516599,2026-09-02T11:30:00Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-2d58d77ab7c1,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01118,0.35,Low,MONITOR,new,false_positive,1262
+alrt-409bea3e4f,2026-09-02T11:42:33Z,psp_c,In-house risk engine,evt-41fd28083a55,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-03282,0.36,Low,MONITOR,in_progress,false_positive,1970
+alrt-11d19abbc0,2026-09-02T12:34:46Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-84effa5cfa44,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,bank_a-acct-01885,0.37,Low,MONITOR,new,false_positive,2280
+alrt-eaae5fa3e2,2026-09-02T12:37:09Z,psp_c,In-house risk engine,evt-c23d04af9cf6,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-01431,0.36,Low,MONITOR,closed,false_positive,2321
+alrt-c76731d7cc,2026-09-02T13:21:11Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-e0d73c4b36d1,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-00506,0.35,Low,MONITOR,new,false_positive,3967
+alrt-eb3e429e31,2026-09-02T13:45:59Z,psp_c,In-house risk engine,evt-7c20171e6c53,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-03175,0.27,Low,MONITOR,new,false_positive,1491
+alrt-2aa92f22d6,2026-09-02T15:16:34Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-85161808df32,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-00742,0.35,Low,MONITOR,closed,false_positive,1226
+alrt-3cb9528471,2026-09-02T15:38:27Z,bank_b,Vendor SIEM (rules only),evt-27e59dbd400d,ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00682,0.35,Low,MONITOR,new,false_positive,1062
+alrt-8c96b54b13,2026-09-02T15:50:51Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-723bc7e3087c,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,bank_a-acct-00493,0.31,Low,MONITOR,in_progress,false_positive,2351
+alrt-9af131f539,2026-09-02T17:10:49Z,bank_b,Vendor SIEM (rules only),evt-4449f2bdcff2,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE,account,bank_b-acct-00444,0.36,Low,MONITOR,in_progress,false_positive,3187
+alrt-f61bdc19e6,2026-09-02T17:22:47Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-86aa73d3e3f6,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01724,0.35,Low,MONITOR,closed,benign_true_positive,2183
+alrt-fa7b372dcf,2026-09-02T18:38:50Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-19773551d797,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01016,0.35,Low,MONITOR,new,benign_true_positive,2338
+alrt-a77b965979,2026-09-02T19:15:13Z,sacco_d,Core banking alerts only,evt-9e428d1d8efb,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,sacco_d-acct-00342,0.27,Low,MONITOR,new,pending,2588
+alrt-377d1b3340,2026-09-02T19:27:06Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-420ba5d0e4da,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,bank_a-acct-00309,0.37,Low,MONITOR,new,false_positive,768
+alrt-24a099dfeb,2026-09-02T19:44:26Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-430f3a911887,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,bank_a-acct-00109,0.31,Low,MONITOR,closed,pending,4174
+alrt-1d7a130d8b,2026-09-02T20:08:58Z,psp_c,In-house risk engine,evt-43bdbef81ad1,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-00454,0.26,Low,MONITOR,closed,false_positive,3007
+alrt-7514f73ef1,2026-09-02T20:22:36Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-19a01f7911fa,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-01389,0.27,Low,MONITOR,new,pending,1898
+alrt-1bc919779e,2026-09-02T20:41:40Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-a6c37e33a7ef,BEN_NEW_BENEFICIARY|ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-02252,0.5,Medium,REVIEW,new,false_positive,621
+alrt-060bbb0af7,2026-09-02T21:17:03Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-248bba87077f,DEV_UNRECOGNISED_DEVICE|ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-00480,0.49,Medium,REVIEW,closed,false_positive,1635
+alrt-f35be19864,2026-09-02T22:35:13Z,bank_b,Vendor SIEM (rules only),evt-acfb24805ba8,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,bank_b-acct-00237,0.26,Low,MONITOR,closed,false_positive,3769
+alrt-370726988f,2026-09-03T00:04:19Z,bank_b,Vendor SIEM (rules only),evt-a37445bf5520,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_b-acct-00872,0.25,Low,MONITOR,new,pending,624
+alrt-d2f293e153,2026-09-03T00:25:56Z,psp_c,In-house risk engine,evt-db9b23f3b9fe,TIME_OFF_HOURS|VEL_BURST_1H,account,psp_c-acct-02988,0.26,Low,MONITOR,new,false_positive,2034
+alrt-079c72bc4a,2026-09-03T00:54:08Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-d58001a73e0c,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-01827,0.25,Low,MONITOR,closed,false_positive,1963
+alrt-4acbc4bedc,2026-09-03T01:03:59Z,psp_c,In-house risk engine,evt-724bca79094d,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-02470,0.25,Low,MONITOR,new,false_positive,2498
+alrt-90e7ae950f,2026-09-03T01:10:58Z,psp_c,In-house risk engine,evt-d812df6e1822,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-00732,0.25,Low,MONITOR,closed,benign_true_positive,2102
+alrt-0297a56bea,2026-09-03T01:35:50Z,psp_c,In-house risk engine,evt-a1ffd7264eb5,TIME_OFF_HOURS|VEL_BURST_1H,account,psp_c-acct-03591,0.26,Low,MONITOR,in_progress,false_positive,1967
+alrt-9cd3d5a815,2026-09-03T01:39:03Z,psp_c,In-house risk engine,evt-5f839e0c4659,AMT_HIGH_VALUE|TIME_OFF_HOURS,account,psp_c-acct-01276,0.32,Low,MONITOR,new,false_positive,878
+alrt-46149f6748,2026-09-03T02:08:59Z,bank_b,Vendor SIEM (rules only),evt-4d1ed25a1980,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE|TIME_OFF_HOURS,account,bank_b-acct-00236,0.46,Medium,REVIEW,closed,false_positive,2395
+alrt-11f700905b,2026-09-03T02:09:27Z,psp_c,In-house risk engine,evt-b95211f461fe,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-00993,0.25,Low,MONITOR,new,benign_true_positive,974
+alrt-2f4b8312a5,2026-09-03T02:31:58Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-857f5631e957,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-01801,0.25,Low,MONITOR,closed,pending,3107
+alrt-df644596b9,2026-09-03T02:49:36Z,psp_c,In-house risk engine,evt-cb2a978714cd,TIME_OFF_HOURS|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-02957,0.45,Medium,REVIEW,in_progress,false_positive,1700
+alrt-a4ab52f2c8,2026-09-03T02:52:11Z,psp_c,In-house risk engine,evt-b64fde346756,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-00224,0.25,Low,MONITOR,in_progress,pending,1027
+alrt-096679cbaa,2026-09-03T03:29:13Z,sacco_d,Core banking alerts only,evt-b3eb1ec6ae72,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,sacco_d-acct-00449,0.25,Low,MONITOR,in_progress,benign_true_positive,2034
+alrt-176f7eccc3,2026-09-03T03:37:13Z,psp_c,In-house risk engine,evt-4d05940634b4,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE|TIME_OFF_HOURS,account,psp_c-acct-03302,0.39,Low,MONITOR,in_progress,pending,3278
+alrt-0c4799a901,2026-09-03T04:00:59Z,psp_c,In-house risk engine,evt-f7dd1a660ad5,TIME_OFF_HOURS|VEL_BURST_1H,account,psp_c-acct-01593,0.26,Low,MONITOR,in_progress,benign_true_positive,1303
+alrt-02884cf779,2026-09-03T04:09:09Z,bank_b,Vendor SIEM (rules only),evt-ecadfd29b697,TIME_OFF_HOURS|VEL_BURST_1H,account,bank_b-acct-00777,0.26,Low,MONITOR,closed,pending,453
+alrt-37dacfb969,2026-09-03T07:07:08Z,psp_c,In-house risk engine,evt-0f135c45d1f4,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03594,0.35,Low,MONITOR,closed,pending,503
+alrt-fc57cf7255,2026-09-03T07:14:26Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-8d9a80df92c1,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-00751,0.35,Low,MONITOR,closed,false_positive,2993
+alrt-d27254e893,2026-09-03T07:29:12Z,psp_c,In-house risk engine,evt-60d18757ec80,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-02966,0.26,Low,MONITOR,new,benign_true_positive,3866
+alrt-99380a094e,2026-09-03T07:35:57Z,bank_b,Vendor SIEM (rules only),evt-58c5bb8d7401,ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00154,0.35,Low,MONITOR,closed,false_positive,796
+alrt-28d751bde9,2026-09-03T07:54:22Z,psp_c,In-house risk engine,evt-96ae7db7b4cb,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-00343,0.36,Low,MONITOR,new,benign_true_positive,3753
+alrt-4c0c952c1f,2026-09-03T07:56:18Z,psp_c,In-house risk engine,evt-3aa50e769e5e,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-04113,0.35,Low,MONITOR,in_progress,benign_true_positive,3913
+alrt-0d7869766b,2026-09-03T09:32:58Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-5629566eee07,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-00510,0.27,Low,MONITOR,closed,pending,4154
+alrt-e95aa85a97,2026-09-03T09:51:04Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-3f1dce9d2bda,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,bank_a-acct-01717,0.31,Low,MONITOR,closed,benign_true_positive,437
+alrt-a051e73fc2,2026-09-03T10:37:25Z,sacco_d,Core banking alerts only,evt-ad7f627caf38,ANOM_STATISTICAL_OUTLIER,account,sacco_d-acct-00172,0.35,Low,MONITOR,closed,false_positive,3120
+alrt-27fa28e7d5,2026-09-03T12:04:05Z,bank_b,Vendor SIEM (rules only),evt-0ce3a32c58a8,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00087,0.27,Low,MONITOR,closed,benign_true_positive,3542
+alrt-3b6b314bb3,2026-09-03T13:40:17Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-df8a780a1637,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-00314,0.35,Low,MONITOR,in_progress,false_positive,3963
+alrt-391a493fb2,2026-09-03T14:30:26Z,sacco_d,Core banking alerts only,evt-c2cac888bac4,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,sacco_d-acct-00493,0.27,Low,MONITOR,closed,pending,2841
+alrt-a1852ca124,2026-09-03T14:55:16Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-6ff1fd2d4c6d,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-02241,0.26,Low,MONITOR,new,benign_true_positive,1360
+alrt-afe4661fba,2026-09-03T16:15:14Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-a80220211ba5,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-00017,0.35,Low,MONITOR,closed,false_positive,344
+alrt-c0a9f57d7a,2026-09-03T17:22:45Z,psp_c,In-house risk engine,evt-9169a7802883,AMT_ELEVATED|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-01624,0.47,Medium,REVIEW,closed,false_positive,560
+alrt-a5aa4832f3,2026-09-03T17:55:13Z,psp_c,In-house risk engine,evt-4c94cc688434,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-02362,0.27,Low,MONITOR,in_progress,pending,2148
+alrt-e6fda2b6dc,2026-09-03T18:07:52Z,psp_c,In-house risk engine,evt-228768d089d5,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-03673,0.27,Low,MONITOR,in_progress,false_positive,2484
+alrt-970db0980b,2026-09-03T19:57:22Z,psp_c,In-house risk engine,evt-95273bec7340,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03891,0.35,Low,MONITOR,closed,benign_true_positive,374
+alrt-3ce4ee5da5,2026-09-03T20:30:53Z,bank_b,Vendor SIEM (rules only),evt-24d5306e278f,ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00228,0.35,Low,MONITOR,new,false_positive,773
+alrt-993cfa1d00,2026-09-03T20:46:03Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-06acd6a35b82,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-01477,0.26,Low,MONITOR,closed,benign_true_positive,2711
+alrt-566c6a6254,2026-09-03T22:59:04Z,psp_c,In-house risk engine,evt-a2c7dfba8952,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-00894,0.35,Low,MONITOR,in_progress,pending,3491
+alrt-47405ba189,2026-09-04T01:34:30Z,psp_c,In-house risk engine,evt-2c1f6574f375,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-03957,0.25,Low,MONITOR,in_progress,false_positive,2653
+alrt-40a632ba2e,2026-09-04T03:33:59Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-4a93e9d7b664,TIME_OFF_HOURS|ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01722,0.45,Medium,REVIEW,new,pending,440
+alrt-48d6f2acac,2026-09-04T04:05:51Z,psp_c,In-house risk engine,evt-61810cbc2d94,AMT_HIGH_VALUE|TIME_OFF_HOURS,account,psp_c-acct-00310,0.32,Low,MONITOR,new,pending,214
+alrt-b1db36f466,2026-09-04T04:18:49Z,sacco_d,Core banking alerts only,evt-5ac6fff977bd,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,sacco_d-acct-00452,0.25,Low,MONITOR,new,false_positive,2600
+alrt-8ee40833b1,2026-09-04T04:19:55Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-80610b5fdef4,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS|ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01809,0.6,Medium,REVIEW,closed,false_positive,334
+alrt-3a322b9c00,2026-09-04T04:58:50Z,psp_c,In-house risk engine,evt-318dbdd52b9c,AMT_HIGH_VALUE|TIME_OFF_HOURS,account,psp_c-acct-01181,0.32,Low,MONITOR,closed,false_positive,579
+alrt-48916d82fb,2026-09-04T06:04:32Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-c1fb84fc82d7,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-00558,0.29,Low,MONITOR,in_progress,true_positive,1409
+alrt-abe7fb0a9d,2026-09-04T06:09:50Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-0bdc2d1b97da,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-00558,0.26,Low,MONITOR,in_progress,true_positive,2263
+alrt-27b90f7664,2026-09-04T07:35:24Z,psp_c,In-house risk engine,evt-d1a84201d0df,BEN_NEW_BENEFICIARY|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03062,0.5,Medium,REVIEW,closed,pending,2652
+alrt-2afd003ae9,2026-09-04T07:39:28Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-a76620503bf8,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-00104,0.29,Low,MONITOR,closed,true_positive,3034
+alrt-51dadc172a,2026-09-04T08:23:28Z,psp_c,In-house risk engine,evt-7b337506e79c,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,psp_c-acct-01750,0.31,Low,MONITOR,in_progress,benign_true_positive,746
+alrt-66b34621e2,2026-09-04T09:13:21Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-485634f23087,DEV_UNRECOGNISED_DEVICE|VEL_BURST_1H,account,bank_a-acct-02302,0.3,Low,MONITOR,closed,benign_true_positive,2306
+alrt-4b55c96f55,2026-09-04T09:14:44Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-0bed034c9e37,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-02273,0.29,Low,MONITOR,in_progress,true_positive,2136
+alrt-1fcb2a54f8,2026-09-04T09:19:33Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-eafb0532ac58,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-02273,0.26,Low,MONITOR,closed,true_positive,1197
+alrt-c4842ca7a5,2026-09-04T09:59:01Z,bank_b,Vendor SIEM (rules only),evt-ce8981021d5d,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00262,0.27,Low,MONITOR,in_progress,pending,500
+alrt-763334ef61,2026-09-04T11:06:23Z,sacco_d,Core banking alerts only,evt-3386db87abdc,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY|ANOM_STATISTICAL_OUTLIER,account,sacco_d-acct-00274,0.72,High,BLOCK,closed,benign_true_positive,2086
+alrt-948126db93,2026-09-04T11:45:18Z,bank_b,Vendor SIEM (rules only),evt-2798d628d354,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00057,0.27,Low,MONITOR,new,benign_true_positive,3622
+alrt-0ae49c4a6c,2026-09-04T12:04:51Z,bank_b,Vendor SIEM (rules only),evt-504d03c4a22a,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,bank_b-acct-00338,0.31,Low,MONITOR,new,false_positive,3753
+alrt-b842964f40,2026-09-04T13:10:37Z,bank_b,Vendor SIEM (rules only),evt-30a7a5eb1013,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00497,0.27,Low,MONITOR,closed,pending,1263
+alrt-68ee2af04c,2026-09-04T13:23:45Z,psp_c,In-house risk engine,evt-33328c995688,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03486,0.35,Low,MONITOR,in_progress,pending,2115
+alrt-17e6201bb0,2026-09-04T13:36:49Z,psp_c,In-house risk engine,evt-6d01ab5eb939,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-02556,0.36,Low,MONITOR,closed,false_positive,771
+alrt-25f721109d,2026-09-04T13:43:22Z,sacco_d,Core banking alerts only,evt-3751317bf7d9,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,sacco_d-acct-00257,0.27,Low,MONITOR,in_progress,false_positive,3482
+alrt-9c73c51243,2026-09-04T13:54:05Z,psp_c,In-house risk engine,evt-8a3de8530987,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-00114,0.26,Low,MONITOR,new,false_positive,2372
+alrt-28c140156a,2026-09-04T15:31:01Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-fb39219979bb,DEV_UNRECOGNISED_DEVICE|ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01508,0.49,Medium,REVIEW,closed,false_positive,1453
+alrt-7c8c1b99e5,2026-09-04T17:03:06Z,sacco_d,Core banking alerts only,evt-14557ece3c32,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE|ANOM_STATISTICAL_OUTLIER,account,sacco_d-acct-00425,0.71,High,BLOCK,closed,false_positive,2401
+alrt-b682a8cb89,2026-09-04T17:21:42Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-d7e7d725bf40,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-00102,0.35,Low,MONITOR,new,false_positive,812
+alrt-3afe17f33b,2026-09-04T18:00:44Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-b46063529b5d,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-02331,0.29,Low,MONITOR,in_progress,false_positive,763
+alrt-7b084cd8b2,2026-09-04T19:38:23Z,psp_c,In-house risk engine,evt-508e50be6b29,DEV_UNRECOGNISED_DEVICE|VEL_BURST_1H,account,psp_c-acct-00367,0.3,Low,MONITOR,new,false_positive,1278
+alrt-f60d55ed0b,2026-09-04T19:50:13Z,bank_b,Vendor SIEM (rules only),evt-7c1097ce2caf,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00049,0.27,Low,MONITOR,in_progress,benign_true_positive,4005
+alrt-ff2b93c7cc,2026-09-04T20:54:59Z,psp_c,In-house risk engine,evt-472b58c49ad6,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-00274,0.27,Low,MONITOR,closed,false_positive,830
+alrt-b5869a9512,2026-09-04T21:17:46Z,psp_c,In-house risk engine,evt-3e4f2c3a2759,AMT_ELEVATED|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-02050,0.47,Medium,REVIEW,closed,false_positive,700
+alrt-4feb0b777f,2026-09-04T21:20:42Z,psp_c,In-house risk engine,evt-dce2083d7472,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-00694,0.26,Low,MONITOR,closed,false_positive,805
+alrt-177bdb765a,2026-09-04T22:27:50Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-46fd6beb2ad0,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01754,0.35,Low,MONITOR,closed,false_positive,3863
+alrt-9d24014009,2026-09-04T22:45:38Z,bank_b,Vendor SIEM (rules only),evt-76743f4e4436,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,bank_b-acct-00349,0.37,Low,MONITOR,new,false_positive,3700
+alrt-6958cb2bc5,2026-09-05T00:08:18Z,bank_b,Vendor SIEM (rules only),evt-a9e8b2c85e74,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_b-acct-00418,0.25,Low,MONITOR,new,false_positive,290
+alrt-9a29026463,2026-09-05T01:30:03Z,bank_b,Vendor SIEM (rules only),evt-e6463786b577,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_b-acct-00641,0.25,Low,MONITOR,closed,false_positive,1923
+alrt-cf8079f964,2026-09-05T02:31:03Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-83e909b25ca3,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-02091,0.25,Low,MONITOR,new,false_positive,2230
+alrt-1b793ef610,2026-09-05T03:25:50Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-03b9fcab9108,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-02148,0.25,Low,MONITOR,new,benign_true_positive,1733
+alrt-4ed5afeee9,2026-09-05T03:52:48Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-00a92fe3bd27,AMT_HIGH_VALUE|TIME_OFF_HOURS,account,bank_a-acct-00268,0.32,Low,MONITOR,new,false_positive,99
+alrt-e5bc1a162b,2026-09-05T04:26:18Z,psp_c,In-house risk engine,evt-78d9bf5a8ab6,AMT_HIGH_VALUE|TIME_OFF_HOURS,account,psp_c-acct-02679,0.32,Low,MONITOR,new,false_positive,3493
+alrt-4fd600ecac,2026-09-05T08:16:57Z,psp_c,In-house risk engine,evt-f8e04d708e16,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-02568,0.29,Low,MONITOR,new,false_positive,3532
+alrt-0b80b85779,2026-09-05T08:23:15Z,psp_c,In-house risk engine,evt-254cf4750215,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03575,0.35,Low,MONITOR,in_progress,benign_true_positive,2174
+alrt-aeeec2ad3a,2026-09-05T09:00:54Z,psp_c,In-house risk engine,evt-6c0be0874ddd,AMT_HIGH_VALUE|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03209,0.57,Medium,REVIEW,in_progress,benign_true_positive,191
+alrt-a69462e33a,2026-09-05T10:21:21Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-51fcac84262a,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-00893,0.27,Low,MONITOR,closed,false_positive,1105
+alrt-185d18021c,2026-09-05T10:39:23Z,sacco_d,Core banking alerts only,evt-21c4fef80fe7,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,sacco_d-acct-00271,0.26,Low,MONITOR,in_progress,false_positive,1666
+alrt-817e859f7f,2026-09-05T11:10:59Z,psp_c,In-house risk engine,evt-7e9cc1e3efdd,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-00872,0.35,Low,MONITOR,in_progress,false_positive,194
+alrt-46e6c2bb74,2026-09-05T11:52:22Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-f734ae94b1d3,AMT_ELEVATED|ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01109,0.47,Medium,REVIEW,in_progress,false_positive,4016
+alrt-6a279305b7,2026-09-05T12:03:05Z,psp_c,In-house risk engine,evt-6b40c9844f86,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,psp_c-acct-04128,0.31,Low,MONITOR,new,false_positive,3848
+alrt-273270ef9e,2026-09-05T12:16:30Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-fb4482aea067,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-00237,0.26,Low,MONITOR,in_progress,false_positive,1891
+alrt-aeb4e574a9,2026-09-05T12:23:15Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-39635f8eba8d,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-00839,0.35,Low,MONITOR,closed,false_positive,1111
+alrt-acb78ed6ef,2026-09-05T12:39:19Z,psp_c,In-house risk engine,evt-b54620dcaa76,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-02739,0.36,Low,MONITOR,closed,benign_true_positive,1322
+alrt-2aa056a7b5,2026-09-05T12:59:23Z,bank_b,Vendor SIEM (rules only),evt-c50816477eab,AMT_ELEVATED|ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00702,0.47,Medium,REVIEW,closed,false_positive,2740
+alrt-d4c3f0d1d6,2026-09-05T13:45:05Z,psp_c,In-house risk engine,evt-000163f97711,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-00527,0.27,Low,MONITOR,in_progress,false_positive,3875
+alrt-1a3322bbd0,2026-09-05T14:38:39Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-6d52c5c75a1d,VEL_BURST_1H|ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-00211,0.51,Medium,REVIEW,new,false_positive,1183
+alrt-75c6767c7c,2026-09-05T15:02:45Z,sacco_d,Core banking alerts only,evt-a72012b9268a,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,sacco_d-acct-00461,0.27,Low,MONITOR,in_progress,pending,3849
+alrt-20f032ff64,2026-09-05T15:55:29Z,sacco_d,Core banking alerts only,evt-46de645b7ebb,VEL_BURST_1H|ANOM_STATISTICAL_OUTLIER,account,sacco_d-acct-00123,0.51,Medium,REVIEW,new,benign_true_positive,3112
+alrt-bd1ae1c34e,2026-09-05T16:01:25Z,psp_c,In-house risk engine,evt-dc66e6e097b7,BEN_NEW_BENEFICIARY|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-02757,0.5,Medium,REVIEW,in_progress,benign_true_positive,3005
+alrt-dfdfb221da,2026-09-05T16:44:29Z,psp_c,In-house risk engine,evt-53879c9ed44a,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-03093,0.26,Low,MONITOR,in_progress,benign_true_positive,3706
+alrt-570ea6c47b,2026-09-05T17:54:02Z,psp_c,In-house risk engine,evt-e181a7268b7e,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,psp_c-acct-00230,0.37,Low,MONITOR,in_progress,false_positive,802
+alrt-82e2cf9db1,2026-09-05T20:10:28Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-8184e1bf41f3,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-00763,0.36,Low,MONITOR,closed,false_positive,214
+alrt-ac960c5658,2026-09-05T20:13:29Z,bank_b,Vendor SIEM (rules only),evt-641ef5c75f7f,ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00607,0.35,Low,MONITOR,closed,false_positive,1351
+alrt-96852f4931,2026-09-05T20:42:26Z,psp_c,In-house risk engine,evt-37e0eea0240e,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03465,0.35,Low,MONITOR,new,false_positive,2070
+alrt-c7981f29f1,2026-09-06T00:14:15Z,psp_c,In-house risk engine,evt-ee5085e6203d,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-00863,0.25,Low,MONITOR,closed,false_positive,929
+alrt-81c32766c8,2026-09-06T00:44:11Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-894596252cb3,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-00763,0.25,Low,MONITOR,new,false_positive,219
+alrt-34f2c46052,2026-09-06T02:11:02Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-e30bdf0c5d6a,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-01201,0.25,Low,MONITOR,closed,false_positive,3244
+alrt-bfcff7d75f,2026-09-06T02:15:03Z,bank_b,Vendor SIEM (rules only),evt-a91ad5bce78a,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_b-acct-00884,0.25,Low,MONITOR,in_progress,false_positive,2607
+alrt-fdc621c54f,2026-09-06T03:37:05Z,sacco_d,Core banking alerts only,evt-032ca4b8b71b,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,sacco_d-acct-00178,0.25,Low,MONITOR,new,benign_true_positive,1364
+alrt-e8af839604,2026-09-06T04:13:24Z,psp_c,In-house risk engine,evt-507f5af597a3,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-00530,0.25,Low,MONITOR,in_progress,false_positive,1756
+alrt-3138b0de64,2026-09-06T04:20:24Z,psp_c,In-house risk engine,evt-af0375af3ccb,TIME_OFF_HOURS|VEL_BURST_1H,account,psp_c-acct-01107,0.26,Low,MONITOR,closed,false_positive,1285
+alrt-2f282fed73,2026-09-06T04:49:30Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-3508042352b9,AMT_ELEVATED|BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-01595,0.37,Low,MONITOR,new,false_positive,3148
+alrt-d43e8de6ef,2026-09-06T07:51:31Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-c8c24aaf2d03,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,bank_a-acct-00789,0.31,Low,MONITOR,new,benign_true_positive,3284
+alrt-409c17592c,2026-09-06T08:23:56Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-692fd62cfdb6,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,bank_a-acct-00828,0.31,Low,MONITOR,in_progress,false_positive,1071
+alrt-3103947406,2026-09-06T09:28:06Z,bank_b,Vendor SIEM (rules only),evt-aac656a5ced4,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00677,0.27,Low,MONITOR,in_progress,true_positive,1538
+alrt-9dcae80aba,2026-09-06T09:35:02Z,sacco_d,Core banking alerts only,evt-23f903188df0,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,sacco_d-acct-00429,0.27,Low,MONITOR,new,true_positive,1809
+alrt-31811a4193,2026-09-06T09:56:22Z,psp_c,In-house risk engine,evt-e8b1eb1c8533,AMT_HIGH_VALUE|DEV_EMULATOR_DETECTED,account,psp_c-acct-00762,0.42,Low,MONITOR,new,true_positive,1883
+alrt-da33de88aa,2026-09-06T10:17:00Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-7997932e2ba1,AMT_ELEVATED|ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01816,0.47,Medium,REVIEW,new,false_positive,1520
+alrt-d70bd2fa56,2026-09-06T10:47:55Z,sacco_d,Core banking alerts only,evt-33248edcba98,ANOM_STATISTICAL_OUTLIER,account,sacco_d-acct-00302,0.35,Low,MONITOR,new,pending,4154
+alrt-ffd59df016,2026-09-06T11:43:33Z,sacco_d,Core banking alerts only,evt-721e6146ec01,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,sacco_d-acct-00089,0.37,Low,MONITOR,closed,false_positive,3462
+alrt-46754f4085,2026-09-06T12:10:45Z,bank_b,Vendor SIEM (rules only),evt-6fce4b678d12,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE,account,bank_b-acct-00774,0.36,Low,MONITOR,new,false_positive,121
+alrt-10deaeb2fc,2026-09-06T12:15:12Z,sacco_d,Core banking alerts only,evt-1a1afeaa96a5,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,sacco_d-acct-00419,0.37,Low,MONITOR,closed,false_positive,1753
+alrt-5e2edb5f20,2026-09-06T12:30:59Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-1b0bc8737203,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-00657,0.27,Low,MONITOR,closed,true_positive,2635
+alrt-90128ec6f9,2026-09-06T12:37:13Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-13823b7afacd,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-01089,0.27,Low,MONITOR,in_progress,true_positive,1078
+alrt-d2cd3cfee8,2026-09-06T12:51:42Z,bank_b,Vendor SIEM (rules only),evt-745608053451,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00273,0.27,Low,MONITOR,in_progress,true_positive,3638
+alrt-799302f854,2026-09-06T13:12:52Z,sacco_d,Core banking alerts only,evt-5e3e0f4ccffd,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,sacco_d-acct-00366,0.27,Low,MONITOR,in_progress,true_positive,472
+alrt-5ac637a0f7,2026-09-06T13:19:36Z,sacco_d,Core banking alerts only,evt-967f3d349fa2,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,sacco_d-acct-00358,0.27,Low,MONITOR,in_progress,true_positive,3496
+alrt-ebb580e1fd,2026-09-06T15:57:14Z,bank_b,Vendor SIEM (rules only),evt-f40ad463c70d,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00224,0.27,Low,MONITOR,closed,benign_true_positive,3935
+alrt-3aab5fb382,2026-09-06T16:07:51Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-1c9fb8c16f77,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-00755,0.27,Low,MONITOR,closed,true_positive,3951
+alrt-7c8e0448c1,2026-09-06T16:14:42Z,bank_b,Vendor SIEM (rules only),evt-140901bc5ae7,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00502,0.27,Low,MONITOR,in_progress,true_positive,2663
+alrt-1db8fea64e,2026-09-06T16:21:04Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-9049716033ac,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-01933,0.26,Low,MONITOR,in_progress,false_positive,1504
+alrt-9346dd9de6,2026-09-06T16:21:35Z,bank_b,Vendor SIEM (rules only),evt-1bfd77d42a2d,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00887,0.27,Low,MONITOR,closed,true_positive,825
+alrt-d1ed426fc4,2026-09-06T16:28:54Z,bank_b,Vendor SIEM (rules only),evt-42634799b3ee,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00749,0.27,Low,MONITOR,new,true_positive,4136
+alrt-9af86d43e3,2026-09-06T16:34:00Z,psp_c,In-house risk engine,evt-6636b9fa4263,AMT_HIGH_VALUE|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03099,0.57,Medium,REVIEW,closed,false_positive,3985
+alrt-4ce6cbd7a5,2026-09-06T16:38:21Z,psp_c,In-house risk engine,evt-c7838a5b9647,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-01622,0.27,Low,MONITOR,new,false_positive,1674
+alrt-c38a350910,2026-09-06T16:42:11Z,sacco_d,Core banking alerts only,evt-62fb7d487c17,BEN_NEW_BENEFICIARY|ANOM_STATISTICAL_OUTLIER,account,sacco_d-acct-00476,0.5,Medium,REVIEW,in_progress,true_positive,3944
+alrt-8fd0b5aba0,2026-09-06T16:55:37Z,psp_c,In-house risk engine,evt-f8ce2f972fb7,AMT_HIGH_VALUE|DEV_ROOTED_DEVICE,account,psp_c-acct-02479,0.34,Low,MONITOR,new,true_positive,2502
+alrt-ce1231f030,2026-09-06T16:58:34Z,bank_b,Vendor SIEM (rules only),evt-e71edcedec76,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00143,0.27,Low,MONITOR,closed,false_positive,1574
+alrt-7640467e96,2026-09-06T17:31:48Z,sacco_d,Core banking alerts only,evt-bd161657844d,ANOM_STATISTICAL_OUTLIER,account,sacco_d-acct-00190,0.35,Low,MONITOR,in_progress,false_positive,45
+alrt-1e8c0d40c4,2026-09-06T18:06:21Z,psp_c,In-house risk engine,evt-f8ae07240c50,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-01916,0.35,Low,MONITOR,in_progress,pending,3593
+alrt-5a83737d5d,2026-09-06T18:08:57Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-c092b0e58204,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-00691,0.27,Low,MONITOR,closed,pending,3468
+alrt-9abda084cf,2026-09-06T18:11:46Z,sacco_d,Core banking alerts only,evt-49c59f2504d3,AMT_ELEVATED|ANOM_STATISTICAL_OUTLIER,account,sacco_d-acct-00488,0.47,Medium,REVIEW,closed,false_positive,697
+alrt-1095fa39d8,2026-09-06T18:30:29Z,psp_c,In-house risk engine,evt-5772e97d9d3c,VEL_BURST_1H|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-01161,0.51,Medium,REVIEW,in_progress,benign_true_positive,3006
+alrt-160d4bbb69,2026-09-06T18:42:53Z,psp_c,In-house risk engine,evt-78df9b461c34,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-03385,0.27,Low,MONITOR,in_progress,false_positive,3581
+alrt-0e780cbdef,2026-09-06T18:48:16Z,sacco_d,Core banking alerts only,evt-74f51b8fe135,ANOM_STATISTICAL_OUTLIER,account,sacco_d-acct-00040,0.35,Low,MONITOR,new,false_positive,1299
+alrt-1d72b36d21,2026-09-06T19:37:14Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-e6042d411140,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-02387,0.27,Low,MONITOR,new,true_positive,813
+alrt-352e90c5ed,2026-09-06T19:38:38Z,psp_c,In-house risk engine,evt-7c6c814ad736,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-01155,0.26,Low,MONITOR,in_progress,false_positive,3439
+alrt-cd3afac37c,2026-09-06T19:44:35Z,bank_b,Vendor SIEM (rules only),evt-511ac69acff6,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00061,0.27,Low,MONITOR,closed,true_positive,3099
+alrt-e845e0a635,2026-09-06T19:57:05Z,psp_c,In-house risk engine,evt-1a14c764be9d,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-00822,0.27,Low,MONITOR,closed,pending,3382
+alrt-d01e5cc9eb,2026-09-06T20:28:26Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-d63be20f65e1,AMT_ELEVATED|VEL_BURST_1H,account,bank_a-acct-02027,0.28,Low,MONITOR,closed,benign_true_positive,1580
+alrt-4f6e51b32f,2026-09-06T21:44:44Z,psp_c,In-house risk engine,evt-ed19c962eb8b,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-02630,0.27,Low,MONITOR,in_progress,pending,232
+alrt-2e1dbf5cf3,2026-09-06T21:51:58Z,bank_b,Vendor SIEM (rules only),evt-f835571c58f6,ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00671,0.35,Low,MONITOR,in_progress,false_positive,101
+alrt-8d6cae0509,2026-09-06T22:03:56Z,bank_b,Vendor SIEM (rules only),evt-90d1aadccc2c,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,bank_b-acct-00569,0.37,Low,MONITOR,new,false_positive,4071
+alrt-fde9e762a4,2026-09-06T22:35:16Z,bank_b,Vendor SIEM (rules only),evt-5a7dff9aaad5,DEV_UNRECOGNISED_DEVICE|ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00471,0.49,Medium,REVIEW,new,false_positive,3727
+alrt-6ffc97ec5e,2026-09-06T23:00:49Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-a6f40d3342a9,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-02106,0.27,Low,MONITOR,new,true_positive,2511
+alrt-fd7e8b7af9,2026-09-06T23:14:58Z,bank_b,Vendor SIEM (rules only),evt-2fb116643443,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00544,0.27,Low,MONITOR,in_progress,true_positive,374
+alrt-ff9f4e8b9c,2026-09-06T23:21:04Z,bank_b,Vendor SIEM (rules only),evt-be5595ce49ac,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00653,0.27,Low,MONITOR,new,true_positive,2313
+alrt-70d2582a4d,2026-09-06T23:28:34Z,bank_b,Vendor SIEM (rules only),evt-40d1f9c0de18,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,bank_b-acct-00673,0.31,Low,MONITOR,new,true_positive,2530
+alrt-f903b8b2f7,2026-09-06T23:42:54Z,sacco_d,Core banking alerts only,evt-9db8db53b4ca,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,sacco_d-acct-00011,0.27,Low,MONITOR,new,true_positive,2367
+alrt-614dee43f6,2026-09-06T23:49:38Z,sacco_d,Core banking alerts only,evt-00964bcb7474,BEN_NEW_BENEFICIARY|ANOM_STATISTICAL_OUTLIER,account,sacco_d-acct-00213,0.5,Medium,REVIEW,closed,true_positive,1652
+alrt-5785e57973,2026-09-07T00:01:11Z,psp_c,In-house risk engine,evt-3377f41925b7,AMT_HIGH_VALUE|TIME_OFF_HOURS,account,psp_c-acct-00529,0.32,Low,MONITOR,in_progress,true_positive,1196
+alrt-600001a301,2026-09-07T00:06:52Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-8b609cc43042,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-01695,0.25,Low,MONITOR,in_progress,benign_true_positive,3794
+alrt-1d915923a8,2026-09-07T01:28:51Z,bank_b,Vendor SIEM (rules only),evt-a977c7bad683,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_b-acct-00110,0.25,Low,MONITOR,new,false_positive,144
+alrt-bd7db6beef,2026-09-07T02:19:25Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-3bea81f2174f,AMT_HIGH_VALUE|TIME_OFF_HOURS,account,bank_a-acct-02535,0.32,Low,MONITOR,in_progress,false_positive,3514
+alrt-0d910baa9a,2026-09-07T02:26:09Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-5a720b518df7,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-01743,0.25,Low,MONITOR,in_progress,benign_true_positive,779
+alrt-f3a94d204e,2026-09-07T02:30:02Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-5224a8aa46eb,AMT_ELEVATED|BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-00594,0.37,Low,MONITOR,new,true_positive,2845
+alrt-40104123d8,2026-09-07T02:37:22Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-d845c2cc0469,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-00198,0.25,Low,MONITOR,closed,true_positive,1662
+alrt-a1b7e289fc,2026-09-07T02:44:38Z,bank_b,Vendor SIEM (rules only),evt-fc10f5631cab,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_b-acct-00294,0.25,Low,MONITOR,new,true_positive,3363
+alrt-0a279b8ca4,2026-09-07T02:51:12Z,bank_b,Vendor SIEM (rules only),evt-ca61e49c2e59,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_b-acct-00430,0.25,Low,MONITOR,closed,true_positive,1065
+alrt-de75ec6975,2026-09-07T02:58:55Z,sacco_d,Core banking alerts only,evt-1c6ef972ac21,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,sacco_d-acct-00176,0.25,Low,MONITOR,new,true_positive,2761
+alrt-352bacd4e8,2026-09-07T03:05:47Z,sacco_d,Core banking alerts only,evt-7e45a404db9b,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,sacco_d-acct-00178,0.25,Low,MONITOR,closed,true_positive,2917
+alrt-190ae340e5,2026-09-07T03:15:26Z,psp_c,In-house risk engine,evt-b80c4cdb7b89,AMT_HIGH_VALUE|DEV_EMULATOR_DETECTED|DEV_ROOTED_DEVICE|TIME_OFF_HOURS,account,psp_c-acct-02168,0.64,Medium,REVIEW,closed,true_positive,1401
+alrt-c1f586edd6,2026-09-07T03:50:31Z,bank_b,Vendor SIEM (rules only),evt-48b5e4c6ee42,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_b-acct-00573,0.25,Low,MONITOR,in_progress,false_positive,707
+alrt-0687b48581,2026-09-07T04:58:39Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-332fd67001ba,TIME_OFF_HOURS|VEL_BURST_1H,account,bank_a-acct-01422,0.26,Low,MONITOR,new,benign_true_positive,3412
+alrt-c16f45a92d,2026-09-07T07:56:46Z,bank_b,Vendor SIEM (rules only),evt-7665eed4958e,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,bank_b-acct-00158,0.26,Low,MONITOR,in_progress,false_positive,1276
+alrt-04b1aeb0af,2026-09-07T08:25:42Z,sacco_d,Core banking alerts only,evt-447c3642b336,ANOM_STATISTICAL_OUTLIER,account,sacco_d-acct-00310,0.35,Low,MONITOR,closed,false_positive,2124
+alrt-a51d66ccc1,2026-09-07T08:38:06Z,psp_c,In-house risk engine,evt-1ddf4f3d5d95,AMT_ELEVATED|VEL_BURST_1H,account,psp_c-acct-00223,0.28,Low,MONITOR,new,pending,988
+alrt-1a1afce8f8,2026-09-07T09:26:03Z,psp_c,In-house risk engine,evt-87472027b371,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-04189,0.35,Low,MONITOR,new,false_positive,3344
+alrt-43314bc683,2026-09-07T09:59:25Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-d65f19ceb06a,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-00683,0.27,Low,MONITOR,new,false_positive,2286
+alrt-770633e063,2026-09-07T11:14:43Z,bank_b,Vendor SIEM (rules only),evt-ac9ccfca2fb8,ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00217,0.35,Low,MONITOR,closed,benign_true_positive,38
+alrt-ea10edd689,2026-09-07T12:54:33Z,psp_c,In-house risk engine,evt-a99ef16db86c,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-02458,0.26,Low,MONITOR,in_progress,false_positive,4132
+alrt-2f5710fccb,2026-09-07T13:00:57Z,bank_b,Vendor SIEM (rules only),evt-98ba071ffa5c,VEL_BURST_1H|SIM_RECENT_SWAP,account,bank_b-acct-00310,0.41,Low,MONITOR,new,true_positive,1248
+alrt-8a4b367ed9,2026-09-07T13:12:30Z,psp_c,In-house risk engine,evt-417b855ee362,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-02095,0.35,Low,MONITOR,closed,false_positive,390
+alrt-41e141a28e,2026-09-07T13:33:53Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-7c9e3b06cfc3,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-01450,0.27,Low,MONITOR,new,false_positive,3557
+alrt-79497d7ed1,2026-09-07T13:38:16Z,bank_b,Vendor SIEM (rules only),evt-3620a2714f73,DEV_UNRECOGNISED_DEVICE|VEL_BURST_1H|SIM_RECENT_SWAP,account,bank_b-acct-00310,0.55,Medium,REVIEW,in_progress,true_positive,2358
+alrt-bcdbace34c,2026-09-07T13:41:07Z,bank_b,Vendor SIEM (rules only),evt-37e25625f0e1,DEV_UNRECOGNISED_DEVICE|VEL_BURST_1H|SIM_RECENT_SWAP,account,bank_b-acct-00310,0.55,Medium,REVIEW,new,true_positive,1933
+alrt-aadba0ec66,2026-09-07T13:44:30Z,bank_b,Vendor SIEM (rules only),evt-8a91d4e57958,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE|VEL_BURST_1H|SIM_RECENT_SWAP,account,bank_b-acct-00310,0.7,High,BLOCK,closed,true_positive,4013
+alrt-5bbb1ec029,2026-09-07T13:49:20Z,bank_b,Vendor SIEM (rules only),evt-641d30e0229e,AMT_ELEVATED|BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE|VEL_BURST_1H|SIM_RECENT_SWAP,account,bank_b-acct-00310,0.82,High,BLOCK,in_progress,true_positive,1650
+alrt-e99d9dceab,2026-09-07T14:55:24Z,psp_c,In-house risk engine,evt-8969a9198b57,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,psp_c-acct-02116,0.31,Low,MONITOR,closed,false_positive,1599
+alrt-6b550aa7f0,2026-09-07T16:11:09Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-8750af16625e,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-00257,0.27,Low,MONITOR,new,pending,1845
+alrt-161baf24ac,2026-09-07T17:59:50Z,psp_c,In-house risk engine,evt-be8f13b56ec6,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,psp_c-acct-03483,0.31,Low,MONITOR,closed,false_positive,477
+alrt-8940491130,2026-09-07T19:08:38Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-44a8223cc17f,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-02208,0.26,Low,MONITOR,closed,false_positive,455
+alrt-94014da540,2026-09-07T20:09:54Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-917889b0e605,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01692,0.35,Low,MONITOR,new,benign_true_positive,688
+alrt-0c704e0714,2026-09-07T20:31:38Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-c2b0d396f78e,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01282,0.35,Low,MONITOR,in_progress,false_positive,1971
+alrt-2b6f692632,2026-09-07T20:41:19Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-092119beeaa0,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-00693,0.26,Low,MONITOR,in_progress,benign_true_positive,239
+alrt-5b3019a395,2026-09-07T21:31:32Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-f1c1a53d0f0d,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-02047,0.27,Low,MONITOR,new,false_positive,4016
+alrt-ab5a6b5624,2026-09-07T22:13:41Z,psp_c,In-house risk engine,evt-04d50f0ba94b,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-03785,0.26,Low,MONITOR,in_progress,false_positive,772
+alrt-1134b09ca8,2026-09-07T22:24:12Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-26dca4e4ee52,AMT_ELEVATED|VEL_BURST_1H,account,bank_a-acct-02343,0.28,Low,MONITOR,in_progress,benign_true_positive,2332
+alrt-53a5800748,2026-09-08T00:02:02Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-fe5250727640,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-01803,0.25,Low,MONITOR,closed,benign_true_positive,1643
+alrt-332dac66f3,2026-09-08T00:08:12Z,psp_c,In-house risk engine,evt-4f3f9061e762,TIME_OFF_HOURS|VEL_BURST_1H,account,psp_c-acct-00133,0.26,Low,MONITOR,closed,false_positive,1813
+alrt-8a2da00a49,2026-09-08T01:31:15Z,psp_c,In-house risk engine,evt-8c4584a4ac63,AMT_HIGH_VALUE|TIME_OFF_HOURS,account,psp_c-acct-02728,0.32,Low,MONITOR,closed,false_positive,3985
+alrt-e4df85e4f9,2026-09-08T03:48:44Z,psp_c,In-house risk engine,evt-0094365a58b4,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-02469,0.25,Low,MONITOR,new,false_positive,1488
+alrt-f53bac10f1,2026-09-08T07:29:34Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-bb46b149a8dd,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-00970,0.29,Low,MONITOR,in_progress,false_positive,3361
+alrt-38b73d88b2,2026-09-08T07:52:59Z,psp_c,In-house risk engine,evt-a8eb7950f5d6,AMT_HIGH_VALUE|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-01085,0.57,Medium,REVIEW,new,false_positive,2827
+alrt-3bcba37452,2026-09-08T09:48:46Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-faf5d1aec8ed,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-00720,0.27,Low,MONITOR,in_progress,benign_true_positive,2668
+alrt-032162a625,2026-09-08T12:13:19Z,psp_c,In-house risk engine,evt-d6e77d3e8abf,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-01238,0.26,Low,MONITOR,in_progress,false_positive,60
+alrt-c400014f79,2026-09-08T12:17:27Z,bank_b,Vendor SIEM (rules only),evt-e0a61cecba5f,ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00061,0.35,Low,MONITOR,closed,false_positive,1836
+alrt-06b1a0f8b3,2026-09-08T12:59:42Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-4b0cab8e5bfc,AMT_ELEVATED|BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-00542,0.41,Low,MONITOR,closed,false_positive,3288
+alrt-0cfc40d590,2026-09-08T13:33:08Z,bank_b,Vendor SIEM (rules only),evt-af7206817cb5,BEN_NEW_BENEFICIARY|ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00554,0.5,Medium,REVIEW,new,benign_true_positive,246
+alrt-c00319c786,2026-09-08T13:49:12Z,psp_c,In-house risk engine,evt-42a8b24be3c6,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-03197,0.26,Low,MONITOR,new,pending,3590
+alrt-c88770d8c8,2026-09-08T14:45:34Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-021e9aecacd6,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01476,0.35,Low,MONITOR,in_progress,false_positive,265
+alrt-531cf5e3b5,2026-09-08T15:10:16Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-87c5a788d7f3,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-02393,0.35,Low,MONITOR,closed,false_positive,3452
+alrt-26cf1bd3a3,2026-09-08T16:27:15Z,bank_b,Vendor SIEM (rules only),evt-fccabba62fd3,BEN_NEW_BENEFICIARY|ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00255,0.5,Medium,REVIEW,closed,false_positive,2645
+alrt-d6f05f952a,2026-09-08T16:35:48Z,bank_b,Vendor SIEM (rules only),evt-80eb6d698857,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,bank_b-acct-00591,0.26,Low,MONITOR,closed,pending,3959
+alrt-056a11cd49,2026-09-08T17:30:38Z,bank_b,Vendor SIEM (rules only),evt-1f0f3f138e20,DEV_UNRECOGNISED_DEVICE|VEL_BURST_1H,account,bank_b-acct-00575,0.3,Low,MONITOR,new,pending,3715
+alrt-80056ddfde,2026-09-08T18:35:53Z,psp_c,In-house risk engine,evt-68c1c4a2b3e4,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-00560,0.27,Low,MONITOR,closed,pending,3100
+alrt-0c8ac3003f,2026-09-08T19:53:48Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-09b153ff78a7,BEN_NEW_BENEFICIARY|ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-00575,0.5,Medium,REVIEW,new,false_positive,2590
+alrt-70a3cbeac5,2026-09-08T20:37:54Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-78c006c8bb9d,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-02513,0.29,Low,MONITOR,in_progress,false_positive,2929
+alrt-2c430c5e2a,2026-09-08T21:24:49Z,psp_c,In-house risk engine,evt-50fc2f597bdc,AMT_ELEVATED|VEL_BURST_1H,account,psp_c-acct-00863,0.28,Low,MONITOR,in_progress,false_positive,2122
+alrt-36da025bca,2026-09-08T21:40:22Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-8c94a074f3df,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,bank_a-acct-02197,0.37,Low,MONITOR,closed,pending,1772
+alrt-cb41febaa1,2026-09-09T00:36:12Z,psp_c,In-house risk engine,evt-73a1af837741,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-00260,0.25,Low,MONITOR,new,false_positive,1575
+alrt-1c876fb864,2026-09-09T00:42:45Z,bank_b,Vendor SIEM (rules only),evt-1d4be8ab4453,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_b-acct-00406,0.25,Low,MONITOR,new,benign_true_positive,3573
+alrt-75445ebe35,2026-09-09T00:55:46Z,psp_c,In-house risk engine,evt-679cc22e6a5e,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-01727,0.25,Low,MONITOR,closed,false_positive,1657
+alrt-29f2f8b889,2026-09-09T01:12:38Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-0f9a1c0f89f9,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-01157,0.25,Low,MONITOR,new,false_positive,331
+alrt-7069cd8a44,2026-09-09T02:22:36Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-8c2454936d01,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-02255,0.25,Low,MONITOR,in_progress,false_positive,2614
+alrt-fac392a388,2026-09-09T02:41:43Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-25a6ea3ddaee,AMT_HIGH_VALUE|TIME_OFF_HOURS,account,bank_a-acct-01973,0.32,Low,MONITOR,new,false_positive,2515
+alrt-73f8602b46,2026-09-09T02:46:49Z,psp_c,In-house risk engine,evt-618b3e5f53ff,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-00722,0.25,Low,MONITOR,in_progress,false_positive,846
+alrt-6a7eb0758a,2026-09-09T03:24:28Z,bank_b,Vendor SIEM (rules only),evt-246a48536715,TIME_OFF_HOURS|VEL_BURST_1H,account,bank_b-acct-00705,0.26,Low,MONITOR,new,false_positive,4140
+alrt-ee0265ec2b,2026-09-09T07:29:17Z,psp_c,In-house risk engine,evt-a6c6b8d65b99,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-04124,0.35,Low,MONITOR,closed,false_positive,2166
+alrt-994fb9bead,2026-09-09T07:58:29Z,psp_c,In-house risk engine,evt-2d14379871a0,DEV_UNRECOGNISED_DEVICE|VEL_BURST_1H,account,psp_c-acct-02724,0.3,Low,MONITOR,new,benign_true_positive,2712
+alrt-085d78db2a,2026-09-09T10:28:02Z,bank_b,Vendor SIEM (rules only),evt-b44757740d13,ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00659,0.35,Low,MONITOR,closed,false_positive,4171
+alrt-1161fe1144,2026-09-09T14:00:45Z,psp_c,In-house risk engine,evt-1ece12f307a8,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-00835,0.36,Low,MONITOR,new,benign_true_positive,3535
+alrt-48982af4e6,2026-09-09T14:35:17Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-b7d6f961a7c1,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-01550,0.29,Low,MONITOR,closed,false_positive,3034
+alrt-0cbc8fd9b0,2026-09-09T15:22:16Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-1a51ff4f4256,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-00273,0.27,Low,MONITOR,closed,pending,3406
+alrt-e323416559,2026-09-09T15:35:10Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-850a11a2a115,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-00698,0.26,Low,MONITOR,closed,pending,3162
+alrt-fda2613581,2026-09-09T16:02:14Z,psp_c,In-house risk engine,evt-e4b8274933d9,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-02775,0.29,Low,MONITOR,closed,false_positive,3433
+alrt-c12c66d4c9,2026-09-09T16:16:05Z,sacco_d,Core banking alerts only,evt-09b1a3584168,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,sacco_d-acct-00413,0.27,Low,MONITOR,in_progress,false_positive,3850
+alrt-f0011e3fb3,2026-09-09T16:22:26Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-829dc1f131e8,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-02443,0.29,Low,MONITOR,in_progress,false_positive,2490
+alrt-39cf7697e9,2026-09-09T17:05:18Z,psp_c,In-house risk engine,evt-df49be3356dd,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-00975,0.35,Low,MONITOR,in_progress,false_positive,4015
+alrt-a445b11599,2026-09-09T17:40:45Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-eb698edff2fa,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01014,0.35,Low,MONITOR,new,false_positive,3776
+alrt-5d50ecfca8,2026-09-09T18:49:52Z,bank_b,Vendor SIEM (rules only),evt-c3a0ed84c1aa,ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00680,0.35,Low,MONITOR,closed,benign_true_positive,2898
+alrt-2f0f12423a,2026-09-09T19:35:45Z,psp_c,In-house risk engine,evt-053ec4aaaae1,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,psp_c-acct-00160,0.31,Low,MONITOR,new,false_positive,722
+alrt-b4e6651c80,2026-09-09T19:45:17Z,psp_c,In-house risk engine,evt-85c42d3aaad0,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,psp_c-acct-00260,0.37,Low,MONITOR,new,benign_true_positive,4159
+alrt-10e4763d13,2026-09-09T20:48:42Z,psp_c,In-house risk engine,evt-2c8e54e2f814,BEN_NEW_BENEFICIARY|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-04182,0.5,Medium,REVIEW,in_progress,false_positive,760
+alrt-00560fecd6,2026-09-09T21:38:19Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-abe3df2753e5,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-01804,0.27,Low,MONITOR,new,benign_true_positive,1940
+alrt-a12256c3f9,2026-09-10T01:40:18Z,bank_b,Vendor SIEM (rules only),evt-634f1c651b5f,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_b-acct-00600,0.25,Low,MONITOR,closed,false_positive,3548
+alrt-dd74be7ceb,2026-09-10T02:16:33Z,bank_b,Vendor SIEM (rules only),evt-a8bf389a098f,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_b-acct-00687,0.25,Low,MONITOR,new,false_positive,3532
+alrt-d3a796ec95,2026-09-10T03:10:34Z,psp_c,In-house risk engine,evt-5036583d6456,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-00999,0.25,Low,MONITOR,new,pending,1991
+alrt-7b654daae3,2026-09-10T04:59:20Z,sacco_d,Core banking alerts only,evt-c364d3a2fd09,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,sacco_d-acct-00286,0.25,Low,MONITOR,new,pending,2019
+alrt-f290f54525,2026-09-10T07:57:03Z,bank_b,Vendor SIEM (rules only),evt-fece558aacd0,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,bank_b-acct-00421,0.37,Low,MONITOR,closed,pending,920
+alrt-80520bc0ae,2026-09-10T09:22:44Z,bank_b,Vendor SIEM (rules only),evt-70eeff84b6f1,VEL_BURST_1H|ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00864,0.51,Medium,REVIEW,in_progress,benign_true_positive,2581
+alrt-9ea44e28b0,2026-09-10T10:06:12Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-d3656e77a596,AMT_ELEVATED|ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-00908,0.47,Medium,REVIEW,in_progress,false_positive,1981
+alrt-fc197bc54f,2026-09-10T10:57:34Z,bank_b,Vendor SIEM (rules only),evt-55d581023ed8,DEV_UNRECOGNISED_DEVICE|VEL_BURST_1H,account,bank_b-acct-00354,0.3,Low,MONITOR,new,benign_true_positive,2216
+alrt-acd79eb8f9,2026-09-10T12:33:28Z,sacco_d,Core banking alerts only,evt-90aa5bada0eb,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,sacco_d-acct-00183,0.27,Low,MONITOR,new,false_positive,3562
+alrt-1d145974bc,2026-09-10T13:08:10Z,psp_c,In-house risk engine,evt-7c6f9294ee93,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-01172,0.35,Low,MONITOR,closed,false_positive,3440
+alrt-c38aac439c,2026-09-10T13:31:01Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-16ba9afb2a71,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-02142,0.27,Low,MONITOR,new,benign_true_positive,932
+alrt-c7f132df6b,2026-09-10T13:48:35Z,psp_c,In-house risk engine,evt-1a8cebcbe476,DEV_UNRECOGNISED_DEVICE|VEL_BURST_1H,account,psp_c-acct-04137,0.3,Low,MONITOR,new,false_positive,217
+alrt-3ac025eeed,2026-09-10T14:00:10Z,bank_b,Vendor SIEM (rules only),evt-6bde3274325a,BEN_NEW_BENEFICIARY|DEV_ROOTED_DEVICE,account,bank_b-acct-00672,0.27,Low,MONITOR,new,true_positive,1561
+alrt-a7be09afe3,2026-09-10T14:09:57Z,psp_c,In-house risk engine,evt-8d531c541d9b,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,psp_c-acct-01833,0.37,Low,MONITOR,in_progress,false_positive,1701
+alrt-6806c8ad03,2026-09-10T14:34:50Z,sacco_d,Core banking alerts only,evt-e6a1f3f46d5c,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,sacco_d-acct-00379,0.27,Low,MONITOR,closed,true_positive,2342
+alrt-17a754394a,2026-09-10T15:08:40Z,bank_b,Vendor SIEM (rules only),evt-370bbee1aa9b,AMT_ELEVATED|BEN_NEW_BENEFICIARY|DEV_ROOTED_DEVICE,account,bank_b-acct-00559,0.39,Low,MONITOR,in_progress,true_positive,2857
+alrt-8dd9f72bba,2026-09-10T15:42:13Z,sacco_d,Core banking alerts only,evt-9c73cc3e220a,BEN_NEW_BENEFICIARY|DEV_ROOTED_DEVICE,account,sacco_d-acct-00196,0.27,Low,MONITOR,new,true_positive,1702
+alrt-7259323dc9,2026-09-10T16:14:24Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-2701cb67df3b,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01736,0.35,Low,MONITOR,new,benign_true_positive,1873
+alrt-a4e0e1b010,2026-09-10T16:16:33Z,bank_b,Vendor SIEM (rules only),evt-a86380593d5e,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00439,0.27,Low,MONITOR,in_progress,true_positive,4070
+alrt-8857906218,2026-09-10T16:22:36Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-d6a5486074e4,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-02127,0.35,Low,MONITOR,closed,false_positive,3632
+alrt-40ede08872,2026-09-10T16:27:54Z,psp_c,In-house risk engine,evt-3ad86a219020,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-01112,0.35,Low,MONITOR,in_progress,pending,3898
+alrt-a6247fd23d,2026-09-10T16:55:16Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-a3b70b05f5da,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-02211,0.35,Low,MONITOR,new,benign_true_positive,458
+alrt-94e6d01040,2026-09-10T17:10:37Z,psp_c,In-house risk engine,evt-753d10964847,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE|VEL_BURST_1H,account,psp_c-acct-03752,0.52,Medium,REVIEW,in_progress,benign_true_positive,2984
+alrt-2a57cacb22,2026-09-10T17:12:59Z,psp_c,In-house risk engine,evt-7dc08d7f6f3c,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03190,0.35,Low,MONITOR,closed,false_positive,1984
+alrt-b5a081f05c,2026-09-10T17:24:07Z,bank_b,Vendor SIEM (rules only),evt-f011631c4a24,BEN_NEW_BENEFICIARY|DEV_EMULATOR_DETECTED,account,bank_b-acct-00122,0.35,Low,MONITOR,closed,true_positive,2937
+alrt-906c3414ce,2026-09-10T17:58:01Z,sacco_d,Core banking alerts only,evt-2cbbb8622ec2,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,sacco_d-acct-00140,0.27,Low,MONITOR,closed,true_positive,4013
+alrt-849463d2ba,2026-09-10T18:42:26Z,psp_c,In-house risk engine,evt-095bb755eeb0,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,psp_c-acct-04134,0.37,Low,MONITOR,in_progress,false_positive,1659
+alrt-04272e2fef,2026-09-10T19:59:29Z,psp_c,In-house risk engine,evt-3833ab6a36e5,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-00786,0.35,Low,MONITOR,closed,pending,3112
+alrt-7100fd5493,2026-09-10T20:08:13Z,psp_c,In-house risk engine,evt-ab8731f20772,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-03600,0.29,Low,MONITOR,closed,false_positive,830
+alrt-9394b4ce78,2026-09-10T21:01:18Z,psp_c,In-house risk engine,evt-ca063a401f9e,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,psp_c-acct-00417,0.37,Low,MONITOR,in_progress,benign_true_positive,3777
+alrt-e5ec9b1099,2026-09-10T22:15:07Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-a11013efeda7,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,bank_a-acct-01342,0.31,Low,MONITOR,in_progress,pending,2002
+alrt-60030ca63d,2026-09-10T22:36:59Z,sacco_d,Core banking alerts only,evt-c4af3950a966,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,sacco_d-acct-00175,0.29,Low,MONITOR,new,false_positive,3976
+alrt-5c23f7df81,2026-09-10T22:51:00Z,psp_c,In-house risk engine,evt-46dbea19a9b9,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03468,0.35,Low,MONITOR,in_progress,benign_true_positive,1727
+alrt-7399e91867,2026-09-11T00:28:01Z,psp_c,In-house risk engine,evt-3bb8d6c41566,TIME_OFF_HOURS|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-02362,0.45,Medium,REVIEW,closed,false_positive,1133
+alrt-5cfc61a32e,2026-09-11T00:31:20Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-6287ea4bdff2,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-02083,0.25,Low,MONITOR,closed,benign_true_positive,4011
+alrt-5ab0bb3f70,2026-09-11T02:38:44Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-77d03c8ca360,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-00598,0.25,Low,MONITOR,new,false_positive,1498
+alrt-59cf071376,2026-09-11T03:54:08Z,sacco_d,Core banking alerts only,evt-f0662aedfa5a,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE|TIME_OFF_HOURS,account,sacco_d-acct-00139,0.36,Low,MONITOR,new,benign_true_positive,428
+alrt-1b916f44a0,2026-09-11T04:10:10Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-4441b7933311,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-02308,0.25,Low,MONITOR,closed,false_positive,1564
+alrt-d8fcb225af,2026-09-11T04:18:05Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-b6534360c60e,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-00845,0.25,Low,MONITOR,closed,benign_true_positive,3239
+alrt-ec06f9b3f0,2026-09-11T04:40:49Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-18bcbd22b86e,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-01311,0.25,Low,MONITOR,closed,benign_true_positive,2429
+alrt-72d6bfbbf2,2026-09-11T04:50:33Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-2076ce7a65e3,AMT_ELEVATED|TIME_OFF_HOURS|ACCT_NEW_INBOUND,account,bank_a-acct-00122,0.3,Low,MONITOR,in_progress,false_positive,3355
+alrt-f754517be6,2026-09-11T07:22:40Z,psp_c,In-house risk engine,evt-320032968a65,DEV_UNRECOGNISED_DEVICE|VEL_BURST_1H,account,psp_c-acct-01679,0.3,Low,MONITOR,new,pending,893
+alrt-ed21d1f50b,2026-09-11T07:35:22Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-490068443f09,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01118,0.35,Low,MONITOR,in_progress,benign_true_positive,1677
+alrt-69279594ce,2026-09-11T08:41:11Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-7d14432868a2,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-00745,0.26,Low,MONITOR,new,false_positive,818
+alrt-ee8cc84257,2026-09-11T09:39:28Z,bank_b,Vendor SIEM (rules only),evt-fa85cd1cae3d,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00606,0.27,Low,MONITOR,closed,benign_true_positive,2942
+alrt-dce341e34d,2026-09-11T10:57:58Z,psp_c,In-house risk engine,evt-9bd635393041,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03977,0.35,Low,MONITOR,closed,false_positive,2087
+alrt-5e73463105,2026-09-11T12:07:25Z,psp_c,In-house risk engine,evt-9c6f96f95733,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-00403,0.29,Low,MONITOR,new,false_positive,1803
+alrt-56dd696386,2026-09-11T12:55:07Z,bank_b,Vendor SIEM (rules only),evt-17b3a55593b9,ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00083,0.35,Low,MONITOR,new,pending,1168
+alrt-4972a97048,2026-09-11T13:11:56Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-57297db3258e,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-00304,0.29,Low,MONITOR,new,benign_true_positive,3691
+alrt-40feeaf6ec,2026-09-11T13:13:27Z,psp_c,In-house risk engine,evt-fac051e1c7e6,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-03565,0.26,Low,MONITOR,new,false_positive,4192
+alrt-3e143c6099,2026-09-11T13:25:17Z,psp_c,In-house risk engine,evt-b4e22c2094b1,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-03828,0.27,Low,MONITOR,in_progress,false_positive,910
+alrt-6fac67686b,2026-09-11T14:47:13Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-18c690b3645b,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,bank_a-acct-01194,0.29,Low,MONITOR,closed,benign_true_positive,3912
+alrt-84d70def11,2026-09-11T15:49:08Z,sacco_d,Core banking alerts only,evt-b1bd42b69bec,AMT_ELEVATED|VEL_BURST_1H,account,sacco_d-acct-00496,0.28,Low,MONITOR,closed,false_positive,3535
+alrt-6903502ac8,2026-09-11T16:52:00Z,psp_c,In-house risk engine,evt-69d8e05ee889,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-02965,0.35,Low,MONITOR,closed,false_positive,859
+alrt-be68aa9a3e,2026-09-11T17:07:19Z,bank_b,Vendor SIEM (rules only),evt-e9900cec1b3b,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00840,0.27,Low,MONITOR,new,benign_true_positive,4166
+alrt-cfa39405bc,2026-09-11T18:42:15Z,bank_b,Vendor SIEM (rules only),evt-db3be10a1a43,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00213,0.27,Low,MONITOR,closed,false_positive,2347
+alrt-7443344221,2026-09-11T19:45:47Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-99ce28cb5754,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,bank_a-acct-02554,0.31,Low,MONITOR,new,false_positive,2746
+alrt-6510857aa2,2026-09-11T21:52:55Z,sacco_d,Core banking alerts only,evt-6c2df549d31f,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,sacco_d-acct-00483,0.29,Low,MONITOR,closed,false_positive,2271
+alrt-6a02d2a103,2026-09-11T22:30:11Z,psp_c,In-house risk engine,evt-197836a92704,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,psp_c-acct-03622,0.37,Low,MONITOR,closed,pending,806
+alrt-fcfafac49e,2026-09-11T22:36:53Z,psp_c,In-house risk engine,evt-9430cc8b7a7b,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-02289,0.27,Low,MONITOR,closed,false_positive,2042
+alrt-deef930ecc,2026-09-11T22:43:40Z,psp_c,In-house risk engine,evt-bce8152e7a8e,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-00512,0.35,Low,MONITOR,in_progress,false_positive,917
+alrt-acab747e28,2026-09-12T00:23:31Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-746f291792a4,TIME_OFF_HOURS|VEL_BURST_1H,account,bank_a-acct-00485,0.26,Low,MONITOR,closed,benign_true_positive,2396
+alrt-0b4056621b,2026-09-12T00:50:59Z,sacco_d,Core banking alerts only,evt-3c6a5227a9eb,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,sacco_d-acct-00343,0.25,Low,MONITOR,new,benign_true_positive,354
+alrt-b02d96a203,2026-09-12T02:21:54Z,bank_b,Vendor SIEM (rules only),evt-22d8c11629f5,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_b-acct-00152,0.25,Low,MONITOR,closed,false_positive,454
+alrt-f7aff050a3,2026-09-12T02:36:27Z,sacco_d,Core banking alerts only,evt-be00e81f0df6,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,sacco_d-acct-00354,0.25,Low,MONITOR,closed,false_positive,447
+alrt-f4b85c1aee,2026-09-12T03:48:51Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-d42bc7bb8ba3,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-00880,0.25,Low,MONITOR,in_progress,false_positive,628
+alrt-873e62f6b8,2026-09-12T04:37:53Z,psp_c,In-house risk engine,evt-bea42847b047,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-01356,0.25,Low,MONITOR,closed,false_positive,2251
+alrt-d57e940033,2026-09-12T04:54:07Z,psp_c,In-house risk engine,evt-64b712cb6cfa,AMT_HIGH_VALUE|TIME_OFF_HOURS,account,psp_c-acct-00687,0.32,Low,MONITOR,in_progress,pending,3518
+alrt-cd083d24f1,2026-09-12T07:24:12Z,bank_b,Vendor SIEM (rules only),evt-59d99c8d91a8,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00061,0.27,Low,MONITOR,new,pending,1272
+alrt-406e303232,2026-09-12T09:43:50Z,psp_c,In-house risk engine,evt-df8280417ca4,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-01252,0.35,Low,MONITOR,closed,pending,3247
+alrt-e385d1c853,2026-09-12T10:49:17Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-a16be2528bec,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,bank_a-acct-01290,0.31,Low,MONITOR,closed,false_positive,995
+alrt-f0d5cfa888,2026-09-12T11:47:24Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-1f08b059381f,BEN_NEW_BENEFICIARY|ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-00916,0.5,Medium,REVIEW,new,false_positive,954
+alrt-9426376709,2026-09-12T11:58:24Z,bank_b,Vendor SIEM (rules only),evt-dc7fb418c7e4,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE,account,bank_b-acct-00103,0.36,Low,MONITOR,closed,pending,1216
+alrt-9eabfa53f2,2026-09-12T13:17:31Z,psp_c,In-house risk engine,evt-a16b39d8b9d9,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,psp_c-acct-00743,0.31,Low,MONITOR,in_progress,pending,809
+alrt-2f6e183f3c,2026-09-12T14:18:51Z,psp_c,In-house risk engine,evt-5a52f267df7e,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,psp_c-acct-01506,0.31,Low,MONITOR,closed,false_positive,440
+alrt-c8a21ea27d,2026-09-12T15:08:50Z,sacco_d,Core banking alerts only,evt-a227976d4345,ANOM_STATISTICAL_OUTLIER,account,sacco_d-acct-00152,0.35,Low,MONITOR,new,benign_true_positive,4160
+alrt-232832749b,2026-09-12T16:57:13Z,psp_c,In-house risk engine,evt-24e7a5bceae1,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-00405,0.36,Low,MONITOR,in_progress,benign_true_positive,2136
+alrt-d3ef0ac6f5,2026-09-12T17:29:07Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-b7d4627b2c0f,AMT_ELEVATED|VEL_BURST_1H,account,bank_a-acct-01027,0.28,Low,MONITOR,in_progress,benign_true_positive,196
+alrt-da7c6425e8,2026-09-12T17:56:49Z,psp_c,In-house risk engine,evt-0231fe3b1ded,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-04056,0.35,Low,MONITOR,closed,false_positive,2696
+alrt-120e6c3179,2026-09-12T18:36:01Z,psp_c,In-house risk engine,evt-3d8958a89b01,BEN_NEW_BENEFICIARY|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-04083,0.5,Medium,REVIEW,in_progress,false_positive,391
+alrt-f59e7584d9,2026-09-12T19:12:54Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-af0c7eb29ee4,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE|ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-00054,0.61,Medium,REVIEW,closed,pending,1427
+alrt-257756923c,2026-09-12T20:32:19Z,psp_c,In-house risk engine,evt-1ee9a701320e,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-01341,0.35,Low,MONITOR,in_progress,false_positive,899
+alrt-2430bfb034,2026-09-12T20:48:00Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-7c375aa227ba,AMT_ELEVATED|VEL_BURST_1H,account,bank_a-acct-02508,0.28,Low,MONITOR,new,benign_true_positive,2656
+alrt-76aa4d3824,2026-09-12T22:09:21Z,sacco_d,Core banking alerts only,evt-fb92c87a498f,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,sacco_d-acct-00451,0.26,Low,MONITOR,new,false_positive,711
+alrt-90f6c2b039,2026-09-13T00:44:09Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-10d31f65e6dd,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-01289,0.25,Low,MONITOR,closed,false_positive,4048
+alrt-e63e0e9c30,2026-09-13T01:03:31Z,bank_b,Vendor SIEM (rules only),evt-64944d4193e5,AMT_HIGH_VALUE|TIME_OFF_HOURS,account,bank_b-acct-00207,0.32,Low,MONITOR,in_progress,false_positive,1555
+alrt-304344894d,2026-09-13T01:49:28Z,bank_b,Vendor SIEM (rules only),evt-95b3437fe1fd,AMT_HIGH_VALUE|TIME_OFF_HOURS,account,bank_b-acct-00160,0.32,Low,MONITOR,closed,false_positive,1858
+alrt-edfa5b705c,2026-09-13T02:02:34Z,bank_b,Vendor SIEM (rules only),evt-216f53702dc1,TIME_OFF_HOURS|ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00398,0.45,Medium,REVIEW,in_progress,false_positive,2825
+alrt-ab5db84fa4,2026-09-13T02:28:15Z,psp_c,In-house risk engine,evt-f2f7872afe58,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-01763,0.25,Low,MONITOR,in_progress,benign_true_positive,727
+alrt-a79ca227a8,2026-09-13T03:39:41Z,psp_c,In-house risk engine,evt-c00fee810584,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-02173,0.25,Low,MONITOR,closed,benign_true_positive,2878
+alrt-7259c0da9e,2026-09-13T04:22:49Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-9184993db289,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-02061,0.25,Low,MONITOR,in_progress,false_positive,22
+alrt-d86d9a79eb,2026-09-13T04:40:26Z,bank_b,Vendor SIEM (rules only),evt-3bcb4dcf60d0,TIME_OFF_HOURS|ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00427,0.45,Medium,REVIEW,new,pending,2747
+alrt-f0020ced75,2026-09-13T07:50:54Z,bank_b,Vendor SIEM (rules only),evt-e2a8199ed2ff,ANOM_STATISTICAL_OUTLIER,account,bank_b-acct-00276,0.35,Low,MONITOR,new,pending,39
+alrt-3574d83c91,2026-09-13T08:13:05Z,sacco_d,Core banking alerts only,evt-607305748574,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,sacco_d-acct-00401,0.27,Low,MONITOR,in_progress,benign_true_positive,2495
+alrt-ee69c57495,2026-09-13T08:47:46Z,bank_b,Vendor SIEM (rules only),evt-db640c9674db,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00696,0.27,Low,MONITOR,new,benign_true_positive,3066
+alrt-aeaf85735a,2026-09-13T08:56:35Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-685e7ef6d110,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-02044,0.27,Low,MONITOR,new,benign_true_positive,3745
+alrt-0c885cc69f,2026-09-13T08:59:50Z,bank_b,Vendor SIEM (rules only),evt-14d5a4e0e746,DEV_UNRECOGNISED_DEVICE|VEL_BURST_1H,account,bank_b-acct-00380,0.3,Low,MONITOR,new,benign_true_positive,3743
+alrt-44aeb803df,2026-09-13T09:28:31Z,bank_b,Vendor SIEM (rules only),evt-f5dceab84d55,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00393,0.27,Low,MONITOR,in_progress,false_positive,1161
+alrt-666584478c,2026-09-13T09:46:13Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-5cd4ee9a7585,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-02039,0.35,Low,MONITOR,new,benign_true_positive,1196
+alrt-ec095bab72,2026-09-13T09:48:55Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-9c2e358cc13b,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE|ACCT_NEW_INBOUND,account,bank_a-acct-02155,0.34,Low,MONITOR,closed,pending,363
+alrt-9f04a8b514,2026-09-13T11:27:49Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-c24d9044bead,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-00571,0.27,Low,MONITOR,new,false_positive,3753
+alrt-66b8fee102,2026-09-13T11:53:03Z,psp_c,In-house risk engine,evt-23d791dfd1ed,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-00758,0.29,Low,MONITOR,new,benign_true_positive,264
+alrt-a85f4f4b9c,2026-09-13T15:08:34Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-96693c6f5d2f,AMT_ELEVATED|VEL_BURST_1H,account,bank_a-acct-01998,0.28,Low,MONITOR,closed,false_positive,1934
+alrt-d296e36ac7,2026-09-13T15:58:18Z,psp_c,In-house risk engine,evt-a1cfe209558d,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03140,0.35,Low,MONITOR,in_progress,false_positive,2713
+alrt-9b5c16cc61,2026-09-13T17:35:35Z,bank_b,Vendor SIEM (rules only),evt-f16ed93b24f1,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_b-acct-00650,0.27,Low,MONITOR,closed,false_positive,2275
+alrt-32eea69063,2026-09-13T19:33:31Z,psp_c,In-house risk engine,evt-1abdca270a89,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-00369,0.26,Low,MONITOR,in_progress,false_positive,2154
+alrt-cebd0fbfc7,2026-09-13T19:47:10Z,psp_c,In-house risk engine,evt-cc5bb6f136f6,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-02195,0.35,Low,MONITOR,new,false_positive,67
+alrt-6bcd193213,2026-09-13T20:28:19Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-95ea264d2ffb,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-02561,0.35,Low,MONITOR,in_progress,false_positive,3360
+alrt-c4eb0df71f,2026-09-13T20:56:19Z,psp_c,In-house risk engine,evt-db34b39f1ec7,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-03950,0.27,Low,MONITOR,closed,false_positive,1793
+alrt-1d40e3051d,2026-09-13T20:59:42Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-548c40503a34,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-00643,0.27,Low,MONITOR,in_progress,benign_true_positive,2706
+alrt-ee5576f196,2026-09-13T21:10:45Z,psp_c,In-house risk engine,evt-2c2aa19d71d3,AMT_ELEVATED|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-00511,0.26,Low,MONITOR,in_progress,false_positive,2629
+alrt-20e2884eb0,2026-09-13T21:23:22Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-10a0edba0694,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01562,0.35,Low,MONITOR,in_progress,benign_true_positive,1217
+alrt-139baf02f5,2026-09-13T21:31:25Z,sacco_d,Core banking alerts only,evt-b8526c4d832a,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,sacco_d-acct-00272,0.31,Low,MONITOR,in_progress,false_positive,782
+alrt-07874e123a,2026-09-13T21:36:02Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-6bb0b4bf2196,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-00296,0.35,Low,MONITOR,new,false_positive,736
+alrt-ca4202d92b,2026-09-14T01:16:06Z,psp_c,In-house risk engine,evt-8e34d2bf529c,TIME_OFF_HOURS|VEL_BURST_1H,account,psp_c-acct-02271,0.26,Low,MONITOR,new,false_positive,2702
+alrt-7d0c5c633b,2026-09-14T02:09:12Z,bank_b,Vendor SIEM (rules only),evt-383a41a34483,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_b-acct-00884,0.25,Low,MONITOR,in_progress,false_positive,4124
+alrt-66b63dfcf7,2026-09-14T03:47:16Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-1eabceb7be8f,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,bank_a-acct-02276,0.25,Low,MONITOR,closed,pending,2072
+alrt-c926ebe5ba,2026-09-14T03:48:24Z,psp_c,In-house risk engine,evt-cfa9d0f5b9ec,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-01824,0.25,Low,MONITOR,new,benign_true_positive,1670
+alrt-5cb004d55d,2026-09-14T04:52:48Z,psp_c,In-house risk engine,evt-9413dd6322a4,TIME_OFF_HOURS|VEL_BURST_1H,account,psp_c-acct-02096,0.26,Low,MONITOR,new,pending,3007
+alrt-2325f78524,2026-09-14T04:57:54Z,psp_c,In-house risk engine,evt-27c9dac3decd,BEN_NEW_BENEFICIARY|TIME_OFF_HOURS,account,psp_c-acct-03817,0.25,Low,MONITOR,in_progress,pending,1766
+alrt-2c320d48e7,2026-09-14T07:13:52Z,sacco_d,Core banking alerts only,evt-ccda5a2eef74,BEN_NEW_BENEFICIARY|ANOM_STATISTICAL_OUTLIER,account,sacco_d-acct-00214,0.5,Medium,REVIEW,closed,benign_true_positive,813
+alrt-745f7f622e,2026-09-14T08:17:54Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-76d7162e0440,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-01133,0.27,Low,MONITOR,closed,benign_true_positive,2069
+alrt-86af94383f,2026-09-14T08:31:16Z,psp_c,In-house risk engine,evt-aabe1954f5de,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-00269,0.27,Low,MONITOR,closed,false_positive,947
+alrt-0604cccbca,2026-09-14T09:30:27Z,sacco_d,Core banking alerts only,evt-c9b5ffcc1067,ANOM_STATISTICAL_OUTLIER,account,sacco_d-acct-00436,0.35,Low,MONITOR,new,false_positive,1489
+alrt-571ca2603e,2026-09-14T09:40:55Z,psp_c,In-house risk engine,evt-eca92faaab35,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,psp_c-acct-04142,0.37,Low,MONITOR,new,false_positive,1283
+alrt-0b3da7d2aa,2026-09-14T09:48:30Z,psp_c,In-house risk engine,evt-58ce66fda706,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-02791,0.35,Low,MONITOR,closed,benign_true_positive,1709
+alrt-d61f0e2ae5,2026-09-14T10:30:23Z,psp_c,In-house risk engine,evt-16a73d9db2c1,AMT_HIGH_VALUE|ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-02964,0.57,Medium,REVIEW,in_progress,false_positive,1649
+alrt-7c62b5f2c6,2026-09-14T10:52:40Z,psp_c,In-house risk engine,evt-581acf6f247b,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-01199,0.35,Low,MONITOR,in_progress,benign_true_positive,1158
+alrt-31e20c15df,2026-09-14T12:33:11Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-b9fb75c73de1,ANOM_STATISTICAL_OUTLIER,account,bank_a-acct-01109,0.35,Low,MONITOR,closed,benign_true_positive,3900
+alrt-091cfc4d9a,2026-09-14T13:02:22Z,psp_c,In-house risk engine,evt-8f24744482fb,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-03340,0.27,Low,MONITOR,closed,false_positive,2701
+alrt-948563f932,2026-09-14T14:47:29Z,psp_c,In-house risk engine,evt-3606a77c1821,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03679,0.35,Low,MONITOR,closed,benign_true_positive,3971
+alrt-3a86ef58df,2026-09-14T15:00:55Z,psp_c,In-house risk engine,evt-7a82bef79820,AMT_HIGH_VALUE|BEN_NEW_BENEFICIARY,account,psp_c-acct-00328,0.37,Low,MONITOR,in_progress,false_positive,1103
+alrt-7c31d05d68,2026-09-14T15:29:31Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-6dbe5e1b2d32,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-00483,0.27,Low,MONITOR,closed,false_positive,3512
+alrt-a6f675f73c,2026-09-14T16:30:39Z,sacco_d,Core banking alerts only,evt-f8476f9c9917,BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,sacco_d-acct-00007,0.29,Low,MONITOR,new,false_positive,789
+alrt-4166b5b3d2,2026-09-14T16:48:43Z,psp_c,In-house risk engine,evt-a5c9ebd00011,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-02056,0.35,Low,MONITOR,new,false_positive,3495
+alrt-51679f8e4a,2026-09-14T16:50:07Z,psp_c,In-house risk engine,evt-54a8a55d4e01,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-03151,0.35,Low,MONITOR,in_progress,false_positive,1670
+alrt-708e9aa778,2026-09-14T17:53:20Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-0d7b161eae9d,BEN_NEW_BENEFICIARY|VEL_BURST_1H,account,bank_a-acct-01424,0.31,Low,MONITOR,closed,pending,733
+alrt-48edda6699,2026-09-14T18:49:24Z,sacco_d,Core banking alerts only,evt-0774b0215cfa,ANOM_STATISTICAL_OUTLIER,account,sacco_d-acct-00476,0.35,Low,MONITOR,new,false_positive,218
+alrt-169fdf3355,2026-09-14T19:44:29Z,psp_c,In-house risk engine,evt-d0021de72324,AMT_ELEVATED|BEN_NEW_BENEFICIARY|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-04018,0.41,Low,MONITOR,new,benign_true_positive,1398
+alrt-ff4dcf531a,2026-09-14T19:44:48Z,psp_c,In-house risk engine,evt-56858dd300bd,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-01316,0.35,Low,MONITOR,in_progress,false_positive,2129
+alrt-605af0f267,2026-09-14T20:35:34Z,psp_c,In-house risk engine,evt-bb8fc53420d5,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,psp_c-acct-02851,0.27,Low,MONITOR,closed,false_positive,3290
+alrt-7196eb7d0b,2026-09-14T20:54:59Z,psp_c,In-house risk engine,evt-67242c495846,ANOM_STATISTICAL_OUTLIER,account,psp_c-acct-02069,0.35,Low,MONITOR,new,false_positive,3865
+alrt-8ce993f713,2026-09-14T21:20:00Z,psp_c,In-house risk engine,evt-34738aa98e98,AMT_HIGH_VALUE|ACCT_NEW_INBOUND,account,psp_c-acct-04034,0.3,Low,MONITOR,new,pending,447
+alrt-7688121718,2026-09-14T22:38:40Z,psp_c,In-house risk engine,evt-93672c51ad65,AMT_HIGH_VALUE|DEV_UNRECOGNISED_DEVICE,account,psp_c-acct-03966,0.36,Low,MONITOR,in_progress,pending,4056
+alrt-f5c8ad844e,2026-09-14T22:46:41Z,bank_a,Microsoft Sentinel + in-house fraud engine,evt-0a7ce523e312,AMT_ELEVATED|BEN_NEW_BENEFICIARY,account,bank_a-acct-00385,0.27,Low,MONITOR,in_progress,benign_true_positive,2531
