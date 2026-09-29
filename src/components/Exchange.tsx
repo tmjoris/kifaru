@@ -1,0 +1,49 @@
+import { maskedFingerprint } from "../domain";
+import type { Transaction } from "../types";
+import { Card, Status } from "./Shared";
+
+/**
+ * The KIFARU exchange: the ecosystem-wide feed of protected fraud fingerprints.
+ * Deliberately shows every institution's shared indicators, not just the signed-in
+ * bank's own records, because the whole point of KIFARU is that intelligence
+ * discovered by one institution must be visible to every other participant.
+ */
+export function Exchange({ transactions, bankName, onOpen }: {
+  transactions: Transaction[]; bankName: (id: string) => string; onOpen: (key: string) => void;
+}) {
+  const fingerprints = transactions.filter((item) => item.destinationHash);
+  const matched = fingerprints.filter((item) => item.corroborationCount > 0);
+  const institutions = new Set(fingerprints.flatMap((item) => [item.sourceBank, item.destinationBank]));
+  const sorted = [...fingerprints].sort((a, b) => b.corroborationCount - a.corroborationCount || b.score - a.score);
+
+  return <div className="stack">
+    <Card title="Fraud intelligence exchange" subtitle="Detect &rarr; Fingerprint &rarr; Share &rarr; Match &rarr; Act. Every institution below publishes protected indicators, never raw customer data.">
+      <div className="grid metrics">
+        <div className="metric"><div className="metric-label"><span>Fingerprints shared</span></div>
+          <div className="metric-value">{fingerprints.length}</div>
+          <div className="metric-detail">Protected destination indicators on the exchange</div></div>
+        <div className="metric"><div className="metric-label"><span>Cross-institution matches</span></div>
+          <div className="metric-value">{matched.length}</div>
+          <div className="metric-detail">Fingerprints recognised by more than one institution</div></div>
+        <div className="metric"><div className="metric-label"><span>Institutions participating</span></div>
+          <div className="metric-value">{institutions.size}</div>
+          <div className="metric-detail">Banks, PSPs and SACCOs publishing or matching indicators</div></div>
+      </div>
+    </Card>
+    <Card title="Shared fingerprints" subtitle="Sorted by how many institutions have independently matched each indicator.">
+      {sorted.length ? <div className="fingerprint-grid">{sorted.map((item) => <button key={item.key} className="fingerprint-card" onClick={() => onOpen(item.key)}>
+        <div className="fingerprint-head">
+          <span className="mono fp-hash">{maskedFingerprint(item.destinationHash)}</span>
+          <Status status={item.validationStatus} />
+        </div>
+        <strong>{item.riskCode.label}</strong>
+        <span className="muted">Discovered by {bankName(item.sourceBank)} &middot; {item.score}% confidence</span>
+        <div className="fingerprint-foot">
+          {item.corroborationCount > 0
+            ? <span className="pill fraud">Matched by {item.corroborationCount} institution{item.corroborationCount === 1 ? "" : "s"}</span>
+            : <span className="pill review">Awaiting a match</span>}
+        </div>
+      </button>)}</div> : <p className="muted">No fingerprints have been published yet. Upload a CSV log or refresh backend data.</p>}
+    </Card>
+  </div>;
+}

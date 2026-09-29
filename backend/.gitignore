@@ -1,0 +1,8 @@
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+data/_replay_truth.json
+data/*.db-wal
+data/*.db-shm
