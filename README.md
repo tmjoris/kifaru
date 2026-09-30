@@ -27,6 +27,14 @@ The sign-in forms are demonstration gates. They do not provide production
 authentication or tenant authorization. Microsoft Entra ID is deliberately
 outside this prototype's scope.
 
+### Starting code
+
+The first two commits, `fa432c5` ("starting") and `81aeba3` ("separated the
+dashboards"), were pushed by GitHub user `bsylvia24-png` on 29 and 30 September
+2026. They add the starting prototype: a FastAPI backend, the synthetic
+datasets and scripts, and the first React dashboard. Every later commit is by
+`tmjoris`, beginning with the move of the backend to Go and Neon PostgreSQL.
+
 ## What the system does
 
 1. An institution submits a suspected fraud report through REST, webhook,
@@ -61,8 +69,10 @@ Every institution workspace therefore contains:
 - Knowledge-base information
 - Institution governance and threshold settings
 
-The institution selector contains the current Kenyan commercial-bank directory,
-along with the prototype's existing SACCO and payment-provider entries.
+The institution selector lists the four synthetic institutions behind the demo:
+Bank A, Bank B, PSP C (a mobile money provider) and SACCO D. The names are
+invented and every record is synthetic, so no real institution appears next to
+made-up fraud. The sign-in screen and each workspace header say so.
 Dense transaction tables prioritise decision fields on briefing-sized desktop
 screens and switch to labelled record cards on mobile. Full provenance and
 customer-reference details remain available in each investigation drawer.
@@ -239,6 +249,26 @@ The validation stores the reason codes, corroborating institutions, agent
 version, decision time, configuration version and plain-language explanation.
 The explanation describes the decision but never changes the score.
 
+### Device and network changes
+
+Fraudsters often change phones, SIM cards or networks to avoid detection.
+Kifaru picks this up in two ways:
+
+- **Within one institution.** The normaliser turns the institution's device and
+  network evidence into risk codes: `ip_country_changed` or `vpn_proxy_tor`
+  adds `IP-404` (access from a foreign or anonymising network), and
+  `is_emulator` or `is_rooted` adds `IP-403`. Institution rules such as
+  `NET_FOREIGN_ASN` and `DEV_UNRECOGNISED_DEVICE` map to the same codes.
+- **Across institutions.** A fraudster can use a new device at each
+  institution, but the stolen money still has to reach the same cash-out
+  account. Corroboration matches on that protected destination, so the reports
+  still link up. When another institution reported the same destination from a
+  different device fingerprint, the validation adds the reason code
+  `LINK:device_switch` and the explanation says so.
+
+`LINK:device_switch` explains a decision and carries no weight, so the scoring
+table above is unchanged.
+
 ## Alert lifecycle
 
 Alerts carrying a transferable amount request a hold. Events with no
@@ -371,6 +401,9 @@ The second migration creates the synthetic SOC event broker:
 - Processing status, report IDs, outcomes and failure details for every event
 - A 500-event safety cap between resets
 
+The third migration gives the four demo institutions invented names and removes
+the unused directory of real Kenyan institutions.
+
 Audit entries are written for validations, automatic and manual revalidation,
 alert decisions, configuration updates, threshold changes and knowledge-base
 changes.
@@ -401,14 +434,20 @@ The producer rotates through paired cross-institution scenarios:
 - SIM change followed by a new-device transfer
 - New mule account receiving and rapidly forwarding funds
 - New beneficiary followed by a high-value transfer
-- Credential reset from an unfamiliar device
+- Credential reset from an unfamiliar device on a foreign network, with no
+  money moved yet
 - An unusual but potentially legitimate payment requiring corroboration
+- A fraudster who uses a different device and network at each institution
+  before paying a fresh beneficiary
 
 Two consecutive events in a campaign share one protected destination artefact
-but originate from different institutions. The first SIM-swap report remains
-`INSUFFICIENT_EVIDENCE`; the matching report from another institution upgrades
-it to `VALIDATED_FRAUD`. This exercises Kifaru's automatic corroboration and
-revalidation path rather than merely changing dashboard counters.
+but originate from different institutions. The first report of a campaign
+usually remains `INSUFFICIENT_EVIDENCE`; the matching report from another
+institution upgrades it to `VALIDATED_FRAUD`. This exercises Kifaru's automatic
+corroboration and revalidation path rather than merely changing dashboard
+counters. The credential-reset campaign ends in an advisory alert, because no
+money has moved. The device-switch campaign ends in a hold alert that carries
+`LINK:device_switch`. The legitimate-payment campaign never reaches an alert.
 
 ```mermaid
 sequenceDiagram
@@ -512,6 +551,8 @@ The implementation is based on:
 - No alerts for weak or rejected outcomes
 - Real-time dashboard alert events
 - Advisory alerts for zero-amount events
+- Device and network change signals, and a cross-institution device-switch flag
+- Browser-side hashing of identifier columns in CSV uploads
 - Acknowledge, action and dispute lifecycle
 - Mandatory dispute comments and reporting-institution notifications
 - Unified institution views for received alerts, submitted flags and history
@@ -614,7 +655,9 @@ go test ./...
 The backend tests cover:
 
 - Clear identifier rejection
+- Cleartext identifier rejection in CSV uploads
 - Behavioural risk-code derivation
+- Device and network risk-code derivation
 - Advisory versus hold alert classification
 - Atomic PostgreSQL processing
 - Automatic revalidation after corroboration
@@ -628,6 +671,11 @@ The backend tests cover:
 - Cross-institution campaign pairing
 - Durable event retention and report processing
 - Stream reset cleanup
+- An advisory alert from the credential-reset campaign
+- A validated device-switch campaign flagged with `LINK:device_switch`
+
+The frontend tests also check that CSV identifier columns are hashed in the
+browser and that the CSV parser keeps quoted fields intact.
 
 GitHub Actions starts PostgreSQL 16, builds and tests the frontend, and runs the
 Go test suite on every push to `main` and every pull request.
@@ -649,6 +697,13 @@ even if a host does not apply single-page-application rewrites.
 ## Privacy and operating boundaries
 
 - Raw customer identifiers must not be submitted.
+- CSV uploads from the dashboard hash the identifier columns (`customer_ref`,
+  `customer`, `customer_name`, `account_number`, `destination_account`,
+  `destination_msisdn`, `msisdn`, `phone_number`) in the browser with
+  HMAC-SHA256 before sending. The API refuses any row whose identifier columns
+  still hold cleartext. The demo hashing key is public so that uploads from
+  different browsers can match; a real institution would keep its own key, set
+  through `VITE_UPLOAD_HASH_KEY`.
 - Kifaru stores protected artefacts and institution routing data.
 - Request bodies are not written to application logs.
 - Kifaru validates and alerts; it never executes a payment hold.
