@@ -20,7 +20,7 @@ npm run dev
 Open `http://127.0.0.1:5173`. In another terminal, start the validation API:
 
 ```bash
-python -m pip install -r backend/requirements.txt
+export DATABASE_URL='postgresql://...'
 npm run server
 ```
 
@@ -57,22 +57,22 @@ CSV uploads call the real prototype API. Role selection is not authentication,
 and bank filtering is client-side, not an authorization boundary. Connector
 inventory is illustrative and does not contact external systems. Institution
 threshold changes are persisted by the backend.
-Backend records and institution thresholds persist in SQLite and reload on refresh.
+Backend records and institution thresholds persist in Neon PostgreSQL and reload on refresh.
 Production use requires server-side authentication, tenant authorization,
-durable storage, and real action endpoints.
+and real action endpoints.
 
 ### Build and checks
 
 ```bash
 npm run build
 npm test
-python -m compileall -q backend/app backend/scripts
+cd backend && go test ./...
 npm run preview
 ```
 
-`npm run build` type-checks the app and produces `dist/`. Preview also proxies
-`/api` to the separately running backend. A production host must provide its
-own `/api` reverse proxy. Node 22.18+ (22.x) or Node 24+ is required.
+`npm run build` type-checks the app and produces `dist/`. Local preview proxies
+`/api` to the separately running backend. Production reads the Go API hostname
+from `VITE_API_URL`. Node 22.18+ (22.x) or Node 24+ is required.
 
 ## Contents
 
@@ -85,13 +85,19 @@ own `/api` reverse proxy. Node 22.18+ (22.x) or Node 24+ is required.
 ## Run the backend
 
 ```bash
-python -m pip install -r backend/requirements.txt
+export DATABASE_URL='postgresql://...'
 npm run server
 ```
 
-Then open `http://127.0.0.1:8000/health` or `http://127.0.0.1:8000/docs`.
-The backend's full usage, replay, scoring, and API documentation is in
+Then open `http://127.0.0.1:8000/health`.
+The backend's usage, migration, and API documentation is in
 `backend/README.md`. The `/v1/history` endpoint now also returns each
 report's `destination_account_hash`, `destination_msisdn_hash`,
 `corroborating_institutions`, and `corroboration_count`, which the dashboard
 uses to power the Exchange, Pipeline, and fraud-chain views.
+
+## Deploy on Render
+
+`render.yaml` provisions a Go web service and a Vite static site. Set
+`DATABASE_URL` on `kifaru-api` to the Neon pooled PostgreSQL connection string;
+the frontend receives the API hostname from the Blueprint automatically.

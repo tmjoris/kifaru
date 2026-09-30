@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: kifaru-api
+    runtime: go
+    rootDir: backend
+    buildCommand: mkdir -p bin && go build -o bin/kifaru-api .
+    startCommand: ./bin/kifaru-api
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+
+  - type: web
+    name: kifaru-frontend
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: kifaru-api
+          property: host
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
