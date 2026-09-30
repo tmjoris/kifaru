@@ -1259,7 +1259,7 @@ func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
 		{
 			eventType: "sim_swap_account_takeover", alertName: "SIM change followed by new-device transfer",
 			severity: "High", reporters: [2]string{"bank_a", "bank_b"}, destination: "psp_c",
-			riskCodes: []string{"ATO-460", "IP-401"}, amount: 48500, channel: "mobile_banking",
+			riskCodes: []string{"ATO-460"}, amount: 48500, channel: "mobile_banking",
 			tactics: []string{"CredentialAccess", "InitialAccess"}, techniques: []string{"T1078"},
 			evidence: map[string]any{"sim_swap_age_days": 0, "is_new_device": true, "is_new_beneficiary": true},
 		},
