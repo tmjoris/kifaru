@@ -402,9 +402,10 @@ The producer rotates through paired cross-institution scenarios:
 - An unusual but potentially legitimate payment requiring corroboration
 
 Two consecutive events in a campaign share one protected destination artefact
-but originate from different institutions. This exercises Kifaru's automatic
-corroboration and revalidation path rather than merely changing dashboard
-counters.
+but originate from different institutions. The first SIM-swap report remains
+`INSUFFICIENT_EVIDENCE`; the matching report from another institution upgrades
+it to `VALIDATED_FRAUD`. This exercises Kifaru's automatic corroboration and
+revalidation path rather than merely changing dashboard counters.
 
 ```mermaid
 sequenceDiagram

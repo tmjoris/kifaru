@@ -243,9 +243,31 @@ func TestPostgresPipeline(t *testing.T) {
 	if err != nil || !emitted {
 		t.Fatalf("first demo event failed: emitted=%v result=%#v err=%v", emitted, firstDemo, err)
 	}
+	firstDemoReportID := firstDemo["report_id"].(string)
+	var firstDemoStatus string
+	if err := db.QueryRow(ctx, `SELECT status FROM validations
+		WHERE report_id=$1 AND is_current=1`, firstDemoReportID).Scan(&firstDemoStatus); err != nil {
+		t.Fatal(err)
+	}
+	if firstDemoStatus != "INSUFFICIENT_EVIDENCE" {
+		t.Fatalf("first demo event should await corroboration, got %s", firstDemoStatus)
+	}
 	secondDemo, emitted, err := app.produceDemoEvent(ctx, true)
 	if err != nil || !emitted {
 		t.Fatalf("second demo event failed: emitted=%v result=%#v err=%v", emitted, secondDemo, err)
+	}
+	var firstDemoValidationCount int
+	if err := db.QueryRow(ctx, `SELECT status FROM validations
+		WHERE report_id=$1 AND is_current=1`, firstDemoReportID).Scan(&firstDemoStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(ctx, `SELECT COUNT(*) FROM validations
+		WHERE report_id=$1`, firstDemoReportID).Scan(&firstDemoValidationCount); err != nil {
+		t.Fatal(err)
+	}
+	if firstDemoStatus != "VALIDATED_FRAUD" || firstDemoValidationCount != 2 {
+		t.Fatalf("paired demo event should revalidate the first report, status=%s validations=%d",
+			firstDemoStatus, firstDemoValidationCount)
 	}
 	var demoEventCount, demoReportCount int
 	if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM demo_events").Scan(&demoEventCount); err != nil {

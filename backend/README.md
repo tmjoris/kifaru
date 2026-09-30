@@ -54,7 +54,9 @@ POST  /v1/admin/demo-stream/reset
 The demo-stream endpoints control a durable PostgreSQL-backed
 `sentinel.security-alert` topic. It produces clearly marked synthetic Microsoft
 Sentinel-shaped events every 30 seconds, records ordered offsets and processing
-outcomes, and can remove its generated data through the reset endpoint.
+outcomes, and can remove its generated data through the reset endpoint. Paired
+events share a protected destination artefact across two reporting institutions;
+the second event automatically revalidates the first weak SIM-swap report.
 
 ## Schema migrations
 
