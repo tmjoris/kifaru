@@ -27,7 +27,7 @@ export function Exchange({ transactions, bankName, onOpen }: {
           <div className="metric-detail">Fingerprints recognised by more than one institution</div></div>
         <div className="metric"><div className="metric-label"><span>Institutions participating</span></div>
           <div className="metric-value">{institutions.size}</div>
-          <div className="metric-detail">Banks, PSPs and SACCOs publishing or matching indicators</div></div>
+          <div className="metric-detail">Banks publishing or matching indicators</div></div>
       </div>
     </Card>
     <Card title="Shared fingerprints" subtitle="Sorted by how many institutions have independently matched each indicator.">

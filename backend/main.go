@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	agentVersion         = "kifaru-agent-0.4.0"
+	agentVersion         = "kifaru-agent-0.5.0"
 	defaultValidated     = 0.60
 	defaultInsufficient  = 0.35
 	weightCode           = 0.50
@@ -45,6 +45,33 @@ var schema string
 
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
+
+//go:embed data/kenyan_banks.json
+var kenyanBanksJSON []byte
+
+// Institution is one licensed Kenyan bank from data/kenyan_banks.json. The
+// names are real; every report, alert and event Kifaru holds for them is synthetic.
+type Institution struct {
+	Code      string  `json:"code"`
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	LegalName string  `json:"legal_name"`
+	Ref       string  `json:"ref"`
+	Type      string  `json:"type"`
+	Threshold float64 `json:"threshold"`
+}
+
+var kenyanBanks = loadKenyanBanks()
+
+func loadKenyanBanks() []Institution {
+	var directory struct {
+		Institutions []Institution `json:"institutions"`
+	}
+	if err := json.Unmarshal(kenyanBanksJSON, &directory); err != nil {
+		panic(fmt.Sprintf("parse data/kenyan_banks.json: %v", err))
+	}
+	return directory.Institutions
+}
 
 type RiskCode struct {
 	Family       string  `json:"family"`
@@ -176,17 +203,17 @@ func (a *App) initDB(ctx context.Context) error {
 	if err := a.runMigrations(ctx); err != nil {
 		return err
 	}
-	institutions := [][]any{
-		{"external", "External financial network", "external", 0.50},
-		{"bank_a", "Tier-1 Bank A", "bank", 0.45},
-		{"bank_b", "Tier-2 Bank B", "bank", 0.50},
-		{"psp_c", "Mobile Money PSP C", "psp", 0.40},
-		{"sacco_d", "SACCO D", "sacco", 0.60},
-	}
-	for _, values := range institutions {
+	institutions := append([]Institution{{
+		Code: "external", LegalName: "External financial network", Type: "external", Threshold: 0.50,
+	}}, kenyanBanks...)
+	for _, institution := range institutions {
+		// Names and types follow data/kenyan_banks.json on every start; thresholds
+		// keep any value an administrator has set.
 		if _, err := a.db.Exec(ctx, `
-			INSERT INTO institutions(code,name,type,threshold) VALUES ($1,$2,$3,$4)
-			ON CONFLICT (code) DO NOTHING`, values...); err != nil {
+			INSERT INTO institutions(code,name,type,threshold,active) VALUES ($1,$2,$3,$4,1)
+			ON CONFLICT (code) DO UPDATE SET name=EXCLUDED.name,type=EXCLUDED.type,active=1`,
+			institution.Code, valueOr(institution.LegalName, institution.Name), institution.Type,
+			institution.Threshold); err != nil {
 			return err
 		}
 	}
@@ -1031,6 +1058,12 @@ func (a *App) explain(report ReportIn, validation Validation, codes []string) st
 
 func (a *App) history(w http.ResponseWriter, r *http.Request) {
 	institution := r.URL.Query().Get("institution")
+	filter := "WHERE r.reporting_institution=$1 OR r.destination_institution=$1"
+	if institution == "" || institution == "*" {
+		// All institutions at once, so the dashboard makes one request instead of one per bank.
+		institution = "*"
+		filter = "WHERE $1::text IS NOT NULL"
+	}
 	limit := queryLimit(r, 500)
 	rows, err := a.rows(r.Context(), `SELECT r.report_id,r.submitted_at,r.reporting_institution,
 		r.destination_institution,r.reporting_system,r.transaction_ref,r.subject_customer_hash,
@@ -1041,7 +1074,7 @@ func (a *App) history(w http.ResponseWriter, r *http.Request) {
 		FROM reports r
 		LEFT JOIN validations v ON v.report_id=r.report_id AND v.is_current=1
 		LEFT JOIN alerts a ON a.alert_id=v.alert_id
-		WHERE r.reporting_institution=$1 OR r.destination_institution=$1
+		`+filter+`
 		ORDER BY r.submitted_at DESC LIMIT $2`, institution, limit)
 	if err != nil {
 		writeError(w, 500, err.Error())
@@ -1270,8 +1303,6 @@ func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
 		eventType      string
 		alertName      string
 		severity       string
-		reporters      [2]string
-		destination    string
 		riskCodes      []string
 		amount         float64
 		channel        string
@@ -1284,42 +1315,42 @@ func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
 	scenarios := []scenario{
 		{
 			eventType: "sim_swap_account_takeover", alertName: "SIM change followed by new-device transfer",
-			severity: "High", reporters: [2]string{"bank_a", "bank_b"}, destination: "psp_c",
+			severity:  "High",
 			riskCodes: []string{"ATO-460"}, amount: 48500, channel: "mobile_banking",
 			tactics: []string{"CredentialAccess", "InitialAccess"}, techniques: []string{"T1078"},
 			evidence: map[string]any{"sim_swap_age_days": 0, "is_new_device": true, "is_new_beneficiary": true},
 		},
 		{
 			eventType: "mule_rapid_flow_through", alertName: "New account receiving and rapidly forwarding funds",
-			severity: "High", reporters: [2]string{"sacco_d", "bank_a"}, destination: "psp_c",
+			severity:  "High",
 			riskCodes: []string{"MUL-440"}, amount: 73500, channel: "instant_payment",
 			tactics: []string{"Collection", "Exfiltration"}, techniques: []string{"T1020"},
 			evidence: map[string]any{"flow_through_ratio": 0.96, "dwell_minutes": 4, "account_age_days": 3, "distinct_senders_7d": 9},
 		},
 		{
 			eventType: "beneficiary_change_high_value", alertName: "New beneficiary followed by high-value transfer",
-			severity: "Medium", reporters: [2]string{"bank_b", "sacco_d"}, destination: "bank_a",
+			severity:  "Medium",
 			riskCodes: []string{"BEN-450", "ATO-461"}, amount: 126000, channel: "internet_banking",
 			tactics: []string{"CredentialAccess"}, techniques: []string{"T1078"},
 			evidence: map[string]any{"is_new_device": true, "is_new_beneficiary": true, "beneficiary_age_minutes": 12},
 		},
 		{
 			eventType: "credential_change_advisory", alertName: "Credential reset from an unfamiliar device on a foreign network",
-			severity: "Medium", reporters: [2]string{"psp_c", "bank_b"}, destination: "bank_a",
+			severity:  "Medium",
 			riskCodes: []string{"ATO-460", "ATO-461"}, amount: 0, channel: "mobile_app",
 			tactics: []string{"Persistence", "CredentialAccess"}, techniques: []string{"T1098"},
 			evidence: map[string]any{"is_new_device": true, "credential_changed": true, "transaction_attempted": false, "ip_country_changed": true},
 		},
 		{
 			eventType: "legitimate_payment_anomaly", alertName: "Unusual beneficiary payment requiring corroboration",
-			severity: "Low", reporters: [2]string{"bank_a", "bank_b"}, destination: "psp_c",
+			severity:  "Low",
 			riskCodes: []string{"BEN-450"}, amount: 9400, channel: "mobile_banking",
 			tactics: []string{"Discovery"}, techniques: []string{"T1087"},
 			evidence: map[string]any{"account_age_days": 1450, "distinct_senders_7d": 1, "known_customer_pattern": true},
 		},
 		{
 			eventType: "device_network_switch", alertName: "New device and new network before a transfer to a fresh beneficiary",
-			severity: "High", reporters: [2]string{"bank_a", "bank_b"}, destination: "sacco_d",
+			severity:  "High",
 			riskCodes: []string{"ATO-460", "VEL-430"}, amount: 61500, channel: "mobile_banking",
 			tactics: []string{"DefenseEvasion", "InitialAccess"}, techniques: []string{"T1078", "T1090"},
 			evidence:       map[string]any{"is_new_device": true, "is_new_beneficiary": true, "beneficiary_age_minutes": 6},
@@ -1331,7 +1362,8 @@ func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
 	campaign := (offset - 1) / 2
 	phase := (offset - 1) % 2
 	selected := scenarios[campaign%int64(len(scenarios))]
-	reporting := selected.reporters[phase]
+	reporters, destination := demoInstitutions(campaign)
+	reporting := reporters[phase]
 	destinationHash := demoHash(fmt.Sprintf("%s:%d", selected.eventType, campaign))
 	subjectHash := demoHash(fmt.Sprintf("subject:%d", offset))
 	deviceSeed := fmt.Sprintf("device:%d", campaign)
@@ -1373,7 +1405,7 @@ func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
 		TransactionRef:       fmt.Sprintf("DEMO-SENTINEL-%06d", offset),
 		TransactionTimestamp: utcNow(), SubjectAccountHash: subjectHash,
 		SubjectCustomerHash: subjectHash, DestinationAccountHash: destinationHash,
-		DestinationInstitution: selected.destination, Amount: selected.amount, Currency: "KES",
+		DestinationInstitution: destination, Amount: selected.amount, Currency: "KES",
 		Channel: selected.channel, BankRiskScore: 0.86, BankThreshold: 0.50,
 		RiskCodes: selected.riskCodes, Evidence: evidence,
 		Narrative: "Synthetic Microsoft Sentinel event: " + selected.alertName,
@@ -1383,6 +1415,17 @@ func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
 		"event_type": selected.eventType, "source": "microsoft-sentinel-demo",
 	}
 	return report, payload, metadata
+}
+
+// demoInstitutions picks two reporting banks and a receiving bank for a demo
+// campaign. The step of 7 is coprime with the bank count, so over successive
+// campaigns every bank reports, corroborates and receives alerts.
+func demoInstitutions(campaign int64) ([2]string, string) {
+	n := int64(len(kenyanBanks))
+	pick := func(shift int64) string {
+		return kenyanBanks[((campaign*7+shift)%n+n)%n].Code
+	}
+	return [2]string{pick(0), pick(n / 3)}, pick(2 * n / 3)
 }
 
 func demoHash(value string) string {
@@ -2396,15 +2439,15 @@ func first(values ...string) string {
 }
 
 func institutionCode(value string) string {
-	if code, ok := map[string]string{
-		"Bank A": "bank_a", "Tier-1 Bank A": "bank_a",
-		"Bank B": "bank_b", "Tier-2 Bank B": "bank_b",
-		"PSP C": "psp_c", "Mobile Money PSP C": "psp_c",
-		"SACCO D": "sacco_d",
-	}[value]; ok {
-		return code
+	wanted := strings.TrimSpace(value)
+	for _, institution := range kenyanBanks {
+		for _, candidate := range []string{institution.Code, institution.ID, institution.Name, institution.LegalName, institution.Ref} {
+			if candidate != "" && strings.EqualFold(candidate, wanted) {
+				return institution.Code
+			}
+		}
 	}
-	return value
+	return wanted
 }
 
 func valueOr(value, fallback string) string {
@@ -2415,10 +2458,10 @@ func valueOr(value, fallback string) string {
 }
 
 func displayInstitution(value string) string {
-	if display, ok := map[string]string{
-		"bank_a": "Bank A", "bank_b": "Bank B", "psp_c": "PSP C", "sacco_d": "SACCO D",
-	}[value]; ok {
-		return display
+	for _, institution := range kenyanBanks {
+		if institution.Code == value {
+			return institution.Name
+		}
 	}
 	if value == "" {
 		return "External network"

@@ -88,13 +88,13 @@ func TestNormalizeDerivesDeviceAndNetworkCodes(t *testing.T) {
 
 func TestReportFromCSVRejectsCleartextIdentifiers(t *testing.T) {
 	if _, err := reportFromCSV(map[string]string{
-		"reporting_bank": "Bank A", "receiving_bank": "Bank B", "customer_ref": "Jane Wanjiku",
+		"reporting_bank": "NCBA", "receiving_bank": "KCB", "customer_ref": "Jane Wanjiku",
 	}); err == nil || !strings.Contains(err.Error(), "customer_ref") {
 		t.Fatalf("expected cleartext customer_ref rejection, got %v", err)
 	}
 	hash := "sha256:" + strings.Repeat("c", 64)
 	report, err := reportFromCSV(map[string]string{
-		"reporting_bank": "Bank A", "receiving_bank": "Bank B", "transaction_id": "TX-9",
+		"reporting_bank": "NCBA", "receiving_bank": "KCB", "transaction_id": "TX-9",
 		"subject_customer_hash": hash, "destination_account_hash": hash, "amount": "1200",
 	})
 	if err != nil {
@@ -105,6 +105,63 @@ func TestReportFromCSVRejectsCleartextIdentifiers(t *testing.T) {
 	}
 	if report.SubjectCustomerHash != hash || report.SubjectAccountHash != hash || report.DestinationAccountHash != hash {
 		t.Fatal("hashed identifiers must pass through unchanged")
+	}
+}
+
+func TestKenyanBanksDirectoryIsComplete(t *testing.T) {
+	if len(kenyanBanks) != 38 {
+		t.Fatalf("expected 37 commercial banks and 1 mortgage finance institution, got %d", len(kenyanBanks))
+	}
+	counts := map[string]int{}
+	seen := map[string]bool{}
+	for _, bank := range kenyanBanks {
+		counts[bank.Type]++
+		for _, key := range []string{"code:" + bank.Code, "id:" + bank.ID, "name:" + bank.Name, "ref:" + bank.Ref} {
+			if seen[key] {
+				t.Fatalf("duplicate %s", key)
+			}
+			seen[key] = true
+		}
+		if bank.LegalName == "" || bank.Threshold <= 0 {
+			t.Fatalf("incomplete entry %+v", bank)
+		}
+	}
+	if counts["bank"] != 37 || counts["mortgage"] != 1 {
+		t.Fatalf("unexpected institution types %v", counts)
+	}
+	for code, name := range map[string]string{"bank_a": "NCBA", "bank_b": "KCB", "psp_c": "Equity Bank", "sacco_d": "I&M Bank"} {
+		if got := displayInstitution(code); got != name {
+			t.Fatalf("existing data for %s must keep %s, got %s", code, name, got)
+		}
+	}
+}
+
+func TestInstitutionCodeMatchesAnyName(t *testing.T) {
+	cases := map[string]string{
+		"KCB": "bank_b", "NCBA Bank Kenya PLC": "bank_a", "i&m bank": "sacco_d", " Equity Bank ": "psp_c",
+		"COOP": "ke:co-operative-bank-of-kenya", "Premier Bank Limited": "ke:premier-bank",
+		"ke:uba-kenya": "ke:uba-kenya", "Unknown Bank": "Unknown Bank",
+	}
+	for input, expected := range cases {
+		if got := institutionCode(input); got != expected {
+			t.Fatalf("institutionCode(%q) = %q, want %q", input, got, expected)
+		}
+	}
+}
+
+func TestDemoCampaignsRotateThroughEveryBank(t *testing.T) {
+	reported := map[string]bool{}
+	received := map[string]bool{}
+	for campaign := int64(0); campaign < int64(len(kenyanBanks)); campaign++ {
+		reporters, destination := demoInstitutions(campaign)
+		if reporters[0] == reporters[1] || destination == reporters[0] || destination == reporters[1] {
+			t.Fatalf("campaign %d reuses a bank: %v -> %s", campaign, reporters, destination)
+		}
+		reported[reporters[0]], reported[reporters[1]], received[destination] = true, true, true
+	}
+	if len(reported) != len(kenyanBanks) || len(received) != len(kenyanBanks) {
+		t.Fatalf("every bank should report and receive: reported=%d received=%d of %d",
+			len(reported), len(received), len(kenyanBanks))
 	}
 }
 
@@ -186,6 +243,13 @@ func TestPostgresPipeline(t *testing.T) {
 	}
 	if err := app.initDB(ctx); err != nil {
 		t.Fatal(err)
+	}
+	var institutionCount int
+	if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM institutions WHERE active=1").Scan(&institutionCount); err != nil {
+		t.Fatal(err)
+	}
+	if institutionCount != len(kenyanBanks)+1 {
+		t.Fatalf("expected every bank plus the external network, got %d", institutionCount)
 	}
 
 	hash := "sha256:" + strings.Repeat("a", 64)
@@ -319,6 +383,20 @@ func TestPostgresPipeline(t *testing.T) {
 	}
 	if auditCount == 0 {
 		t.Fatal("expected validation and alert audit records")
+	}
+
+	for query, expected := range map[string]int{"institution=*": 3, "institution=bank_a": 3, "institution=ke:uba-kenya": 0} {
+		recorder = httptest.NewRecorder()
+		app.history(recorder, httptest.NewRequest(http.MethodGet, "/v1/history?"+query, nil))
+		var payload struct {
+			History []map[string]any `json:"history"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil || recorder.Code != http.StatusOK {
+			t.Fatalf("history %s failed: %d %s", query, recorder.Code, recorder.Body.String())
+		}
+		if len(payload.History) != expected {
+			t.Fatalf("history %s returned %d rows, want %d", query, len(payload.History), expected)
+		}
 	}
 
 	firstDemo, emitted, err := app.produceDemoEvent(ctx, true)

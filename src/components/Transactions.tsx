@@ -19,7 +19,7 @@ export function TransactionTable({ records, bank, bankName, history, title, subt
         : heading === "Validated by" ? "table-provenance"
           : heading === "Direction" || heading === "Role" ? "table-direction" : undefined}>{heading}</th>)}</tr></thead>
       <tbody>{records.length ? records.map((transaction) => <tr key={transaction.key} onClick={() => onOpen(transaction.key)}>
-        <td data-label="Report ID"><span className="mono">{displayTransactionId(transaction, bank.name)}</span><br /><span className="muted">{history ? "Kifaru validation record" : transaction.merchant}</span></td>
+        <td data-label="Report ID"><span className="mono">{displayTransactionId(transaction, bank.shortName)}</span><br /><span className="muted">{history ? "Kifaru validation record" : transaction.merchant}</span></td>
         {history && <td data-label="Role" className="table-direction">{transactionDirection(transaction, bank.id)}</td>}
         <td data-label="Reporting bank"><strong>{bankName(reportingBankId(transaction))}</strong></td>
         {!history && <td data-label="Direction" className="table-direction"><span className="pill">{moneyDirection(transaction, bank.id)}</span></td>}
@@ -83,7 +83,7 @@ export function Investigation({ transaction, bank, bankName, onClose, onAlertAct
   return <dialog ref={dialog} className="drawer open" aria-labelledby="drawerTitle" onCancel={onClose}>
     <div className="drawer-inner">
       <div className="drawer-head"><p className="eyebrow">Transaction investigation</p>
-        <h3 className="card-title" id="drawerTitle">{displayTransactionId(transaction, bank.name)} - {validationLabel(transaction.validationStatus)}</h3>
+        <h3 className="card-title" id="drawerTitle">{displayTransactionId(transaction, bank.shortName)} - {validationLabel(transaction.validationStatus)}</h3>
         <p className="card-subtitle">{transaction.customerRef} at {transaction.merchant}</p>
       </div>
       <div className="drawer-body">

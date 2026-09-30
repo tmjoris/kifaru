@@ -5,37 +5,38 @@ import {
   pipelineSteps, reportingBankId, resolveSession, riskCounts, transactionFromValidation, validationLabel,
 } from "./domain.ts";
 import { parseCsv, protectIdentifiers, toCsv } from "./identifiers.ts";
+import { initialBanks } from "./data.ts";
 import type { Transaction, Validation } from "./types.ts";
 
 const transaction: Transaction = {
-  key: "case-1", id: "TX-123", sourceBank: "bank-a", destinationBank: "bank-b",
+  key: "case-1", id: "TX-123", sourceBank: "ncba", destinationBank: "kcb",
   customerRef: "*1234", merchant: "Transfer", country: "Kenya", amount: "KES 600,000",
   score: 99, flagSource: "Kifaru agent", validationStatus: "validated_fraud",
   riskCode: { code: "DEV-403", label: "Device anomaly" },
   evidence: ["New device"], action: "Review",
-  destinationHash: "sha256:abcd1234ef", corroboratingInstitutions: ["psp-c"], corroborationCount: 1,
+  destinationHash: "sha256:abcd1234ef", corroboratingInstitutions: ["equity"], corroborationCount: 1,
 };
 
 test("bank visibility includes counterparties but excludes unrelated banks", () => {
-  assert.equal(isVisible(transaction, "bank-a"), true);
-  assert.equal(isVisible(transaction, "bank-b"), true);
-  assert.equal(isVisible(transaction, "psp-c"), false);
-  assert.equal(isVisible(transaction, "sacco-d"), false);
-  assert.equal(reportingBankId(transaction), "bank-a");
-  assert.equal(counterpartyBankId(transaction), "bank-b");
-  assert.equal(moneyDirection(transaction, "bank-a"), "Outgoing");
-  assert.equal(moneyDirection(transaction, "bank-b"), "Incoming");
+  assert.equal(isVisible(transaction, "ncba"), true);
+  assert.equal(isVisible(transaction, "kcb"), true);
+  assert.equal(isVisible(transaction, "equity"), false);
+  assert.equal(isVisible(transaction, "im"), false);
+  assert.equal(reportingBankId(transaction), "ncba");
+  assert.equal(counterpartyBankId(transaction), "kcb");
+  assert.equal(moneyDirection(transaction, "ncba"), "Outgoing");
+  assert.equal(moneyDirection(transaction, "kcb"), "Incoming");
 });
 
 test("external incoming transfers retain prototype reporting-bank rules", () => {
   const incoming = { ...transaction, sourceBank: "external" };
-  assert.equal(reportingBankId(incoming), "bank-b");
+  assert.equal(reportingBankId(incoming), "kcb");
   assert.equal(counterpartyBankId(incoming), "external");
-  assert.equal(isVisible(incoming, "bank-a"), false);
+  assert.equal(isVisible(incoming, "ncba"), false);
 });
 
 test("report IDs and risk counts are scoped to the supplied records", () => {
-  assert.equal(displayTransactionId(transaction, "Bank B"), "BankB-123");
+  assert.equal(displayTransactionId(transaction, "KCB"), "KCB-123");
   assert.deepEqual(riskCounts([transaction, { ...transaction, key: "case-2" }]), [["DEV-403", 2]]);
   assert.deepEqual(riskCounts([]), []);
   assert.equal(validationLabel("needs_review"), "Under review");
@@ -43,18 +44,18 @@ test("report IDs and risk counts are scoped to the supplied records", () => {
 
 test("API mapping preserves every outcome, untrusted text and unique row identity", () => {
   const payload: Validation = {
-    transaction_id: "TX-123", reporting_bank: "Bank A", receiving_bank: "Bank B",
+    transaction_id: "TX-123", reporting_bank: "NCBA", receiving_bank: "KCB",
     customer_ref: "*1234", amount: "USD 100", currency: "USD", confidence: 70,
     status: "needs_review", validated_by: "Kifaru agent", risk_codes: [],
     key_signals: [], short_explanation: "<b>Missing data</b>", recommended_action: "Review",
   };
-  const mapped = transactionFromValidation(payload, (name) => name.toLowerCase().replace(" ", "-"), "unique-row");
+  const mapped = transactionFromValidation(payload, (name) => name.toLowerCase(), "unique-row");
   assert.equal(mapped.key, "unique-row");
   assert.equal(mapped.validationStatus, "needs_review");
   assert.deepEqual(mapped.evidence, ["<b>Missing data</b>"]);
   assert.equal(mapped.riskCode.code, "GEN-400");
-  assert.equal(mapped.sourceBank, "bank-a");
-  assert.equal(mapped.destinationBank, "bank-b");
+  assert.equal(mapped.sourceBank, "ncba");
+  assert.equal(mapped.destinationBank, "kcb");
   assert.equal(mapped.amount, "USD 100");
   for (const status of ["validated_fraud", "not_fraud", "needs_review"] as const) {
     assert.equal(transactionFromValidation({ ...payload, status }, (name) => name, status).validationStatus, status);
@@ -88,14 +89,35 @@ test("malformed CSV is refused before anything is sent", async () => {
 });
 
 test("saved sessions are upgraded or dropped when their institution is gone", () => {
-  const ids = ["bank-a", "bank-b", "psp-c", "sacco-d"];
-  assert.deepEqual(resolveSession({ scope: "institution", bankId: "equity" }, ids), { scope: "institution", bankId: "psp-c" });
-  assert.deepEqual(resolveSession({ scope: "institution", bankId: "bank-b" }, ids), { scope: "institution", bankId: "bank-b" });
-  assert.equal(resolveSession({ scope: "institution", bankId: "dir-absa-bank-kenya" }, ids), null);
+  const ids = initialBanks.map((bank) => bank.id);
+  assert.deepEqual(resolveSession({ scope: "institution", bankId: "equity" }, ids), { scope: "institution", bankId: "equity" });
+  assert.deepEqual(resolveSession({ scope: "institution", bankId: "psp-c" }, ids), { scope: "institution", bankId: "equity" });
+  assert.deepEqual(resolveSession({ scope: "institution", bankId: "dir-absa-bank-kenya" }, ids), { scope: "institution", bankId: "absa-bank-kenya" });
+  assert.deepEqual(resolveSession({ scope: "institution", bankId: "dir-first-community-bank" }, ids), { scope: "institution", bankId: "premier-bank" });
+  assert.equal(resolveSession({ scope: "institution", bankId: "dir-safaricom-m-pesa" }, ids), null);
   assert.deepEqual(resolveSession({ scope: "exchange", bankId: null }, ids), { scope: "exchange", bankId: null });
   assert.deepEqual(resolveSession({ stage: "kifaru", bankId: "ncba" }, ids), { scope: "exchange", bankId: null });
-  assert.deepEqual(resolveSession({ stage: "bank", bankId: "im" }, ids), { scope: "institution", bankId: "sacco-d" });
+  assert.deepEqual(resolveSession({ stage: "bank", bankId: "sacco-d" }, ids), { scope: "institution", bankId: "im" });
   assert.equal(resolveSession(null, ids), null);
+});
+
+test("the demo lists every licensed bank in Kenya once", () => {
+  assert.equal(initialBanks.length, 38);
+  assert.equal(initialBanks.filter((bank) => bank.kind === "bank").length, 37);
+  assert.deepEqual(initialBanks.filter((bank) => bank.kind === "mortgage").map((bank) => bank.name), ["HFC"]);
+  for (const key of ["id", "backendCode", "name", "shortName"] as const) {
+    assert.equal(new Set(initialBanks.map((bank) => bank[key])).size, 38, `${key} values must be unique`);
+  }
+  const byCode = new Map(initialBanks.map((bank) => [bank.backendCode, bank.name]));
+  assert.equal(byCode.get("bank_a"), "NCBA");
+  assert.equal(byCode.get("bank_b"), "KCB");
+  assert.equal(byCode.get("psp_c"), "Equity Bank");
+  assert.equal(byCode.get("sacco_d"), "I&M Bank");
+  for (const name of ["Co-op Bank", "Absa Bank Kenya", "Stanbic Bank Kenya", "DTB", "Standard Chartered Kenya",
+    "Premier Bank Kenya", "National Bank of Kenya", "Kingdom Bank", "Victoria Commercial Bank"]) {
+    assert.ok(initialBanks.some((bank) => bank.name === name), `${name} is missing`);
+  }
+  assert.ok(initialBanks.every((bank) => bank.soc.startsWith("Synthetic demo feed.")));
 });
 
 test("identifier columns are hashed in the browser before upload", async () => {

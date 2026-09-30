@@ -195,22 +195,15 @@ export async function loadDashboardData(bankTemplates: Bank[], signal?: AbortSig
       ? { ...bank, threshold: Math.round(requiredNumber(institution, "threshold") * 100) }
       : bank;
   });
-  // Keep requests sequential so the initial ecosystem load does not create a
-  // burst of one history query per participating institution.
-  const histories: unknown[] = [];
-  for (const bank of banks.filter((item) => !item.pending)) {
-    histories.push(await fetchJson(`/api/v1/history?institution=${encodeURIComponent(bank.backendCode)}`, { signal }));
-  }
+  const historyPayload = await fetchJson("/api/v1/history?institution=*&limit=2000", { signal });
   const rows = new Map<string, Record<string, unknown>>();
-  for (const payload of histories) {
-    if (!isRecord(payload) || !Array.isArray(payload.history)) {
-      throw new Error("The backend returned invalid institution history.");
-    }
-    for (const value of payload.history) {
-      if (!isRecord(value)) continue;
-      const reportId = requiredString(value, "report_id");
-      if (reportId) rows.set(reportId, value);
-    }
+  if (!isRecord(historyPayload) || !Array.isArray(historyPayload.history)) {
+    throw new Error("The backend returned invalid institution history.");
+  }
+  for (const value of historyPayload.history) {
+    if (!isRecord(value)) continue;
+    const reportId = requiredString(value, "report_id");
+    if (reportId) rows.set(reportId, value);
   }
 
   const riskCodes = parseRiskCodes(standardPayload);
