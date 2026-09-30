@@ -1,22 +1,14 @@
 import { useState } from "react";
-import type { Bank, InstitutionKind, Stage } from "../types";
+import type { Bank } from "../types";
 import { Icon, Logo } from "./Shared";
 
-const ROLE_OPTIONS: { id: Stage; label: string }[] = [
-  { id: "reporting", label: "Reporting bank" },
-  { id: "kifaru", label: "Kifaru exchange" },
-  { id: "receiving", label: "Receiving bank" },
-];
-
-export function PortalLogin({ banks, onEnterBank, onEnterKifaru }: {
+export function PortalLogin({ banks, staff, onEnterBank, onEnterKifaru }: {
   banks: Bank[];
-  onEnterBank: (stage: Stage, bankId: string) => void;
+  staff: boolean;
+  onEnterBank: (bankId: string) => void;
   onEnterKifaru: () => void;
-  onAddInstitution: (name: string, region: string, kind: InstitutionKind, stage: Stage) => void;
 }) {
-  const availableBanks = banks.filter((bank) => !bank.pending);
-  const [role, setRole] = useState<Stage>("reporting");
-  const [bankId, setBankId] = useState(availableBanks[0]?.id ?? banks[0]?.id ?? "");
+  const [bankId, setBankId] = useState(banks[0]?.id ?? "");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -31,8 +23,8 @@ export function PortalLogin({ banks, onEnterBank, onEnterKifaru }: {
   }
 
   function signIn() {
-    if (role === "kifaru") onEnterKifaru();
-    else if (bankId) onEnterBank(role, bankId);
+    if (staff) onEnterKifaru();
+    else if (bankId) onEnterBank(bankId);
   }
 
   return <main className="portal-screen">
@@ -54,9 +46,9 @@ export function PortalLogin({ banks, onEnterBank, onEnterKifaru }: {
     <section className="portal-access" aria-labelledby="portal-title">
       <div className="portal-access-inner">
         <header className="portal-header">
-          <p>Restricted staff system</p>
-          <h1 id="portal-title">Enter the exchange</h1>
-          <span>Use the account issued by your institution.</span>
+          <p>{staff ? "Kifaru operations" : "Institution access"}</p>
+          <h1 id="portal-title">{staff ? "Enter staff operations" : "Enter the exchange"}</h1>
+          <span>{staff ? "Use your Kifaru staff account." : "Use the account issued by your institution."}</span>
         </header>
 
         <form className="portal-form" onSubmit={(event) => { event.preventDefault(); signIn(); }}>
@@ -81,21 +73,11 @@ export function PortalLogin({ banks, onEnterBank, onEnterKifaru }: {
             </div>
           </div>
 
-          <div className="portal-field">
-            <label htmlFor="portal-role">Workspace</label>
-            <select id="portal-role" className="portal-control" value={role}
-              onChange={(event) => setRole(event.target.value as Stage)}>
-              {ROLE_OPTIONS.map((option) =>
-                <option value={option.id} key={option.id}>{option.label}</option>,
-              )}
-            </select>
-          </div>
-
-          {role !== "kifaru" && <div className="portal-field">
+          {!staff && <div className="portal-field">
             <label htmlFor="portal-institution">Institution</label>
             <select id="portal-institution" className="portal-control"
               value={bankId} onChange={(event) => setBankId(event.target.value)}>
-              {availableBanks.map((bank) =>
+              {banks.map((bank) =>
                 <option value={bank.id} key={bank.id}>{bank.name}</option>,
               )}
             </select>
@@ -107,12 +89,15 @@ export function PortalLogin({ banks, onEnterBank, onEnterKifaru }: {
           </div>
 
           <button type="submit" className="portal-submit"
-            disabled={!email.trim() || !password || (role !== "kifaru" && !bankId)}>
+            disabled={!email.trim() || !password || (!staff && !bankId)}>
             Open workspace
           </button>
         </form>
 
         <p className="portal-help"><Icon name="lock" /> Access is logged and monitored.</p>
+        <a className="portal-route-link" href={staff ? "/" : "/staff"}>
+          {staff ? "Sign in through an institution" : "Kifaru staff sign in"}
+        </a>
       </div>
     </section>
 

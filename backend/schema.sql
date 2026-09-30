@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS institutions (
-  code TEXT PRIMARY KEY, name TEXT, type TEXT,
+  code TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL,
   threshold REAL DEFAULT 0.5, active INTEGER DEFAULT 1
 );
 
@@ -13,9 +13,12 @@ CREATE TABLE IF NOT EXISTS reports (
   destination_institution TEXT,
   amount REAL, currency TEXT, channel TEXT,
   bank_risk_score REAL, bank_threshold REAL,
-  risk_codes TEXT, evidence TEXT, narrative TEXT
+  risk_codes TEXT, evidence TEXT, narrative TEXT,
+  FOREIGN KEY(reporting_institution) REFERENCES institutions(code),
+  FOREIGN KEY(destination_institution) REFERENCES institutions(code)
 );
 CREATE INDEX IF NOT EXISTS ix_rep_inst ON reports(reporting_institution);
+CREATE INDEX IF NOT EXISTS ix_rep_dest_inst ON reports(destination_institution);
 CREATE INDEX IF NOT EXISTS ix_rep_dest ON reports(destination_account_hash);
 CREATE INDEX IF NOT EXISTS ix_rep_msisdn ON reports(destination_msisdn_hash);
 
@@ -35,7 +38,10 @@ CREATE TABLE IF NOT EXISTS alerts (
   receiving_institution TEXT, reporting_institution TEXT,
   destination_account_hash TEXT, destination_msisdn_hash TEXT,
   amount REAL, currency TEXT, risk_codes TEXT,
-  validation_score REAL, validated_by TEXT, explanation TEXT, state TEXT
+  validation_score REAL, validated_by TEXT, explanation TEXT, state TEXT,
+  FOREIGN KEY(report_id) REFERENCES reports(report_id),
+  FOREIGN KEY(receiving_institution) REFERENCES institutions(code),
+  FOREIGN KEY(reporting_institution) REFERENCES institutions(code)
 );
 CREATE INDEX IF NOT EXISTS ix_alert_recv ON alerts(receiving_institution);
 

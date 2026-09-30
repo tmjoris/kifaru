@@ -189,7 +189,7 @@ export async function loadDashboardData(bankTemplates: Bank[], signal?: AbortSig
   // single shared SQLite connection that is not safe for concurrent access,
   // so requesting many institutions' history at once can trip it up.
   const histories: unknown[] = [];
-  for (const bank of banks) {
+  for (const bank of banks.filter((item) => !item.pending)) {
     histories.push(await fetchJson(`/api/v1/history?institution=${encodeURIComponent(bank.backendCode)}`, { signal }));
   }
   const rows = new Map<string, Record<string, unknown>>();
