@@ -91,6 +91,31 @@ export interface KnowledgeBaseEntry {
   addedBy: string;
   addedAt: string;
 }
+export interface DemoStreamEvent {
+  eventOffset: number;
+  topic: string;
+  eventType: string;
+  source: string;
+  status: "pending" | "processed" | "failed";
+  reportId: string;
+  outcome: string;
+  error: string;
+  alertName: string;
+  alertSeverity: string;
+  createdAt: string;
+}
+export interface DemoStreamStatus {
+  enabled: boolean;
+  cadenceSeconds: number;
+  nextOffset: number;
+  emittedSinceReset: number;
+  maxEvents: number;
+  lastEmittedAt: string;
+  updatedAt: string;
+  topic: string;
+  datasetBasis: string;
+  events: DemoStreamEvent[];
+}
 export interface DashboardData {
   banks: Bank[];
   transactions: Transaction[];

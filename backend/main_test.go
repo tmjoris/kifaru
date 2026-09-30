@@ -57,6 +57,26 @@ func TestAlertType(t *testing.T) {
 	}
 }
 
+func TestDemoReportUsesSentinelShapeAndCampaignPairs(t *testing.T) {
+	first, firstPayload, firstMeta := demoReport(1)
+	second, secondPayload, secondMeta := demoReport(2)
+	if first.DestinationAccountHash != second.DestinationAccountHash {
+		t.Fatal("paired events should share one protected destination artefact")
+	}
+	if first.ReportingInstitution == second.ReportingInstitution {
+		t.Fatal("paired events should come from different institutions")
+	}
+	if firstMeta["topic"] != "sentinel.security-alert" || secondMeta["topic"] != firstMeta["topic"] {
+		t.Fatalf("unexpected demo topic: %#v %#v", firstMeta, secondMeta)
+	}
+	if firstPayload["ProviderName"] != "Microsoft Sentinel" || secondPayload["ProviderName"] != "Microsoft Sentinel" {
+		t.Fatal("demo payload should follow the Microsoft Sentinel alert shape")
+	}
+	if first.Evidence["synthetic_stream"] != true || !strings.HasPrefix(first.DestinationAccountHash, "sha256:") {
+		t.Fatal("demo report must be clearly synthetic and use protected identifiers")
+	}
+}
+
 func TestPostgresPipeline(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -217,5 +237,45 @@ func TestPostgresPipeline(t *testing.T) {
 	}
 	if auditCount == 0 {
 		t.Fatal("expected validation and alert audit records")
+	}
+
+	firstDemo, emitted, err := app.produceDemoEvent(ctx, true)
+	if err != nil || !emitted {
+		t.Fatalf("first demo event failed: emitted=%v result=%#v err=%v", emitted, firstDemo, err)
+	}
+	secondDemo, emitted, err := app.produceDemoEvent(ctx, true)
+	if err != nil || !emitted {
+		t.Fatalf("second demo event failed: emitted=%v result=%#v err=%v", emitted, secondDemo, err)
+	}
+	var demoEventCount, demoReportCount int
+	if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM demo_events").Scan(&demoEventCount); err != nil {
+		t.Fatal(err)
+	}
+	if demoEventCount != 2 {
+		t.Fatalf("expected two retained demo events, got %d", demoEventCount)
+	}
+	if err := db.QueryRow(ctx, `SELECT COUNT(*) FROM reports
+		WHERE evidence LIKE '%"synthetic_stream":true%'`).Scan(&demoReportCount); err != nil {
+		t.Fatal(err)
+	}
+	if demoReportCount != 2 {
+		t.Fatalf("expected two synthetic reports, got %d", demoReportCount)
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/v1/admin/demo-stream/reset", nil)
+	recorder = httptest.NewRecorder()
+	app.resetDemoStream(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("demo reset failed: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM demo_events").Scan(&demoEventCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(ctx, `SELECT COUNT(*) FROM reports
+		WHERE evidence LIKE '%"synthetic_stream":true%'`).Scan(&demoReportCount); err != nil {
+		t.Fatal(err)
+	}
+	if demoEventCount != 0 || demoReportCount != 0 {
+		t.Fatalf("reset left synthetic data behind: events=%d reports=%d", demoEventCount, demoReportCount)
 	}
 }

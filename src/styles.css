@@ -1097,12 +1097,151 @@
       background: var(--cp-panel-strong);
       box-shadow: var(--cp-shadow);
       transform: translateY(150%);
-      transition: transform 180ms ease;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: transform 180ms ease, opacity 180ms ease;
       z-index: 11;
     }
 
     .toast.show {
       transform: translateY(0);
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .stream-console {
+      border-top: 0.2rem solid var(--cp-accent);
+    }
+
+    .stream-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      color: var(--cp-text-muted);
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .stream-state i {
+      width: 0.55rem;
+      height: 0.55rem;
+      border-radius: 50%;
+      background: var(--cp-border-strong);
+    }
+
+    .stream-state.live {
+      color: var(--cp-success);
+    }
+
+    .stream-state.live i {
+      background: var(--cp-success);
+      box-shadow: 0 0 0 0.25rem color-mix(in srgb, var(--cp-success) 14%, transparent);
+    }
+
+    .stream-toolbar {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 1.25rem;
+      margin-top: 1rem;
+      padding: 1rem;
+      background: var(--cp-surface-soft);
+    }
+
+    .stream-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, auto));
+      gap: 1.75rem;
+      margin: 0;
+    }
+
+    .stream-metrics div {
+      min-width: 0;
+    }
+
+    .stream-metrics dt {
+      color: var(--cp-text-muted);
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .stream-metrics dd {
+      margin: 0.25rem 0 0;
+      font-size: 0.9rem;
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+
+    .stream-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 0.5rem;
+    }
+
+    .stream-log {
+      margin-top: 1rem;
+      border-top: 1px solid var(--cp-border);
+    }
+
+    .stream-log-head,
+    .stream-event {
+      display: grid;
+      grid-template-columns: 5.5rem minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.8rem 0.25rem;
+      border-bottom: 1px solid var(--cp-border);
+    }
+
+    .stream-log-head {
+      display: flex;
+      justify-content: space-between;
+      color: var(--cp-text-muted);
+      font-size: 0.78rem;
+    }
+
+    .stream-event strong,
+    .stream-event small {
+      display: block;
+    }
+
+    .stream-event small {
+      margin-top: 0.2rem;
+      color: var(--cp-text-muted);
+    }
+
+    .stream-offset {
+      color: var(--cp-accent);
+      font-size: 0.78rem;
+    }
+
+    .stream-result {
+      padding: 0.3rem 0.55rem;
+      border-radius: 999px;
+      background: var(--cp-surface-soft);
+      color: var(--cp-text-muted);
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+
+    .stream-result.processed {
+      background: color-mix(in srgb, var(--cp-success) 14%, transparent);
+      color: var(--cp-success);
+    }
+
+    .stream-result.failed {
+      background: color-mix(in srgb, var(--cp-danger) 14%, transparent);
+      color: var(--cp-danger);
+    }
+
+    .stream-empty {
+      margin: 0;
+      padding: 1.2rem 0.25rem 0.25rem;
+      color: var(--cp-text-muted);
     }
 
     @media (max-width: 1100px) {
@@ -1150,11 +1289,31 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
+      .stream-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .stream-actions {
+        justify-content: flex-start;
+      }
+
     }
 
     @media (max-width: 720px) {
       .topbar {
         flex-direction: column;
+      }
+
+      .tabs {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0;
+      }
+
+      .tab-btn {
+        min-width: 0;
+        padding-inline: 0.35rem;
       }
 
       .actions {
@@ -1167,6 +1326,86 @@
       .insight-grid,
       .kb-grid {
         grid-template-columns: 1fr;
+      }
+
+      .transaction-table {
+        min-width: 0;
+      }
+
+      .transaction-table thead {
+        display: none;
+      }
+
+      .transaction-table tbody {
+        display: grid;
+        gap: 0.75rem;
+      }
+
+      .transaction-table tr {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        padding: 0.65rem;
+        border: 1px solid var(--cp-border);
+        border-radius: 8px;
+        background: var(--cp-panel-strong);
+      }
+
+      .transaction-table td {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        gap: 0.2rem;
+        padding: 0.55rem;
+        border: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .transaction-table td::before {
+        content: attr(data-label);
+        color: var(--cp-text-muted);
+        font-size: 0.65rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .transaction-table td:first-child,
+      .transaction-table td:last-child {
+        grid-column: 1 / -1;
+      }
+
+      .transaction-table .mini-btn {
+        width: 100%;
+      }
+
+      .transaction-table .transaction-empty {
+        display: block;
+      }
+
+      .transaction-table .transaction-empty td {
+        display: block;
+      }
+
+      .transaction-table .transaction-empty td::before {
+        content: none;
+      }
+
+      .stream-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+      }
+
+      .stream-log-head small {
+        display: none;
+      }
+
+      .stream-event {
+        grid-template-columns: 4.25rem minmax(0, 1fr);
+      }
+
+      .stream-result {
+        grid-column: 2;
+        justify-self: start;
       }
     }
 
@@ -1307,7 +1546,7 @@
     /* ---- Pipeline: Detect -> Fingerprint -> Share -> Match -> Act ---- */
     .pipeline {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: 1fr;
       gap: 0.6rem;
       margin: 0.5rem 0 1.1rem;
       padding: 0;
@@ -1502,6 +1741,7 @@
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 4px;
   background: transparent;
+  color: #fff;
 }
 
 .portal-identity > span {

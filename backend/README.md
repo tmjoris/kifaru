@@ -45,7 +45,16 @@ POST  /v1/admin/kb
 DELETE /v1/admin/kb
 POST  /v1/admin/revalidate
 GET   /v1/admin/audit
+GET   /v1/admin/demo-stream
+POST  /v1/admin/demo-stream/state
+POST  /v1/admin/demo-stream/emit
+POST  /v1/admin/demo-stream/reset
 ```
+
+The demo-stream endpoints control a durable PostgreSQL-backed
+`sentinel.security-alert` topic. It produces clearly marked synthetic Microsoft
+Sentinel-shaped events every 30 seconds, records ordered offsets and processing
+outcomes, and can remove its generated data through the reset endpoint.
 
 ## Schema migrations
 
