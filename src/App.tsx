@@ -80,7 +80,7 @@ export default function App() {
   const submitted = records.filter((item) => reportingBankId(item) === bankId).length;
   const received = records.filter((item) => counterpartyBankId(item) === bankId && item.validationStatus === "validated_fraud").length;
   const visible = records.filter((item) => filter === "all" || item.validationStatus === filter).filter((item) => {
-    const text = [item.customerRef, item.merchant, item.country, item.id, displayTransactionId(item, bank.name),
+    const text = [item.customerRef, item.merchant, item.country, item.id, displayTransactionId(item, bank.shortName),
       transactionDirection(item, bankId), moneyDirection(item, bankId), bankName(reportingBankId(item))].join(" ").toLowerCase();
     return text.includes(query.trim().toLowerCase());
   });

@@ -1,107 +1,90 @@
-import type { Bank } from "./types";
+import type { Bank, InstitutionKind, Source } from "./types";
+import directory from "../backend/data/kenyan_banks.json" with { type: "json" };
+
+interface DirectoryEntry {
+  code: string;
+  id: string;
+  name: string;
+  legal_name: string;
+  ref: string;
+  type: string;
+  threshold: number;
+}
+
+/** Illustrative connector set-ups, rotated across banks. None describes a real bank's systems. */
+const connectorProfiles: { users: string; systems: string; latency: string; inputSources: Source[] }[] = [
+  {
+    users: "SOC analysts",
+    systems: "SIEM, card processor, mobile banking, dispute workflow",
+    latency: "1.8s",
+    inputSources: [
+      { name: "SOC SIEM connector", type: "SOC connector", method: "Streaming API", status: "Synthetic", cadence: "Realtime" },
+      { name: "Card authorization feed", type: "Transaction feed", method: "REST API", status: "Synthetic", cadence: "Realtime" },
+      { name: "Mobile banking telemetry", type: "Device signal", method: "Webhook", status: "Synthetic", cadence: "Near realtime" },
+    ],
+  },
+  {
+    users: "Fraud operations",
+    systems: "Core banking, agency banking, mobile telemetry",
+    latency: "2.6s",
+    inputSources: [
+      { name: "Core banking transfer feed", type: "Transaction feed", method: "SFTP batch", status: "Synthetic", cadence: "Every 5 min" },
+      { name: "Agency banking terminal feed", type: "Channel signal", method: "REST API", status: "Synthetic", cadence: "Realtime" },
+      { name: "Mobile telemetry", type: "Device signal", method: "Webhook", status: "Synthetic", cadence: "Near realtime" },
+    ],
+  },
+  {
+    users: "Managed SOC",
+    systems: "SIEM, ATM switch, sanctions screen, case management",
+    latency: "2.1s",
+    inputSources: [
+      { name: "SIEM event connector", type: "SOC connector", method: "Streaming API", status: "Synthetic", cadence: "Realtime" },
+      { name: "ATM switch feed", type: "Transaction feed", method: "Message queue", status: "Synthetic", cadence: "Realtime" },
+      { name: "Case management sync", type: "Case system", method: "Batch API", status: "Synthetic", cadence: "Every 10 min" },
+    ],
+  },
+  {
+    users: "Digital risk team",
+    systems: "Card authorization, internet banking, transaction monitor",
+    latency: "2.4s",
+    inputSources: [
+      { name: "Card authorization stream", type: "Transaction feed", method: "Streaming API", status: "Synthetic", cadence: "Realtime" },
+      { name: "Transaction monitor", type: "Rules engine", method: "REST API", status: "Synthetic", cadence: "Realtime" },
+      { name: "Internet banking events", type: "Device signal", method: "Webhook", status: "Synthetic", cadence: "Near realtime" },
+    ],
+  },
+];
+
+export const kenyanBanks: DirectoryEntry[] = directory.institutions;
 
 /**
- * The four synthetic institutions behind the live demo. Their names are invented
- * so that no real bank, SACCO or payment provider appears next to made-up fraud.
+ * Every licensed bank in Kenya (37 commercial banks and HFC, the mortgage finance
+ * institution), from backend/data/kenyan_banks.json. The names are real; all
+ * reports, alerts and connector details shown for them are synthetic.
  */
-export const initialBanks: Bank[] = [
-      {
-        id: "bank-a",
-        backendCode: "bank_a",
-        name: "Bank A",
-        region: "Synthetic tier-1 commercial bank",
-        users: "SOC-1 analysts",
-        shortName: "BA",
-        health: "healthy",
-        kind: "bank",
-        threshold: 82,
-        soc: "Connected to Sentinel, card processor, mobile banking, and dispute workflow.",
-        connector: {
-          endpoint: "soc.bank-a.example/stream",
-          systems: "Sentinel, card processor, mobile banking, dispute workflow",
-          latency: "1.8s",
-          lastSync: "11:47 AM"
-        },
-        inputSources: [
-          { name: "SOC Sentinel connector", type: "SOC connector", method: "Streaming API", status: "Connected", cadence: "Realtime" },
-          { name: "Card authorization feed", type: "Transaction feed", method: "REST API", status: "Connected", cadence: "Realtime" },
-          { name: "Mobile banking telemetry", type: "Device signal", method: "Webhook", status: "Connected", cadence: "Near realtime" },
-          { name: "Dispute workflow", type: "Case system", method: "Batch API", status: "Connected", cadence: "Every 15 min" }
-        ]
-      },
-      {
-        id: "bank-b",
-        backendCode: "bank_b",
-        name: "Bank B",
-        region: "Synthetic tier-2 commercial bank",
-        users: "Fraud ops team",
-        shortName: "BB",
-        health: "warning",
-        kind: "bank",
-        threshold: 76,
-        soc: "Connected to Splunk and core banking. Mobile telemetry lag detected.",
-        connector: {
-          endpoint: "soc.bank-b.example/stream",
-          systems: "Splunk, core banking, mobile telemetry",
-          latency: "4.6s",
-          lastSync: "11:46 AM"
-        },
-        inputSources: [
-          { name: "Splunk SOC connector", type: "SOC connector", method: "Streaming API", status: "Warning", cadence: "Realtime" },
-          { name: "Core banking transfer feed", type: "Transaction feed", method: "SFTP batch", status: "Connected", cadence: "Every 5 min" },
-          { name: "Agency banking terminal feed", type: "Channel signal", method: "REST API", status: "Connected", cadence: "Realtime" },
-          { name: "Mobile telemetry", type: "Device signal", method: "Webhook", status: "Delayed", cadence: "Near realtime" }
-        ]
-      },
-      {
-        id: "psp-c",
-        backendCode: "psp_c",
-        name: "PSP C",
-        region: "Synthetic mobile money provider",
-        users: "Managed SOC",
-        shortName: "PC",
-        health: "healthy",
-        kind: "psp",
-        threshold: 88,
-        soc: "Connected to SIEM, agent cash-out switch, sanctions screen, and case management.",
-        connector: {
-          endpoint: "soc.psp-c.example/stream",
-          systems: "SIEM, agent cash-out switch, sanctions screen, case management",
-          latency: "2.1s",
-          lastSync: "11:47 AM"
-        },
-        inputSources: [
-          { name: "SIEM event connector", type: "SOC connector", method: "Streaming API", status: "Connected", cadence: "Realtime" },
-          { name: "Agent cash-out feed", type: "Transaction feed", method: "Message queue", status: "Connected", cadence: "Realtime" },
-          { name: "Sanctions screen", type: "Risk enrichment", method: "REST API", status: "Connected", cadence: "On demand" },
-          { name: "Case management sync", type: "Case system", method: "Graph-style API", status: "Connected", cadence: "Every 10 min" }
-        ]
-      },
-      {
-        id: "sacco-d",
-        backendCode: "sacco_d",
-        name: "SACCO D",
-        region: "Synthetic deposit-taking SACCO",
-        users: "Digital risk team",
-        shortName: "SD",
-        health: "healthy",
-        kind: "sacco",
-        threshold: 84,
-        soc: "Connected to card authorization, mobile banking, transaction monitoring, and case workflow.",
-        connector: {
-          endpoint: "soc.sacco-d.example/stream",
-          systems: "Card authorization, mobile banking, transaction monitor, case workflow",
-          latency: "2.4s",
-          lastSync: "11:48 AM"
-        },
-        inputSources: [
-          { name: "Card authorization stream", type: "Transaction feed", method: "Streaming API", status: "Connected", cadence: "Realtime" },
-          { name: "Transaction monitor", type: "Rules engine", method: "REST API", status: "Connected", cadence: "Realtime" },
-          { name: "Mobile banking events", type: "Device signal", method: "Webhook", status: "Connected", cadence: "Near realtime" },
-          { name: "Case workflow", type: "Case system", method: "Batch API", status: "Connected", cadence: "Every 15 min" }
-        ]
-      }
-    ];
+export const initialBanks: Bank[] = kenyanBanks.map((entry, index) => {
+  const profile = connectorProfiles[index % connectorProfiles.length];
+  const kind: InstitutionKind = entry.type === "mortgage" ? "mortgage" : "bank";
+  return {
+    id: entry.id,
+    backendCode: entry.code,
+    name: entry.name,
+    region: kind === "mortgage" ? "Mortgage finance institution" : "Licensed commercial bank",
+    users: profile.users,
+    shortName: entry.ref,
+    health: "healthy",
+    kind,
+    threshold: Math.round(entry.threshold * 100),
+    soc: `Synthetic demo feed. ${entry.legal_name} has not supplied or reviewed any data shown here.`,
+    connector: {
+      endpoint: `soc.${entry.id}.example/stream`,
+      systems: profile.systems,
+      latency: profile.latency,
+      lastSync: "Synthetic",
+    },
+    inputSources: profile.inputSources,
+  };
+});
 
 export const riskCodeCatalog = [
       { code: "IP-401", label: "Changing IP or location", text: "Login geography, IP, or network path changed abnormally before the transaction." },
