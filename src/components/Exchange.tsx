@@ -13,7 +13,8 @@ export function Exchange({ transactions, bankName, onOpen }: {
 }) {
   const fingerprints = transactions.filter((item) => item.destinationHash);
   const matched = fingerprints.filter((item) => item.corroborationCount > 0);
-  const institutions = new Set(fingerprints.flatMap((item) => [item.sourceBank, item.destinationBank]));
+  const institutions = new Set(fingerprints.flatMap((item) => [item.sourceBank, item.destinationBank])
+    .filter((id) => id !== "external" && !id.startsWith("unknown:")));
   const sorted = [...fingerprints].sort((a, b) => b.corroborationCount - a.corroborationCount || b.score - a.score);
 
   return <div className="stack">
