@@ -12,6 +12,10 @@ function apiUrl(path: string) {
   return `${API_BASE_URL}${resolvedPath}`;
 }
 
+export function alertStreamUrl(institution: string) {
+  return apiUrl(`/api/v1/stream?institution=${encodeURIComponent(institution)}`);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -162,6 +166,11 @@ function transactionFromHistory(
     destinationHash: requiredString(row, "destination_account_hash") || requiredString(row, "destination_msisdn_hash"),
     corroboratingInstitutions,
     corroborationCount: requiredNumber(row, "corroboration_count") || corroboratingInstitutions.length,
+    alertId: requiredString(row, "alert_id") || undefined,
+    alertState: (["sent", "acknowledged", "actioned", "disputed"].includes(requiredString(row, "alert_state"))
+      ? requiredString(row, "alert_state") : undefined) as Transaction["alertState"],
+    alertType: (["hold", "advisory"].includes(requiredString(row, "alert_type"))
+      ? requiredString(row, "alert_type") : undefined) as Transaction["alertType"],
   };
 }
 
@@ -185,9 +194,8 @@ export async function loadDashboardData(bankTemplates: Bank[], signal?: AbortSig
       ? { ...bank, threshold: Math.round(requiredNumber(institution, "threshold") * 100) }
       : bank;
   });
-  // Fetch histories sequentially: the demo backend serves every request off a
-  // single shared SQLite connection that is not safe for concurrent access,
-  // so requesting many institutions' history at once can trip it up.
+  // Keep requests sequential so the initial ecosystem load does not create a
+  // burst of one history query per participating institution.
   const histories: unknown[] = [];
   for (const bank of banks.filter((item) => !item.pending)) {
     histories.push(await fetchJson(`/api/v1/history?institution=${encodeURIComponent(bank.backendCode)}`, { signal }));
@@ -228,6 +236,20 @@ export async function updateInstitutionThreshold(
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ institution_thresholds: { [backendCode]: thresholdPercent / 100 } }),
+    signal,
+  });
+}
+
+export async function updateAlertState(
+  alertId: string,
+  state: "acknowledged" | "actioned" | "disputed",
+  comment = "",
+  signal?: AbortSignal,
+) {
+  await fetchJson(`/api/v1/alerts/${encodeURIComponent(alertId)}/state`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ state, comment }),
     signal,
   });
 }

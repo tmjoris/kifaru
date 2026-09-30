@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	_ "embed"
+	"embed"
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
@@ -19,9 +19,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -39,6 +41,9 @@ const (
 
 //go:embed schema.sql
 var schema string
+
+//go:embed migrations/*.sql
+var migrationFiles embed.FS
 
 type RiskCode struct {
 	Family       string  `json:"family"`
@@ -93,6 +98,14 @@ type App struct {
 	db          *pgxpool.Pool
 	standardRaw map[string]any
 	standard    Standard
+	streamsMu   sync.Mutex
+	streams     map[string]map[chan []byte]struct{}
+}
+
+type dbRunner interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
 func main() {
@@ -114,7 +127,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	app := &App{db: db, standardRaw: raw, standard: standard}
+	app := &App{db: db, standardRaw: raw, standard: standard, streams: map[string]map[chan []byte]struct{}{}}
 	if err := app.initDB(ctx); err != nil {
 		log.Fatal(err)
 	}
@@ -157,6 +170,9 @@ func (a *App) initDB(ctx context.Context) error {
 		if _, err := a.db.Exec(ctx, statement); err != nil {
 			return err
 		}
+	}
+	if err := a.runMigrations(ctx); err != nil {
+		return err
 	}
 	institutions := [][]any{
 		{"external", "External financial network", "external", 0.50},
@@ -242,12 +258,62 @@ func (a *App) initDB(ctx context.Context) error {
 		"insufficient_threshold": defaultInsufficient,
 		"enabled_sources":        []string{"soc_connector", "rest", "webhook", "batch"},
 		"agent_version":          agentVersion,
+		"configuration_version":  1,
 	}
 	for key, value := range defaults {
 		encoded, _ := json.Marshal(value)
 		if _, err := a.db.Exec(ctx, `
 			INSERT INTO config(key,value) VALUES ($1,$2)
 			ON CONFLICT (key) DO NOTHING`, key, string(encoded)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *App) runMigrations(ctx context.Context) error {
+	if _, err := a.db.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
+		version TEXT PRIMARY KEY,
+		applied_at TEXT NOT NULL
+	)`); err != nil {
+		return err
+	}
+	entries, err := migrationFiles.ReadDir("migrations")
+	if err != nil {
+		return err
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		var applied bool
+		if err := a.db.QueryRow(ctx,
+			"SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)", entry.Name(),
+		).Scan(&applied); err != nil {
+			return err
+		}
+		if applied {
+			continue
+		}
+		body, err := migrationFiles.ReadFile("migrations/" + entry.Name())
+		if err != nil {
+			return err
+		}
+		tx, err := a.db.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, string(body)); err == nil {
+			_, err = tx.Exec(ctx,
+				"INSERT INTO schema_migrations(version,applied_at) VALUES ($1,$2)",
+				entry.Name(), utcNow())
+		}
+		if err != nil {
+			_ = tx.Rollback(ctx)
+			return fmt.Errorf("apply migration %s: %w", entry.Name(), err)
+		}
+		if err := tx.Commit(ctx); err != nil {
 			return err
 		}
 	}
@@ -286,6 +352,8 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		a.reports(w, r)
 	case r.Method == http.MethodGet && path == "/v1/alerts":
 		a.alerts(w, r)
+	case r.Method == http.MethodGet && path == "/v1/stream":
+		a.streamAlerts(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/validations/"):
 		a.validationDetail(w, r, strings.TrimPrefix(path, "/v1/validations/"))
 	case r.Method == http.MethodPost && path == "/v1/reports":
@@ -372,7 +440,13 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 	if err := validateReport(report); err != nil {
 		return nil, &apiError{http.StatusUnprocessableEntity, err.Error()}
 	}
-	cfg, err := a.getConfig(ctx)
+	tx, err := a.db.Begin(ctx)
+	if err != nil {
+		return nil, &apiError{http.StatusInternalServerError, err.Error()}
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	cfg, err := getConfigFrom(ctx, tx)
 	if err != nil {
 		return nil, &apiError{http.StatusInternalServerError, err.Error()}
 	}
@@ -380,7 +454,7 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 		return nil, &apiError{http.StatusForbidden, fmt.Sprintf("submission channel %q is disabled by admin", channel)}
 	}
 	var institutionThreshold float64
-	err = a.db.QueryRow(ctx, "SELECT threshold FROM institutions WHERE code=$1", report.ReportingInstitution).Scan(&institutionThreshold)
+	err = tx.QueryRow(ctx, "SELECT threshold FROM institutions WHERE code=$1", report.ReportingInstitution).Scan(&institutionThreshold)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, &apiError{http.StatusBadRequest, fmt.Sprintf("unknown institution %q", report.ReportingInstitution)}
 	}
@@ -402,6 +476,21 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 	if report.Evidence == nil {
 		report.Evidence = map[string]any{}
 	}
+	var existingReportID string
+	err = tx.QueryRow(ctx, `SELECT report_id FROM reports
+		WHERE reporting_institution=$1 AND transaction_ref=$2`,
+		report.ReportingInstitution, report.TransactionRef).Scan(&existingReportID)
+	if err == nil {
+		result, resultErr := existingReportResult(ctx, tx, existingReportID)
+		if resultErr != nil {
+			return nil, &apiError{http.StatusInternalServerError, resultErr.Error()}
+		}
+		result["idempotent_replay"] = true
+		return result, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, &apiError{http.StatusInternalServerError, err.Error()}
+	}
 
 	codes, err := a.normalize(report)
 	if err != nil {
@@ -409,21 +498,26 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 	}
 	reportID := "rpt-" + randomHex(6)
 	submittedAt := utcNow()
-	validation, err := a.score(ctx, report, reportID, codes, cfg, start)
+	validation, err := a.score(ctx, tx, report, reportID, codes, cfg, start)
 	if err != nil {
 		return nil, &apiError{http.StatusInternalServerError, err.Error()}
 	}
 	validation.Explanation = a.explain(report, validation, codes)
+	alertType := alertTypeFor(report)
+	if validation.Status == "VALIDATED_FRAUD" {
+		alertID := "alt-" + randomHex(5)
+		validation.AlertID = &alertID
+	}
 
 	riskJSON, _ := json.Marshal(codes)
 	evidenceJSON, _ := json.Marshal(report.Evidence)
-	_, err = a.db.Exec(ctx, `INSERT INTO reports (
+	reportTag, err := tx.Exec(ctx, `INSERT INTO reports (
 		report_id,submitted_at,submission_channel,reporting_institution,reporting_system,
 		transaction_ref,transaction_timestamp,subject_account_hash,subject_customer_hash,
 		destination_account_hash,destination_msisdn_hash,destination_institution,amount,currency,
 		channel,bank_risk_score,bank_threshold,risk_codes,evidence,narrative
 	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
-	ON CONFLICT (report_id) DO NOTHING`,
+	ON CONFLICT (reporting_institution,transaction_ref) DO NOTHING`,
 		reportID, submittedAt, channel, report.ReportingInstitution, report.ReportingSystem,
 		report.TransactionRef, report.TransactionTimestamp, report.SubjectAccountHash,
 		report.SubjectCustomerHash, report.DestinationAccountHash, report.DestinationMSISDNHash,
@@ -432,51 +526,96 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 	if err != nil {
 		return nil, &apiError{http.StatusInternalServerError, err.Error()}
 	}
+	if reportTag.RowsAffected() == 0 {
+		if err := tx.QueryRow(ctx, `SELECT report_id FROM reports
+			WHERE reporting_institution=$1 AND transaction_ref=$2`,
+			report.ReportingInstitution, report.TransactionRef).Scan(&existingReportID); err != nil {
+			return nil, &apiError{http.StatusInternalServerError, err.Error()}
+		}
+		result, resultErr := existingReportResult(ctx, tx, existingReportID)
+		if resultErr != nil {
+			return nil, &apiError{http.StatusInternalServerError, resultErr.Error()}
+		}
+		result["idempotent_replay"] = true
+		return result, nil
+	}
+	if err := insertArtefacts(ctx, tx, reportID, submittedAt, report); err != nil {
+		return nil, &apiError{http.StatusInternalServerError, err.Error()}
+	}
+
+	reasonsJSON, _ := json.Marshal(validation.ReasonCodes)
+	corroJSON, _ := json.Marshal(validation.CorroboratingInstitutions)
+	configVersion := int(numberOr(cfg["configuration_version"], 1))
+	_, err = tx.Exec(ctx, `INSERT INTO validations (
+		validation_id,report_id,validated_at,agent_version,validation_score,status,
+		reason_codes,corroborating_institutions,corroboration_count,explanation,
+		latency_ms,alert_id,configuration_version,supersedes_validation_id,is_current
+	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1)`,
+		validation.ValidationID, reportID, validation.ValidatedAt, validation.AgentVersion,
+		validation.ValidationScore, validation.Status, string(reasonsJSON), string(corroJSON),
+		validation.CorroborationCount, validation.Explanation, validation.LatencyMS,
+		validation.AlertID, configVersion, nil)
+	if err != nil {
+		return nil, &apiError{http.StatusInternalServerError, err.Error()}
+	}
+	validationAudit, _ := json.Marshal(map[string]any{
+		"status": validation.Status, "score": validation.ValidationScore,
+		"reason_codes": validation.ReasonCodes, "configuration_version": configVersion,
+	})
+	if err := auditRecord(ctx, tx, "agent", "validation.created", validation.ValidationID,
+		"", string(validationAudit), "report validation"); err != nil {
+		return nil, &apiError{http.StatusInternalServerError, err.Error()}
+	}
 
 	var alert map[string]any
-	if validation.Status == "VALIDATED_FRAUD" && report.DestinationInstitution != "" {
-		alertID := "alt-" + randomHex(5)
-		validation.AlertID = &alertID
+	publishedAlerts := []map[string]any{}
+	if validation.AlertID != nil {
 		alert = map[string]any{
-			"alert_id": alertID, "validation_id": validation.ValidationID, "report_id": reportID,
+			"alert_id": *validation.AlertID, "validation_id": validation.ValidationID, "report_id": reportID,
 			"issued_at": utcNow(), "receiving_institution": report.DestinationInstitution,
 			"reporting_institution":    report.ReportingInstitution,
 			"destination_account_hash": report.DestinationAccountHash,
 			"destination_msisdn_hash":  report.DestinationMSISDNHash,
 			"amount":                   report.Amount, "currency": report.Currency, "risk_codes": string(riskJSON),
 			"validation_score": validation.ValidationScore, "validated_by": "KIFARU validation agent",
-			"explanation": validation.Explanation, "state": "sent",
+			"explanation": validation.Explanation, "state": "sent", "alert_type": alertType,
 		}
-		_, err = a.db.Exec(ctx, `INSERT INTO alerts VALUES
-			($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-			ON CONFLICT (alert_id) DO NOTHING`,
+		_, err = tx.Exec(ctx, `INSERT INTO alerts (
+			alert_id,validation_id,report_id,issued_at,receiving_institution,
+			reporting_institution,destination_account_hash,destination_msisdn_hash,
+			amount,currency,risk_codes,validation_score,validated_by,explanation,state,alert_type
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
 			alert["alert_id"], alert["validation_id"], alert["report_id"], alert["issued_at"],
 			alert["receiving_institution"], alert["reporting_institution"],
 			alert["destination_account_hash"], alert["destination_msisdn_hash"], alert["amount"],
 			alert["currency"], alert["risk_codes"], alert["validation_score"], alert["validated_by"],
-			alert["explanation"], alert["state"])
+			alert["explanation"], alert["state"], alert["alert_type"])
+		if err != nil {
+			return nil, &apiError{http.StatusInternalServerError, err.Error()}
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO alert_actions(alert_id,action,actor,at)
+			VALUES ($1,'sent','agent',$2)`, alert["alert_id"], alert["issued_at"])
 		if err != nil {
 			return nil, &apiError{http.StatusInternalServerError, err.Error()}
 		}
 		if report.DestinationAccountHash != "" {
-			_ = a.kbAdd(ctx, report.DestinationAccountHash, "known_bad", "validated via "+reportID, "agent")
+			if err := kbAddWith(ctx, tx, report.DestinationAccountHash, "known_bad",
+				"validated via "+reportID, "agent"); err != nil {
+				return nil, &apiError{http.StatusInternalServerError, err.Error()}
+			}
 		}
+		publishedAlerts = append(publishedAlerts, alert)
 	}
-	reasonsJSON, _ := json.Marshal(validation.ReasonCodes)
-	corroJSON, _ := json.Marshal(validation.CorroboratingInstitutions)
-	_, err = a.db.Exec(ctx, `INSERT INTO validations VALUES
-		($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-		ON CONFLICT (validation_id) DO UPDATE SET
-		  validated_at=excluded.validated_at,validation_score=excluded.validation_score,
-		  status=excluded.status,reason_codes=excluded.reason_codes,
-		  corroborating_institutions=excluded.corroborating_institutions,
-		  corroboration_count=excluded.corroboration_count,explanation=excluded.explanation,
-		  latency_ms=excluded.latency_ms,alert_id=excluded.alert_id`,
-		validation.ValidationID, reportID, validation.ValidatedAt, validation.AgentVersion,
-		validation.ValidationScore, validation.Status, string(reasonsJSON), string(corroJSON),
-		validation.CorroborationCount, validation.Explanation, validation.LatencyMS, validation.AlertID)
+	revalidatedAlerts, err := a.revalidateCorroborated(ctx, tx, reportID, cfg)
 	if err != nil {
 		return nil, &apiError{http.StatusInternalServerError, err.Error()}
+	}
+	publishedAlerts = append(publishedAlerts, revalidatedAlerts...)
+	if err := tx.Commit(ctx); err != nil {
+		return nil, &apiError{http.StatusInternalServerError, err.Error()}
+	}
+	for _, issuedAlert := range publishedAlerts {
+		a.publishAlert(fmt.Sprint(issuedAlert["receiving_institution"]), issuedAlert)
 	}
 
 	described := make([]map[string]any, 0, len(codes))
@@ -487,6 +626,196 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 	return map[string]any{
 		"report_id": reportID, "risk_codes": described, "validation": validation, "alert": alert,
 	}, nil
+}
+
+func existingReportResult(ctx context.Context, store dbRunner, reportID string) (map[string]any, error) {
+	validations, err := rowsFrom(ctx, store, `SELECT * FROM validations
+		WHERE report_id=$1 AND is_current=1 ORDER BY validated_at DESC LIMIT 1`, reportID)
+	if err != nil {
+		return nil, err
+	}
+	alerts, err := rowsFrom(ctx, store, "SELECT * FROM alerts WHERE report_id=$1 LIMIT 1", reportID)
+	if err != nil {
+		return nil, err
+	}
+	var validation any
+	if len(validations) > 0 {
+		validation = validations[0]
+	}
+	var alert any
+	if len(alerts) > 0 {
+		alert = alerts[0]
+	}
+	return map[string]any{"report_id": reportID, "validation": validation, "alert": alert}, nil
+}
+
+func insertArtefacts(ctx context.Context, store dbRunner, reportID, observedAt string, report ReportIn) error {
+	artefacts := []struct {
+		kind string
+		hash string
+	}{
+		{"subject_account", report.SubjectAccountHash},
+		{"subject_customer", report.SubjectCustomerHash},
+		{"destination_account", report.DestinationAccountHash},
+		{"destination_msisdn", report.DestinationMSISDNHash},
+	}
+	if device := fmt.Sprint(report.Evidence["device_profile"]); device != "" && device != "<nil>" {
+		artefacts = append(artefacts, struct {
+			kind string
+			hash string
+		}{"device_profile", device})
+	}
+	for _, artefact := range artefacts {
+		if artefact.hash == "" {
+			continue
+		}
+		if _, err := store.Exec(ctx, `INSERT INTO artefacts(
+			report_id,institution_code,artefact_type,artefact_hash,observed_at
+		) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+			reportID, report.ReportingInstitution, artefact.kind, artefact.hash, observedAt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func alertTypeFor(report ReportIn) string {
+	if report.Amount <= 0 {
+		return "advisory"
+	}
+	return "hold"
+}
+
+func (a *App) revalidateCorroborated(
+	ctx context.Context,
+	tx pgx.Tx,
+	newReportID string,
+	cfg map[string]any,
+) ([]map[string]any, error) {
+	rows, err := tx.Query(ctx, `SELECT DISTINCT v.report_id
+		FROM validations v
+		JOIN artefacts prior ON prior.report_id=v.report_id
+		JOIN artefacts current ON current.report_id=$1
+			AND current.artefact_type=prior.artefact_type
+			AND current.artefact_hash=prior.artefact_hash
+		WHERE v.is_current=1
+		  AND v.status IN ('INSUFFICIENT_EVIDENCE','NOT_FRAUD')
+		  AND prior.report_id<>$1
+		  AND prior.institution_code<>current.institution_code
+		  AND prior.observed_at >= $2`,
+		newReportID, time.Now().UTC().Add(-30*24*time.Hour).Format("2006-01-02T15:04:05Z"))
+	if err != nil {
+		return nil, err
+	}
+	candidateIDs := []string{}
+	for rows.Next() {
+		var reportID string
+		if err := rows.Scan(&reportID); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		candidateIDs = append(candidateIDs, reportID)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	alerts := []map[string]any{}
+	for _, reportID := range candidateIDs {
+		reportRows, err := rowsFrom(ctx, tx, "SELECT * FROM reports WHERE report_id=$1", reportID)
+		if err != nil || len(reportRows) == 0 {
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+		report, codes, err := reportFromRow(reportRows[0])
+		if err != nil {
+			return nil, err
+		}
+		var previousID, previousStatus string
+		var previousScore float64
+		if err := tx.QueryRow(ctx, `SELECT validation_id,status,validation_score
+			FROM validations WHERE report_id=$1 AND is_current=1`,
+			reportID).Scan(&previousID, &previousStatus, &previousScore); err != nil {
+			return nil, err
+		}
+		validation, err := a.score(ctx, tx, report, reportID, codes, cfg, time.Now())
+		if err != nil {
+			return nil, err
+		}
+		validation.Explanation = a.explain(report, validation, codes)
+		if validation.Status == "VALIDATED_FRAUD" {
+			alertID := "alt-" + randomHex(5)
+			validation.AlertID = &alertID
+		}
+		if _, err := tx.Exec(ctx, "UPDATE validations SET is_current=0 WHERE validation_id=$1", previousID); err != nil {
+			return nil, err
+		}
+		reasons, _ := json.Marshal(validation.ReasonCodes)
+		corro, _ := json.Marshal(validation.CorroboratingInstitutions)
+		if _, err := tx.Exec(ctx, `INSERT INTO validations (
+			validation_id,report_id,validated_at,agent_version,validation_score,status,
+			reason_codes,corroborating_institutions,corroboration_count,explanation,
+			latency_ms,alert_id,configuration_version,supersedes_validation_id,is_current
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1)`,
+			validation.ValidationID, reportID, validation.ValidatedAt, validation.AgentVersion,
+			validation.ValidationScore, validation.Status, string(reasons), string(corro),
+			validation.CorroborationCount, validation.Explanation, validation.LatencyMS,
+			validation.AlertID, int(numberOr(cfg["configuration_version"], 1)), previousID); err != nil {
+			return nil, err
+		}
+		oldValue, _ := json.Marshal(map[string]any{"status": previousStatus, "score": previousScore})
+		newValue, _ := json.Marshal(map[string]any{
+			"status": validation.Status, "score": validation.ValidationScore,
+			"corroborating_institutions": validation.CorroboratingInstitutions,
+		})
+		if err := auditRecord(ctx, tx, "agent", "validation.revalidated",
+			validation.ValidationID, string(oldValue), string(newValue),
+			"new report supplied matching artefact"); err != nil {
+			return nil, err
+		}
+		if validation.AlertID == nil {
+			continue
+		}
+		riskJSON, _ := json.Marshal(codes)
+		alert := map[string]any{
+			"alert_id": *validation.AlertID, "validation_id": validation.ValidationID,
+			"report_id": reportID, "issued_at": utcNow(),
+			"receiving_institution":    report.DestinationInstitution,
+			"reporting_institution":    report.ReportingInstitution,
+			"destination_account_hash": report.DestinationAccountHash,
+			"destination_msisdn_hash":  report.DestinationMSISDNHash,
+			"amount":                   report.Amount, "currency": report.Currency, "risk_codes": string(riskJSON),
+			"validation_score": validation.ValidationScore, "validated_by": "KIFARU validation agent",
+			"explanation": validation.Explanation, "state": "sent", "alert_type": alertTypeFor(report),
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO alerts (
+			alert_id,validation_id,report_id,issued_at,receiving_institution,
+			reporting_institution,destination_account_hash,destination_msisdn_hash,
+			amount,currency,risk_codes,validation_score,validated_by,explanation,state,alert_type
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+			alert["alert_id"], alert["validation_id"], alert["report_id"], alert["issued_at"],
+			alert["receiving_institution"], alert["reporting_institution"],
+			alert["destination_account_hash"], alert["destination_msisdn_hash"], alert["amount"],
+			alert["currency"], alert["risk_codes"], alert["validation_score"], alert["validated_by"],
+			alert["explanation"], alert["state"], alert["alert_type"]); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO alert_actions(alert_id,action,actor,at)
+			VALUES ($1,'sent','agent',$2)`, alert["alert_id"], alert["issued_at"]); err != nil {
+			return nil, err
+		}
+		if report.DestinationAccountHash != "" {
+			if err := kbAddWith(ctx, tx, report.DestinationAccountHash, "known_bad",
+				"validated via automatic revalidation "+reportID, "agent"); err != nil {
+				return nil, err
+			}
+		}
+		alerts = append(alerts, alert)
+	}
+	return alerts, nil
 }
 
 func validateReport(report ReportIn) error {
@@ -544,6 +873,7 @@ func (a *App) normalize(report ReportIn) ([]string, error) {
 
 func (a *App) score(
 	ctx context.Context,
+	store dbRunner,
 	report ReportIn,
 	reportID string,
 	codes []string,
@@ -561,40 +891,43 @@ func (a *App) score(
 	if device == "<nil>" {
 		device = ""
 	}
-	rows, err := a.db.Query(ctx, `SELECT reporting_institution,destination_account_hash,
-		destination_msisdn_hash,evidence FROM reports
-		WHERE reporting_institution != $1 AND (
-		  (destination_account_hash != '' AND destination_account_hash = $2) OR
-		  (destination_msisdn_hash != '' AND destination_msisdn_hash = $3) OR
-		  ($4 != '' AND evidence LIKE $5)
-		) ORDER BY submitted_at DESC LIMIT 500`,
-		report.ReportingInstitution, nullSentinel(report.DestinationAccountHash),
-		nullSentinel(report.DestinationMSISDNHash), device, `%\"device_profile\": \"`+device+`\"%`)
+	rows, err := store.Query(ctx, `SELECT DISTINCT a.institution_code,a.artefact_type
+		FROM artefacts a
+		WHERE a.institution_code != $1
+		  AND (
+		    (a.artefact_type='destination_account' AND a.artefact_hash=$2) OR
+		    (a.artefact_type='destination_msisdn' AND a.artefact_hash=$3) OR
+		    (a.artefact_type='device_profile' AND a.artefact_hash=$4)
+		  )
+		  AND a.observed_at >= $5
+		ORDER BY a.institution_code`,
+		report.ReportingInstitution, report.DestinationAccountHash, report.DestinationMSISDNHash,
+		device, time.Now().UTC().Add(-30*24*time.Hour).Format("2006-01-02T15:04:05Z"))
 	if err != nil {
 		return Validation{}, err
 	}
 	defer rows.Close()
 	corro := map[string]bool{}
 	for rows.Next() {
-		var institution, destination, msisdn, evidence string
-		if err := rows.Scan(&institution, &destination, &msisdn, &evidence); err != nil {
+		var institution, artefactType string
+		if err := rows.Scan(&institution, &artefactType); err != nil {
 			return Validation{}, err
 		}
-		switch {
-		case report.DestinationAccountHash != "" && destination == report.DestinationAccountHash:
+		switch artefactType {
+		case "destination_account":
 			corro[institution] = true
 			reasons = append(reasons, "CORRO:destination")
-		case report.DestinationMSISDNHash != "" && msisdn == report.DestinationMSISDNHash:
+		case "destination_msisdn":
 			corro[institution] = true
 			reasons = append(reasons, "CORRO:msisdn")
-		case device != "" && strings.Contains(evidence, device):
+		case "device_profile":
 			corro[institution] = true
 			reasons = append(reasons, "CORRO:device_profile")
 		}
 	}
 	score += float64(min(len(corro), corroborationCap)) * weightCorroboration
 
-	kb, err := a.kbLists(ctx)
+	kb, err := kbListsFrom(ctx, store)
 	if err != nil {
 		return Validation{}, err
 	}
@@ -670,7 +1003,10 @@ func (a *App) history(w http.ResponseWriter, r *http.Request) {
 		r.destination_account_hash,r.destination_msisdn_hash,r.amount,r.currency,r.channel,
 		r.risk_codes,r.evidence,r.narrative,v.validated_at,v.agent_version,v.status,
 		v.validation_score,v.reason_codes,v.corroborating_institutions,v.corroboration_count,
-		v.explanation,v.alert_id FROM reports r LEFT JOIN validations v ON v.report_id=r.report_id
+		v.explanation,v.alert_id,a.state AS alert_state,a.alert_type
+		FROM reports r
+		LEFT JOIN validations v ON v.report_id=r.report_id AND v.is_current=1
+		LEFT JOIN alerts a ON a.alert_id=v.alert_id
 		WHERE r.reporting_institution=$1 OR r.destination_institution=$1
 		ORDER BY r.submitted_at DESC LIMIT $2`, institution, limit)
 	if err != nil {
@@ -683,7 +1019,10 @@ func (a *App) history(w http.ResponseWriter, r *http.Request) {
 func (a *App) reports(w http.ResponseWriter, r *http.Request) {
 	institution := r.URL.Query().Get("institution")
 	rows, err := a.rows(r.Context(), `SELECT r.*,v.status,v.validation_score,v.reason_codes,
-		v.explanation,v.alert_id FROM reports r LEFT JOIN validations v ON v.report_id=r.report_id
+		v.explanation,v.alert_id,a.state AS alert_state,a.alert_type
+		FROM reports r
+		LEFT JOIN validations v ON v.report_id=r.report_id AND v.is_current=1
+		LEFT JOIN alerts a ON a.alert_id=v.alert_id
 		WHERE r.reporting_institution=$1 ORDER BY r.submitted_at DESC LIMIT $2`,
 		institution, queryLimit(r, 500))
 	if err != nil {
@@ -695,8 +1034,16 @@ func (a *App) reports(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) alerts(w http.ResponseWriter, r *http.Request) {
 	institution := r.URL.Query().Get("institution")
-	rows, err := a.rows(r.Context(), `SELECT * FROM alerts WHERE receiving_institution=$1
-		ORDER BY issued_at DESC LIMIT $2`, institution, queryLimit(r, 200))
+	after := r.URL.Query().Get("after")
+	query := "SELECT * FROM alerts WHERE receiving_institution=$1"
+	args := []any{institution}
+	if after != "" {
+		query += " AND issued_at>$2"
+		args = append(args, after)
+	}
+	query += fmt.Sprintf(" ORDER BY issued_at DESC LIMIT $%d", len(args)+1)
+	args = append(args, queryLimit(r, 200))
+	rows, err := a.rows(r.Context(), query, args...)
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return
@@ -704,8 +1051,74 @@ func (a *App) alerts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"institution": institution, "alerts": rows})
 }
 
+func (a *App) streamAlerts(w http.ResponseWriter, r *http.Request) {
+	institution := strings.TrimSpace(r.URL.Query().Get("institution"))
+	if institution == "" {
+		writeError(w, 422, "institution is required")
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, 500, "streaming is unavailable")
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	channel := make(chan []byte, 16)
+	a.streamsMu.Lock()
+	if a.streams[institution] == nil {
+		a.streams[institution] = map[chan []byte]struct{}{}
+	}
+	a.streams[institution][channel] = struct{}{}
+	a.streamsMu.Unlock()
+	defer func() {
+		a.streamsMu.Lock()
+		delete(a.streams[institution], channel)
+		if len(a.streams[institution]) == 0 {
+			delete(a.streams, institution)
+		}
+		a.streamsMu.Unlock()
+	}()
+	_, _ = fmt.Fprint(w, "event: ready\ndata: {}\n\n")
+	flusher.Flush()
+	keepAlive := time.NewTicker(20 * time.Second)
+	defer keepAlive.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case payload := <-channel:
+			_, _ = w.Write(payload)
+			flusher.Flush()
+		case <-keepAlive.C:
+			_, _ = fmt.Fprint(w, ": keep-alive\n\n")
+			flusher.Flush()
+		}
+	}
+}
+
+func (a *App) publishAlert(institution string, alert map[string]any) {
+	payload, err := json.Marshal(alert)
+	if err != nil {
+		return
+	}
+	event := []byte(fmt.Sprintf("id: %s\nevent: alert\ndata: %s\n\n", alert["alert_id"], payload))
+	a.streamsMu.Lock()
+	defer a.streamsMu.Unlock()
+	for _, key := range []string{institution, "*"} {
+		for channel := range a.streams[key] {
+			select {
+			case channel <- event:
+			default:
+			}
+		}
+	}
+}
+
 func (a *App) validationDetail(w http.ResponseWriter, r *http.Request, reportID string) {
-	rows, err := a.rows(r.Context(), "SELECT * FROM validations WHERE report_id=$1", reportID)
+	rows, err := a.rows(r.Context(), `SELECT * FROM validations
+		WHERE report_id=$1 ORDER BY is_current DESC, validated_at DESC LIMIT 1`, reportID)
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return
@@ -760,19 +1173,50 @@ func (a *App) config(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 422, err.Error())
 			return
 		}
+		changed := false
 		for _, key := range []string{"validated_threshold", "insufficient_threshold", "enabled_sources"} {
 			if value, ok := patch[key]; ok && value != nil {
 				if err := a.setConfig(r.Context(), key, value, "admin"); err != nil {
 					writeError(w, 500, err.Error())
 					return
 				}
+				changed = true
 			}
 		}
 		if thresholds, ok := patch["institution_thresholds"].(map[string]any); ok {
 			for code, value := range thresholds {
 				if threshold, ok := numberValue(value); ok {
-					_, _ = a.db.Exec(r.Context(), "UPDATE institutions SET threshold=$1 WHERE code=$2", threshold, code)
+					var oldThreshold float64
+					err := a.db.QueryRow(r.Context(), "SELECT threshold FROM institutions WHERE code=$1", code).Scan(&oldThreshold)
+					if err != nil {
+						writeError(w, 404, fmt.Sprintf("unknown institution %q", code))
+						return
+					}
+					if _, err := a.db.Exec(r.Context(), "UPDATE institutions SET threshold=$1 WHERE code=$2", threshold, code); err != nil {
+						writeError(w, 500, err.Error())
+						return
+					}
+					if err := auditRecord(r.Context(), a.db, "admin", "institution.threshold", code,
+						strconv.FormatFloat(oldThreshold, 'f', -1, 64),
+						strconv.FormatFloat(threshold, 'f', -1, 64),
+						"institution threshold update"); err != nil {
+						writeError(w, 500, err.Error())
+						return
+					}
+					changed = true
 				}
+			}
+		}
+		if changed {
+			cfg, err := a.getConfig(r.Context())
+			if err != nil {
+				writeError(w, 500, err.Error())
+				return
+			}
+			nextVersion := int(numberOr(cfg["configuration_version"], 1)) + 1
+			if err := a.setConfig(r.Context(), "configuration_version", nextVersion, "admin"); err != nil {
+				writeError(w, 500, err.Error())
+				return
 			}
 		}
 		cfg, _ := a.getConfig(r.Context())
@@ -837,7 +1281,13 @@ func (a *App) knowledgeBase(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) revalidate(w http.ResponseWriter, r *http.Request) {
 	reportID := r.URL.Query().Get("report_id")
-	rows, err := a.rows(r.Context(), "SELECT * FROM reports WHERE report_id=$1", reportID)
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+	rows, err := rowsFrom(r.Context(), tx, "SELECT * FROM reports WHERE report_id=$1", reportID)
 	if err != nil || len(rows) == 0 {
 		writeError(w, 404, "unknown report")
 		return
@@ -847,25 +1297,51 @@ func (a *App) revalidate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err.Error())
 		return
 	}
-	cfg, _ := a.getConfig(r.Context())
-	validation, err := a.score(r.Context(), report, reportID, codes, cfg, time.Now())
+	cfg, _ := getConfigFrom(r.Context(), tx)
+	validation, err := a.score(r.Context(), tx, report, reportID, codes, cfg, time.Now())
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return
 	}
 	validation.Explanation = a.explain(report, validation, codes)
+	var previousID, previousStatus string
+	var previousScore float64
+	err = tx.QueryRow(r.Context(), `SELECT validation_id,status,validation_score
+		FROM validations WHERE report_id=$1 AND is_current=1
+		ORDER BY validated_at DESC LIMIT 1`, reportID).Scan(&previousID, &previousStatus, &previousScore)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if previousID != "" {
+		if _, err = tx.Exec(r.Context(), "UPDATE validations SET is_current=0 WHERE validation_id=$1", previousID); err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+	}
 	reasons, _ := json.Marshal(validation.ReasonCodes)
 	corro, _ := json.Marshal(validation.CorroboratingInstitutions)
-	_, err = a.db.Exec(r.Context(), `INSERT INTO validations VALUES
-		($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-		ON CONFLICT (validation_id) DO UPDATE SET validation_score=excluded.validation_score,
-		status=excluded.status,reason_codes=excluded.reason_codes,
-		corroborating_institutions=excluded.corroborating_institutions,
-		corroboration_count=excluded.corroboration_count,explanation=excluded.explanation`,
+	_, err = tx.Exec(r.Context(), `INSERT INTO validations (
+		validation_id,report_id,validated_at,agent_version,validation_score,status,
+		reason_codes,corroborating_institutions,corroboration_count,explanation,
+		latency_ms,alert_id,configuration_version,supersedes_validation_id,is_current
+	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1)`,
 		validation.ValidationID, reportID, validation.ValidatedAt, validation.AgentVersion,
 		validation.ValidationScore, validation.Status, string(reasons), string(corro),
-		validation.CorroborationCount, validation.Explanation, validation.LatencyMS, nil)
+		validation.CorroborationCount, validation.Explanation, validation.LatencyMS, nil,
+		int(numberOr(cfg["configuration_version"], 1)), nullIfEmpty(previousID))
 	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	oldValue, _ := json.Marshal(map[string]any{"status": previousStatus, "score": previousScore})
+	newValue, _ := json.Marshal(map[string]any{"status": validation.Status, "score": validation.ValidationScore})
+	if err := auditRecord(r.Context(), tx, "admin", "validation.revalidated",
+		validation.ValidationID, string(oldValue), string(newValue), "manual revalidation"); err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
 		writeError(w, 500, err.Error())
 		return
 	}
@@ -883,26 +1359,87 @@ func (a *App) auditLog(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) setAlertState(w http.ResponseWriter, r *http.Request, alertID string) {
 	state := r.URL.Query().Get("state")
+	comment := ""
 	if state == "" {
 		var body struct {
-			State string `json:"state"`
+			State   string `json:"state"`
+			Comment string `json:"comment"`
 		}
-		_ = decodeJSON(r, &body)
+		if err := decodeJSON(r, &body); err != nil {
+			writeError(w, 422, err.Error())
+			return
+		}
 		state = body.State
+		comment = strings.TrimSpace(body.Comment)
 	}
-	if !containsString([]string{"sent", "acknowledged", "actioned", "disputed"}, state) {
+	if !containsString([]string{"acknowledged", "actioned", "disputed"}, state) {
 		writeError(w, 422, "invalid alert state")
 		return
 	}
-	_, err := a.db.Exec(r.Context(), "UPDATE alerts SET state=$1 WHERE alert_id=$2", state, alertID)
-	if err == nil {
-		err = a.audit(r.Context(), "analyst", "alert.state", alertID, state)
+	if state == "disputed" && comment == "" {
+		writeError(w, 422, "a dispute comment is required")
+		return
+	}
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+	var oldState, reportingInstitution, receivingInstitution string
+	err = tx.QueryRow(r.Context(), `SELECT state,reporting_institution,receiving_institution
+		FROM alerts WHERE alert_id=$1 FOR UPDATE`, alertID).
+		Scan(&oldState, &reportingInstitution, &receivingInstitution)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, 404, "unknown alert")
+		return
 	}
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]any{"alert_id": alertID, "state": state})
+	validTransition := (oldState == "sent" && (state == "acknowledged" || state == "disputed")) ||
+		(oldState == "acknowledged" && (state == "actioned" || state == "disputed")) ||
+		oldState == state
+	if !validTransition {
+		writeError(w, 409, fmt.Sprintf("cannot move alert from %s to %s", oldState, state))
+		return
+	}
+	if _, err = tx.Exec(r.Context(), "UPDATE alerts SET state=$1 WHERE alert_id=$2", state, alertID); err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if _, err = tx.Exec(r.Context(), `INSERT INTO alert_actions(alert_id,action,comment,actor,at)
+		VALUES ($1,$2,$3,'analyst',$4)`, alertID, state, nullIfEmpty(comment), utcNow()); err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if state == "disputed" {
+		payload, _ := json.Marshal(map[string]string{
+			"alert_id": alertID, "comment": comment,
+			"reporting_institution": reportingInstitution,
+			"receiving_institution": receivingInstitution,
+		})
+		if _, err = tx.Exec(r.Context(), `INSERT INTO notifications(
+			institution_code,event_type,record_id,created_at,payload
+		) VALUES ($1,'alert.disputed',$2,$3,$4)`,
+			reportingInstitution, alertID, utcNow(), string(payload)); err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+	}
+	if err := auditRecord(r.Context(), tx, "analyst", "alert.state", alertID,
+		oldState, state, comment); err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"alert_id": alertID, "state": state, "previous_state": oldState, "comment": comment,
+	})
 }
 
 func (a *App) submitCSV(w http.ResponseWriter, r *http.Request) {
@@ -1031,7 +1568,11 @@ func dashboardValidation(result map[string]any, report ReportIn) map[string]any 
 }
 
 func (a *App) getConfig(ctx context.Context) (map[string]any, error) {
-	rows, err := a.db.Query(ctx, "SELECT key,value FROM config")
+	return getConfigFrom(ctx, a.db)
+}
+
+func getConfigFrom(ctx context.Context, store dbRunner) (map[string]any, error) {
+	rows, err := store.Query(ctx, "SELECT key,value FROM config")
 	if err != nil {
 		return nil, err
 	}
@@ -1052,17 +1593,19 @@ func (a *App) getConfig(ctx context.Context) (map[string]any, error) {
 }
 
 func (a *App) setConfig(ctx context.Context, key string, value any, actor string) error {
+	var oldValue string
+	_ = a.db.QueryRow(ctx, "SELECT value FROM config WHERE key=$1", key).Scan(&oldValue)
 	encoded, _ := json.Marshal(value)
 	if _, err := a.db.Exec(ctx, `INSERT INTO config(key,value) VALUES ($1,$2)
 		ON CONFLICT (key) DO UPDATE SET value=excluded.value`, key, string(encoded)); err != nil {
 		return err
 	}
-	return a.audit(ctx, actor, "config.set", key, string(encoded))
+	return auditRecord(ctx, a.db, actor, "config.set", key, oldValue, string(encoded), "configuration update")
 }
 
-func (a *App) kbLists(ctx context.Context) (map[string]map[string]bool, error) {
+func kbListsFrom(ctx context.Context, store dbRunner) (map[string]map[string]bool, error) {
 	out := map[string]map[string]bool{"known_good": {}, "known_bad": {}}
-	rows, err := a.db.Query(ctx, "SELECT artefact_hash,list_name FROM knowledge_base")
+	rows, err := store.Query(ctx, "SELECT artefact_hash,list_name FROM knowledge_base")
 	if err != nil {
 		return nil, err
 	}
@@ -1081,16 +1624,32 @@ func (a *App) kbLists(ctx context.Context) (map[string]map[string]bool, error) {
 }
 
 func (a *App) kbAdd(ctx context.Context, hash, list, label, actor string) error {
-	if _, err := a.db.Exec(ctx, `INSERT INTO knowledge_base VALUES ($1,$2,$3,$4,$5)
+	return kbAddWith(ctx, a.db, hash, list, label, actor)
+}
+
+func kbAddWith(ctx context.Context, store dbRunner, hash, list, label, actor string) error {
+	if _, err := store.Exec(ctx, `INSERT INTO knowledge_base VALUES ($1,$2,$3,$4,$5)
 		ON CONFLICT (artefact_hash,list_name) DO NOTHING`, hash, list, label, actor, utcNow()); err != nil {
 		return err
 	}
-	return a.audit(ctx, actor, "kb.add", hash, list)
+	newValue, _ := json.Marshal(map[string]string{"list": list, "label": label})
+	return auditRecord(ctx, store, actor, "kb.add", hash, "", string(newValue), "knowledge base update")
 }
 
 func (a *App) audit(ctx context.Context, actor, action, target, detail string) error {
-	_, err := a.db.Exec(ctx, `INSERT INTO audit_log(at,actor,action,target,detail)
-		VALUES ($1,$2,$3,$4,$5)`, utcNow(), actor, action, target, detail)
+	return auditRecord(ctx, a.db, actor, action, target, "", detail, "")
+}
+
+func auditRecord(
+	ctx context.Context,
+	store dbRunner,
+	actor, action, target, oldValue, newValue, reason string,
+) error {
+	detail := newValue
+	_, err := store.Exec(ctx, `INSERT INTO audit_log(
+		at,actor,action,target,detail,old_value,new_value,reason
+	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		utcNow(), actor, action, target, detail, oldValue, newValue, reason)
 	return err
 }
 
@@ -1104,7 +1663,11 @@ func (a *App) queryRows(w http.ResponseWriter, r *http.Request, query string, ar
 }
 
 func (a *App) rows(ctx context.Context, query string, args ...any) ([]map[string]any, error) {
-	rows, err := a.db.Query(ctx, query, args...)
+	return rowsFrom(ctx, a.db, query, args...)
+}
+
+func rowsFrom(ctx context.Context, store dbRunner, query string, args ...any) ([]map[string]any, error) {
+	rows, err := store.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1257,6 +1820,13 @@ func containsString(values []string, value string) bool {
 func nullSentinel(value string) string {
 	if value == "" {
 		return "\x00"
+	}
+	return value
+}
+
+func nullIfEmpty(value string) any {
+	if value == "" {
+		return nil
 	}
 	return value
 }
