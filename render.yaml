@@ -12,7 +12,7 @@ services:
         sync: false
 
   - type: web
-    name: kifaru-frontend
+    name: kifarulive
     runtime: static
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
