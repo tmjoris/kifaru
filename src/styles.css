@@ -1244,6 +1244,14 @@
       color: var(--cp-text-muted);
     }
 
+    @media (min-width: 721px) and (max-width: 1600px) {
+      .transaction-table .table-secondary,
+      .transaction-table .table-direction,
+      .transaction-table .table-provenance {
+        display: none;
+      }
+    }
+
     @media (max-width: 1100px) {
       .app,
       #appShell.sidebar-collapsed,
