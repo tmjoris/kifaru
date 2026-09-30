@@ -1,4 +1,23 @@
-import type { Transaction, Validation } from "./types.ts";
+import type { Session, Transaction, Validation } from "./types.ts";
+
+/** Bank IDs used before the demo institutions were renamed. */
+const LEGACY_BANK_IDS: Record<string, string> = {
+  ncba: "bank-a", kcb: "bank-b", equity: "psp-c", im: "sacco-d",
+};
+
+/** Upgrades a saved session, and drops it when its institution no longer exists. */
+export function resolveSession(
+  saved: { scope?: string; bankId?: string | null; stage?: string } | null,
+  bankIds: string[],
+): Session | null {
+  if (!saved) return null;
+  const scope = saved.scope === "institution" || saved.scope === "exchange"
+    ? saved.scope
+    : saved.stage === "kifaru" ? "exchange" : "institution";
+  if (scope === "exchange") return { scope, bankId: null };
+  const bankId = LEGACY_BANK_IDS[saved.bankId ?? ""] ?? saved.bankId ?? "";
+  return bankIds.includes(bankId) ? { scope, bankId } : null;
+}
 
 export function reportingBankId(transaction: Transaction) {
   return transaction.sourceBank === "external" ? transaction.destinationBank : transaction.sourceBank;
@@ -25,7 +44,7 @@ export function transactionDirection(transaction: Transaction, bankId: string) {
 }
 
 export function displayTransactionId(transaction: Transaction, bankName: string) {
-  return `${bankName}-${transaction.id.split("-").at(-1)}`;
+  return `${bankName.replace(/\s+/g, "")}-${transaction.id.split("-").at(-1)}`;
 }
 
 export function validationLabel(status: string) {
@@ -105,7 +124,11 @@ export function pipelineSteps(transaction: Transaction): PipelineStep[] {
     },
   ];
   if (transaction.validationStatus === "validated_fraud") {
-    steps.push({ id: "act", label: "Act", detail: "Alert sent, transaction held", state: "done" });
+    steps.push({
+      id: "act", label: "Act",
+      detail: transaction.alertType === "advisory" ? "Advisory sent, no money moved yet" : "Alert sent, transaction held",
+      state: "done",
+    });
   } else if (transaction.validationStatus === "not_fraud") {
     steps.push({ id: "act", label: "Act", detail: "Cleared, no alert routed", state: "cleared" });
   } else {
@@ -128,7 +151,9 @@ export function campaignChain(transaction: Transaction, bankName: (id: string) =
     { label: bankName(counterpartyBankId(transaction)), kind: "bank", detail: transactionDirection(transaction, counterpartyBankId(transaction)) },
   ];
   if (transaction.validationStatus === "validated_fraud") {
-    chain.push({ label: "Held for review", kind: "outcome", detail: "Cash-out blocked pending investigation" });
+    chain.push(transaction.alertType === "advisory"
+      ? { label: "Watch the account", kind: "outcome", detail: "Advisory: verify the customer before any transfer" }
+      : { label: "Held for review", kind: "outcome", detail: "Cash-out blocked pending investigation" });
   } else if (transaction.validationStatus === "not_fraud") {
     chain.push({ label: "Released", kind: "outcome", detail: "No cross-institution corroboration found" });
   } else {

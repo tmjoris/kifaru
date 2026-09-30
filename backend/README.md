@@ -16,8 +16,9 @@ The service listens on `$PORT`, defaulting to `8000`.
 `institutions` stores neutral institution identity and category. Reporting and
 receiving are per-record relationships through `reports.reporting_institution`,
 `reports.destination_institution`, and the corresponding alert fields. A bank is
-never permanently assigned one of those roles. Startup seeds the licensed Kenyan
-commercial bank directory and installs institution foreign keys for new records.
+never permanently assigned one of those roles. Startup seeds the four synthetic
+demo institutions (Tier-1 Bank A, Tier-2 Bank B, Mobile Money PSP C and SACCO D)
+and installs institution foreign keys for new records.
 
 ## API
 

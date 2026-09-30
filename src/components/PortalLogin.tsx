@@ -141,7 +141,8 @@ export function PortalLogin({ banks, staff, onEnterBank, onEnterKifaru }: {
         </footer>
       </div>
       <p className="portal-signal-note">Kifaru helps institutions recognise the same fraud pattern
-        before the next transfer is paid out.</p>
+        before the next transfer is paid out. This demo runs on synthetic data, and its
+        institution names are invented.</p>
     </section>
   </main>;
 }
