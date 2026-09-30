@@ -2,6 +2,7 @@ services:
   - type: web
     name: kifaru-api
     runtime: go
+    plan: free
     rootDir: backend
     buildCommand: mkdir -p bin && go build -o bin/kifaru-api .
     startCommand: ./bin/kifaru-api
