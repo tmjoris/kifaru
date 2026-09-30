@@ -1,4 +1,37 @@
-import type { Bank } from "./types";
+import type { Bank, InstitutionKind } from "./types";
+
+/**
+ * Builds a directory-only institution entry: real name, no live synthetic SOC feed wired up yet.
+ * Used for the long tail of Kenyan banks, SACCOs and PSPs that staff can sign into to preview
+ * the Kifaru workflow, plus any institution a user adds themselves at the sign-in screen.
+ */
+export function directoryBank(id: string, name: string, region: string, kind: InstitutionKind): Bank {
+  const shortName = (name.match(/[A-Za-z]/g) ?? []).slice(0, 2).join("").toUpperCase() || "IN";
+  const kindLabel = kind === "sacco" ? "SACCO risk desk" : kind === "psp" ? "Mobile money risk desk" : "Fraud & SOC team";
+  return {
+    id,
+    backendCode: `directory:${id}`,
+    name,
+    region,
+    users: kindLabel,
+    shortName,
+    health: "pending",
+    threshold: 80,
+    soc: "Not yet connected to a live fraud feed. Sign in to preview the Kifaru workflow with shared sample data.",
+    kind,
+    pending: true,
+    connector: {
+      endpoint: "Not connected",
+      systems: "Pending onboarding",
+      latency: "\u2013",
+      lastSync: "Never",
+    },
+    inputSources: [
+      { name: "Core system feed", type: "Transaction feed", method: "Pending", status: "Not connected", cadence: "\u2013" },
+      { name: "SOC / SIEM connector", type: "SOC connector", method: "Pending", status: "Not connected", cadence: "\u2013" },
+    ],
+  };
+}
 
 export const initialBanks: Bank[] = [
       {
@@ -9,6 +42,7 @@ export const initialBanks: Bank[] = [
         users: "SOC-1 analysts",
         shortName: "NC",
         health: "healthy",
+        kind: "bank",
         threshold: 82,
         soc: "Connected to Sentinel, card processor, mobile banking, and dispute workflow.",
         connector: {
@@ -32,6 +66,7 @@ export const initialBanks: Bank[] = [
         users: "Fraud ops team",
         shortName: "KC",
         health: "warning",
+        kind: "bank",
         threshold: 76,
         soc: "Connected to Splunk and core banking. Mobile telemetry lag detected.",
         connector: {
@@ -55,6 +90,7 @@ export const initialBanks: Bank[] = [
         users: "Managed SOC",
         shortName: "EQ",
         health: "healthy",
+        kind: "bank",
         threshold: 88,
         soc: "Connected to SIEM, ATM switch, sanctions screen, and case management.",
         connector: {
@@ -78,6 +114,7 @@ export const initialBanks: Bank[] = [
         users: "Digital risk team",
         shortName: "IM",
         health: "healthy",
+        kind: "bank",
         threshold: 84,
         soc: "Connected to card authorization, mobile banking, transaction monitoring, and case workflow.",
         connector: {
@@ -94,6 +131,41 @@ export const initialBanks: Bank[] = [
         ]
       }
     ];
+
+/**
+ * The wider directory of CBK-licensed commercial banks, mobile-money PSPs and SASRA-licensed
+ * deposit-taking SACCOs in Kenya. These do not have a live synthetic SOC feed wired up (only
+ * the four institutions above do, for the guided demo), but staff can still sign in to any of
+ * them from the portal screen to preview the Kifaru workflow.
+ */
+function withKind(kind: InstitutionKind, names: string[]): [string, string, InstitutionKind][] {
+  return names.map((name) => [name, "Kenya", kind]);
+}
+
+const directoryEntries = withKind("bank", [
+  "Absa Bank Kenya", "Bank of Africa Kenya", "Bank of Baroda (Kenya)", "Bank of India (Kenya)",
+  "Citibank N.A. Kenya", "Consolidated Bank of Kenya", "Co-operative Bank of Kenya", "Credit Bank",
+  "Development Bank of Kenya", "Diamond Trust Bank (DTB)", "DIB Bank Kenya", "Ecobank Kenya",
+  "Family Bank", "First Community Bank", "Guaranty Trust Bank Kenya (GTBank)", "Guardian Bank",
+  "Gulf African Bank", "Habib Bank AG Zurich", "HFC Limited (Housing Finance)", "Kingdom Bank",
+  "Middle East Bank Kenya", "M-Oriental Bank", "National Bank of Kenya", "Paramount Bank",
+  "Prime Bank", "SBM Bank Kenya", "Sidian Bank", "Stanbic Bank Kenya", "Standard Chartered Bank Kenya",
+  "UBA Kenya", "Victoria Commercial Bank", "ABC Bank (African Banking Corporation)",
+]);
+
+const pspEntries = withKind("psp", ["Safaricom M-Pesa", "Airtel Money Kenya", "T-Kash (Telkom Kenya)"]);
+
+const saccoEntries = withKind("sacco", [
+  "Stima Sacco", "Mwalimu National Sacco", "Harambee Sacco", "Unaitas Sacco", "Tower Sacco",
+  "Kenya Police Sacco", "Safaricom Sacco", "Imarika Sacco", "Nation Sacco", "Ukulima Sacco",
+]);
+
+function slugify(name: string) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-+|-+$)/g, "");
+}
+
+export const directoryBanks: Bank[] = [...directoryEntries, ...pspEntries, ...saccoEntries]
+  .map(([name, region, kind]) => directoryBank(`dir-${slugify(name)}`, name, region, kind));
 
 export const riskCodeCatalog = [
       { code: "IP-401", label: "Changing IP or location", text: "Login geography, IP, or network path changed abnormally before the transaction." },

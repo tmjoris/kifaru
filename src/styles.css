@@ -433,6 +433,10 @@
       background: var(--cp-danger);
     }
 
+    .dot.pending {
+      background: var(--cp-text-soft);
+    }
+
     .side-panel {
       padding: 1rem;
       margin-top: 1.5rem;
@@ -1468,3 +1472,183 @@
       margin-top: auto;
       padding-top: 0.35rem;
     }
+
+/* ---- Portal login (staff sign-in screen) ---- */
+.portal-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1.5rem;
+  background: var(--cp-bg);
+}
+
+.portal-card {
+  width: 100%;
+  max-width: 68rem;
+  border-radius: var(--cp-radius);
+  background: var(--cp-panel-strong);
+  box-shadow: var(--cp-shadow);
+  padding: 2.5rem clamp(1.5rem, 4vw, 3rem) 2.75rem;
+}
+
+.portal-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  text-align: center;
+  margin-bottom: 2.25rem;
+}
+
+.portal-header h1 {
+  margin: 0.25rem 0 0;
+  font-size: 1.6rem;
+}
+
+.portal-header p {
+  margin: 0;
+  max-width: 30rem;
+  color: var(--cp-text-muted);
+  font-size: 0.92rem;
+}
+
+.portal-role-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.portal-role {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1.25rem;
+  border: 1px solid var(--cp-border);
+  border-radius: var(--cp-radius);
+  background: var(--cp-surface);
+}
+
+.portal-role-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.portal-role-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 14px;
+  background: var(--cp-accent-soft);
+  color: var(--cp-accent);
+}
+
+.portal-role-head h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.portal-role-head p {
+  margin: 0.2rem 0 0;
+  color: var(--cp-text-muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.portal-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.portal-search {
+  flex: initial;
+}
+
+.portal-bank-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 15rem;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.portal-bank-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  width: 100%;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--cp-border);
+  border-radius: var(--cp-radius);
+  background: var(--cp-surface);
+  color: var(--cp-text);
+  text-align: left;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.portal-bank-btn:hover {
+  border-color: var(--cp-accent);
+  background: var(--cp-accent-soft);
+}
+
+.portal-bank-name {
+  font-weight: 500;
+  font-size: 0.86rem;
+}
+
+.portal-bank-region {
+  color: var(--cp-text-soft);
+  font-size: 0.75rem;
+}
+
+.portal-empty {
+  padding: 0.75rem 0.25rem;
+  font-size: 0.82rem;
+}
+
+.portal-add-toggle {
+  align-self: flex-start;
+}
+
+.portal-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.85rem;
+  border: 1px solid var(--cp-border);
+  border-radius: var(--cp-radius);
+  background: var(--cp-surface-soft);
+}
+
+.portal-add-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.portal-enter {
+  width: 100%;
+}
+
+.signed-in-card {
+  cursor: default;
+}
+
+.rail-signout {
+  margin-top: 0.75rem;
+}
+
+@media (max-width: 1100px) {
+  .portal-role-grid {
+    grid-template-columns: 1fr;
+  }
+}
