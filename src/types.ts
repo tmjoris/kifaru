@@ -1,7 +1,7 @@
 export type PortalScope = "institution" | "exchange";
 export type Tab = "outgoing" | "incoming" | "history" | "reports" | "knowledge" | "governance";
 export type Outcome = "validated_fraud" | "not_fraud" | "needs_review";
-export type InstitutionKind = "bank" | "sacco" | "psp";
+export type InstitutionKind = "bank" | "mortgage" | "sacco" | "psp";
 export interface Session {
   scope: PortalScope;
   bankId: string | null;
@@ -25,8 +25,6 @@ export interface Bank {
   soc: string;
   /** Institution category, used to group and label choices on the portal sign-in screen. */
   kind?: InstitutionKind;
-  /** True for institutions with no live synthetic backend feed wired up yet (directory-only entries). */
-  pending?: boolean;
   connector: { endpoint: string; systems: string; latency: string; lastSync: string };
   inputSources: Source[];
 }

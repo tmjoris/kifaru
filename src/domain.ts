@@ -1,8 +1,9 @@
 import type { Session, Transaction, Validation } from "./types.ts";
 
-/** Bank IDs used before the demo institutions were renamed. */
+/** Bank IDs used by earlier versions of the dashboard. */
 const LEGACY_BANK_IDS: Record<string, string> = {
-  ncba: "bank-a", kcb: "bank-b", equity: "psp-c", im: "sacco-d",
+  "bank-a": "ncba", "bank-b": "kcb", "psp-c": "equity", "sacco-d": "im",
+  "dir-first-community-bank": "premier-bank",
 };
 
 /** Upgrades a saved session, and drops it when its institution no longer exists. */
@@ -15,7 +16,8 @@ export function resolveSession(
     ? saved.scope
     : saved.stage === "kifaru" ? "exchange" : "institution";
   if (scope === "exchange") return { scope, bankId: null };
-  const bankId = LEGACY_BANK_IDS[saved.bankId ?? ""] ?? saved.bankId ?? "";
+  const savedId = saved.bankId ?? "";
+  const bankId = LEGACY_BANK_IDS[savedId] ?? savedId.replace(/^dir-/, "");
   return bankIds.includes(bankId) ? { scope, bankId } : null;
 }
 
