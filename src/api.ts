@@ -1,5 +1,6 @@
 import type {
-  Bank, DashboardData, KnowledgeBaseEntry, RiskCodeReference, Transaction, UploadSummary, Validation,
+  Bank, DashboardData, DemoStreamEvent, DemoStreamStatus, KnowledgeBaseEntry, RiskCodeReference,
+  Transaction, UploadSummary, Validation,
 } from "./types";
 
 const configuredApiUrl = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
@@ -252,6 +253,66 @@ export async function updateAlertState(
     body: JSON.stringify({ state, comment }),
     signal,
   });
+}
+
+function parseDemoStream(payload: unknown): DemoStreamStatus {
+  if (!isRecord(payload) || !Array.isArray(payload.events)) {
+    throw new Error("The backend returned an invalid demo stream state.");
+  }
+  const events: DemoStreamEvent[] = payload.events.flatMap((value) => {
+    if (!isRecord(value) || typeof value.event_offset !== "number") return [];
+    const status = requiredString(value, "status");
+    if (!["pending", "processed", "failed"].includes(status)) return [];
+    return [{
+      eventOffset: value.event_offset,
+      topic: requiredString(value, "topic"),
+      eventType: requiredString(value, "event_type"),
+      source: requiredString(value, "source"),
+      status: status as DemoStreamEvent["status"],
+      reportId: requiredString(value, "report_id"),
+      outcome: requiredString(value, "outcome"),
+      error: requiredString(value, "error"),
+      alertName: requiredString(value, "alert_name"),
+      alertSeverity: requiredString(value, "alert_severity"),
+      createdAt: requiredString(value, "created_at"),
+    }];
+  });
+  return {
+    enabled: payload.enabled === true,
+    cadenceSeconds: requiredNumber(payload, "cadence_seconds"),
+    nextOffset: requiredNumber(payload, "next_offset"),
+    emittedSinceReset: requiredNumber(payload, "emitted_since_reset"),
+    maxEvents: requiredNumber(payload, "max_events"),
+    lastEmittedAt: requiredString(payload, "last_emitted_at"),
+    updatedAt: requiredString(payload, "updated_at"),
+    topic: requiredString(payload, "topic"),
+    datasetBasis: requiredString(payload, "dataset_basis"),
+    events,
+  };
+}
+
+export async function loadDemoStream(signal?: AbortSignal) {
+  return parseDemoStream(await fetchJson("/api/v1/admin/demo-stream", { signal }));
+}
+
+export async function setDemoStreamState(enabled: boolean, cadenceSeconds = 30, signal?: AbortSignal) {
+  return parseDemoStream(await fetchJson("/api/v1/admin/demo-stream/state", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled, cadence_seconds: cadenceSeconds }),
+    signal,
+  }));
+}
+
+export async function emitDemoStreamEvent(signal?: AbortSignal) {
+  await fetchJson("/api/v1/admin/demo-stream/emit", { method: "POST", signal });
+}
+
+export async function resetDemoStream(signal?: AbortSignal) {
+  return parseDemoStream(await fetchJson("/api/v1/admin/demo-stream/reset", {
+    method: "POST",
+    signal,
+  }));
 }
 
 export async function validateCsv(csv: string, signal?: AbortSignal) {
