@@ -313,9 +313,61 @@ The first migration:
 - Extends audit records with old value, new value and reason
 - Installs a PostgreSQL trigger that rejects audit-row updates and deletes
 
+The second migration creates the synthetic SOC event broker:
+
+- One durable producer-state row with pause/resume and a 30-second cadence
+- An ordered `sentinel.security-alert` event log with monotonic offsets
+- Processing status, report IDs, outcomes and failure details for every event
+- A 500-event safety cap between resets
+
 Audit entries are written for validations, automatic and manual revalidation,
 alert decisions, configuration updates, threshold changes and knowledge-base
 changes.
+
+## Synthetic Microsoft Sentinel event stream
+
+Kifaru staff can run a continuous synthetic SOC feed from the `/staff`
+workspace. It behaves like a small Kafka topic while remaining deployable on the
+project's existing Render and PostgreSQL services:
+
+- Topic: `sentinel.security-alert`
+- Default cadence: one event every 30 seconds
+- Durable, increasing offsets
+- Pause, resume, emit-one and reset controls
+- Retained processing result for each event
+- Server-Sent Event notification after processing
+- Automatic pause after 500 events until staff reset the stream
+
+The payloads follow public Microsoft Sentinel `SecurityAlert` conventions,
+including `SystemAlertId`, `AlertName`, `AlertSeverity`, `ProviderName`,
+`CompromisedEntity`, `Entities`, `Tactics`, `Techniques` and
+`ExtendedProperties`. Transaction amounts and behavior are synthetic and
+informed by the public PaySim mobile-money simulator. No private SOC logs or
+customer transactions are copied into the repository.
+
+The producer rotates through paired cross-institution scenarios:
+
+- SIM change followed by a new-device transfer
+- New mule account receiving and rapidly forwarding funds
+- New beneficiary followed by a high-value transfer
+- Credential reset from an unfamiliar device
+- An unusual but potentially legitimate payment requiring corroboration
+
+Two consecutive events in a campaign share one protected destination artefact
+but originate from different institutions. This exercises Kifaru's automatic
+corroboration and revalidation path rather than merely changing dashboard
+counters.
+
+Reset removes the stream's reports, validations, alerts, indexed artefacts,
+knowledge-base additions and broker events. Append-only audit records remain.
+
+Public references used for the synthetic schema and scenarios:
+
+- [Microsoft Sentinel security alert schema](https://learn.microsoft.com/en-us/azure/sentinel/security-alert-schema)
+- [SecurityIncident table reference](https://learn.microsoft.com/en-us/azure/azure-monitor/reference/tables/securityincident)
+- [CommonSecurityLog table reference](https://learn.microsoft.com/en-us/azure/azure-monitor/reference/tables/commonsecuritylog)
+- [Microsoft Sentinel public sample data](https://github.com/Azure/Azure-Sentinel/tree/master/Sample%20Data)
+- [PaySim mobile-money simulator](https://github.com/EdgarLopezPhD/PaySim)
 
 ## Real-time delivery
 
@@ -355,6 +407,10 @@ POST   /v1/admin/kb
 DELETE /v1/admin/kb
 POST   /v1/admin/revalidate
 GET    /v1/admin/audit
+GET    /v1/admin/demo-stream
+POST   /v1/admin/demo-stream/state
+POST   /v1/admin/demo-stream/emit
+POST   /v1/admin/demo-stream/reset
 ```
 
 ## Requirements coverage
@@ -390,6 +446,8 @@ The implementation is based on:
 - Automatic known-bad addition after validated fraud
 - Manual revalidation
 - Expanded append-only audit history
+- Durable Microsoft Sentinel-shaped synthetic event stream
+- Ordered event offsets, processing outcomes, pause/resume and reset controls
 - No payment blocking or reversal API
 
 ### Prototype limitations
@@ -401,6 +459,11 @@ The implementation is based on:
   missing hash prefixes but does not yet require a full 64-character digest for
   every legacy evidence field.
 - SSE delivery is designed for one API instance.
+- The demo broker uses PostgreSQL rather than an external Kafka cluster. It
+  preserves the ordering, offset, retention and consumer-facing behavior needed
+  for this prototype without adding another hosted service.
+- All continuous-stream records are synthetic. Public Sentinel schemas and
+  PaySim patterns inform their shape; they are not real bank SOC events.
 - The API does not yet publish an OpenAPI document.
 - Accuracy and latency figures still need a final measured report from the
   complete synthetic replay.
@@ -484,6 +547,10 @@ The backend tests cover:
 - Reporting-institution notification creation
 - Rollback when persistence fails
 - Audit-record creation
+- Sentinel-shaped synthetic event generation
+- Cross-institution campaign pairing
+- Durable event retention and report processing
+- Stream reset cleanup
 
 GitHub Actions starts PostgreSQL 16, builds and tests the frontend, and runs the
 Go test suite on every push to `main` and every pull request.

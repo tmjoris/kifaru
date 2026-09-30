@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  alertStreamUrl, loadDashboardData, updateAlertState, updateInstitutionThreshold, validateCsv,
+  alertStreamUrl, emitDemoStreamEvent, loadDashboardData, loadDemoStream, resetDemoStream,
+  setDemoStreamState, updateAlertState, updateInstitutionThreshold, validateCsv,
 } from "./api";
 import { directoryBanks, initialBanks, riskCodeCatalog } from "./data";
 import {
@@ -8,7 +9,8 @@ import {
   transactionDirection,
 } from "./domain";
 import type {
-  Bank, KnowledgeBaseEntry, PortalScope, RiskCodeReference, Session, Tab, Transaction, UploadSummary,
+  Bank, DemoStreamStatus, KnowledgeBaseEntry, PortalScope, RiskCodeReference, Session, Tab,
+  Transaction, UploadSummary,
 } from "./types";
 import { BrandDots, Icon, Logo } from "./components/Shared";
 import { Investigation, TransactionTable } from "./components/Transactions";
@@ -16,6 +18,7 @@ import { Reports } from "./components/Reports";
 import { Exchange } from "./components/Exchange";
 import { AdminDetails, KnowledgeBase } from "./components/ReferencePanels";
 import { PortalLogin } from "./components/PortalLogin";
+import { DemoStream } from "./components/DemoStream";
 
 const SESSION_KEY = "kifaru-session";
 
@@ -57,6 +60,8 @@ export default function App() {
   const [knowledgeBaseEntries, setKnowledgeBaseEntries] = useState<KnowledgeBaseEntry[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [dataError, setDataError] = useState("");
+  const [demoStream, setDemoStream] = useState<DemoStreamStatus | null>(null);
+  const [demoBusy, setDemoBusy] = useState(false);
   const uploadController = useRef<AbortController | null>(null);
   const dataController = useRef<AbortController | null>(null);
 
@@ -116,6 +121,12 @@ export default function App() {
     }
   }, [bankTemplates]);
 
+  const refreshDemoStream = useCallback(async () => {
+    const state = await loadDemoStream();
+    setDemoStream(state);
+    return state;
+  }, []);
+
   useEffect(() => {
     void refreshData().catch(() => undefined);
     return () => {
@@ -125,14 +136,22 @@ export default function App() {
   }, [refreshData]);
 
   useEffect(() => {
+    if (!activeSession || !isExchange) return;
+    void refreshDemoStream().catch(() => undefined);
+  }, [activeSession, isExchange, refreshDemoStream]);
+
+  useEffect(() => {
     if (!activeSession) return;
     const institution = isExchange ? "*" : bank.backendCode;
     const stream = new EventSource(alertStreamUrl(institution));
     stream.addEventListener("alert", () => {
       void refreshData(false).catch(() => undefined);
     });
+    stream.addEventListener("demo-event", () => {
+      void Promise.all([refreshData(false), refreshDemoStream()]).catch(() => undefined);
+    });
     return () => stream.close();
-  }, [activeSession, bank.backendCode, isExchange, refreshData]);
+  }, [activeSession, bank.backendCode, isExchange, refreshData, refreshDemoStream]);
 
   function enterPortal(next: PortalScope, nextBankId: string | null) {
     setSession({ scope: next, bankId: nextBankId });
@@ -182,6 +201,44 @@ export default function App() {
       setToast(`Alert ${state}.`);
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Alert update failed.");
+    }
+  }
+
+  async function controlDemoStream(enabled: boolean) {
+    setDemoBusy(true);
+    try {
+      setDemoStream(await setDemoStreamState(enabled, 30));
+      setToast(enabled ? "Synthetic SOC stream started." : "Synthetic SOC stream paused.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Unable to update the synthetic stream.");
+    } finally {
+      setDemoBusy(false);
+    }
+  }
+
+  async function emitDemoEvent() {
+    setDemoBusy(true);
+    try {
+      await emitDemoStreamEvent();
+      await Promise.all([refreshDemoStream(), refreshData(false)]);
+      setToast("Synthetic Sentinel event processed.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Unable to emit a synthetic event.");
+    } finally {
+      setDemoBusy(false);
+    }
+  }
+
+  async function clearDemoStream() {
+    setDemoBusy(true);
+    try {
+      setDemoStream(await resetDemoStream());
+      await refreshData(false);
+      setToast("Synthetic stream reset.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Unable to reset the synthetic stream.");
+    } finally {
+      setDemoBusy(false);
     }
   }
 
@@ -290,7 +347,11 @@ export default function App() {
           }).catch(() => undefined)}><Icon name="refresh" className="btn-icon" />{loadingData ? "Loading..." : "Refresh data"}</button>
         </div></section>
         {isExchange
-          ? <Exchange transactions={transactions} bankName={bankName} onOpen={setSelectedKey} />
+          ? <div className="stack">
+            <DemoStream stream={demoStream} busy={demoBusy}
+              onToggle={controlDemoStream} onEmit={emitDemoEvent} onReset={clearDemoStream} />
+            <Exchange transactions={transactions} bankName={bankName} onOpen={setSelectedKey} />
+          </div>
           : <>
             <section className="grid metrics">{metrics.map((metric) =>
               <div className="metric" key={metric.label}><div className="metric-label"><span>{metric.label}</span></div>
