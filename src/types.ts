@@ -1,9 +1,9 @@
-export type Stage = "reporting" | "kifaru" | "receiving";
+export type PortalScope = "institution" | "exchange";
 export type Tab = "outgoing" | "incoming" | "history" | "reports" | "knowledge" | "governance";
 export type Outcome = "validated_fraud" | "not_fraud" | "needs_review";
 export type InstitutionKind = "bank" | "sacco" | "psp";
 export interface Session {
-  stage: Stage;
+  scope: PortalScope;
   bankId: string | null;
 }
 export interface Source {

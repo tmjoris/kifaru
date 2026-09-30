@@ -10,7 +10,7 @@ export function directoryBank(id: string, name: string, region: string, kind: In
   const kindLabel = kind === "sacco" ? "SACCO risk desk" : kind === "psp" ? "Mobile money risk desk" : "Fraud & SOC team";
   return {
     id,
-    backendCode: `directory:${id}`,
+    backendCode: `ke:${id.replace(/^dir-/, "")}`,
     name,
     region,
     users: kindLabel,
@@ -143,9 +143,9 @@ function withKind(kind: InstitutionKind, names: string[]): [string, string, Inst
 }
 
 const directoryEntries = withKind("bank", [
-  "Absa Bank Kenya", "Bank of Africa Kenya", "Bank of Baroda (Kenya)", "Bank of India (Kenya)",
+  "Absa Bank Kenya", "Access Bank (Kenya)", "Bank of Africa Kenya", "Bank of Baroda (Kenya)", "Bank of India (Kenya)",
   "Citibank N.A. Kenya", "Consolidated Bank of Kenya", "Co-operative Bank of Kenya", "Credit Bank",
-  "Development Bank of Kenya", "Diamond Trust Bank (DTB)", "DIB Bank Kenya", "Ecobank Kenya",
+  "Commercial International Bank Kenya (CIB)", "Development Bank of Kenya", "Diamond Trust Bank (DTB)", "DIB Bank Kenya", "Ecobank Kenya",
   "Family Bank", "First Community Bank", "Guaranty Trust Bank Kenya (GTBank)", "Guardian Bank",
   "Gulf African Bank", "Habib Bank AG Zurich", "HFC Limited (Housing Finance)", "Kingdom Bank",
   "Middle East Bank Kenya", "M-Oriental Bank", "National Bank of Kenya", "Paramount Bank",

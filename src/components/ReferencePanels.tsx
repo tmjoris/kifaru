@@ -82,7 +82,7 @@ export function AdminDetails({ bank, onThresholdChange, notify }: {
         </div>
       </div></div>
       <KnowledgeItems items={[
-        { title: "Demo structure", text: "The 3-stage walkthrough governs which institution is acting: reporting bank, the neutral Kifaru exchange, then the receiving bank." },
+        { title: "Workspace structure", text: "Every institution can submit fraud signals, receive matched alerts, and investigate related history from the same workspace." },
         { title: "Tenant data boundary", text: `${bank.name} views only related records. This client-side filter is not production authorization.` },
         { title: "Alert routing", text: "Validated fraud appears for the receiving bank. Not-fraud outcomes stay in history." },
       ]} />
