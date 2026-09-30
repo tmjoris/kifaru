@@ -94,19 +94,21 @@ test("saved sessions are upgraded or dropped when their institution is gone", ()
   assert.deepEqual(resolveSession({ scope: "institution", bankId: "psp-c" }, ids), { scope: "institution", bankId: "equity" });
   assert.deepEqual(resolveSession({ scope: "institution", bankId: "dir-absa-bank-kenya" }, ids), { scope: "institution", bankId: "absa-bank-kenya" });
   assert.deepEqual(resolveSession({ scope: "institution", bankId: "dir-first-community-bank" }, ids), { scope: "institution", bankId: "premier-bank" });
-  assert.equal(resolveSession({ scope: "institution", bankId: "dir-safaricom-m-pesa" }, ids), null);
+  assert.deepEqual(resolveSession({ scope: "institution", bankId: "dir-safaricom-m-pesa" }, ids), { scope: "institution", bankId: "safaricom-m-pesa" });
+  assert.equal(resolveSession({ scope: "institution", bankId: "dir-stima-sacco" }, ids), null);
   assert.deepEqual(resolveSession({ scope: "exchange", bankId: null }, ids), { scope: "exchange", bankId: null });
   assert.deepEqual(resolveSession({ stage: "kifaru", bankId: "ncba" }, ids), { scope: "exchange", bankId: null });
   assert.deepEqual(resolveSession({ stage: "bank", bankId: "sacco-d" }, ids), { scope: "institution", bankId: "im" });
   assert.equal(resolveSession(null, ids), null);
 });
 
-test("the demo lists every licensed bank in Kenya once", () => {
-  assert.equal(initialBanks.length, 38);
+test("the demo lists every licensed bank and the two largest mobile money providers once", () => {
+  assert.equal(initialBanks.length, 40);
   assert.equal(initialBanks.filter((bank) => bank.kind === "bank").length, 37);
   assert.deepEqual(initialBanks.filter((bank) => bank.kind === "mortgage").map((bank) => bank.name), ["HFC"]);
+  assert.deepEqual(initialBanks.filter((bank) => bank.kind === "psp").map((bank) => bank.name), ["M-Pesa", "Airtel Money"]);
   for (const key of ["id", "backendCode", "name", "shortName"] as const) {
-    assert.equal(new Set(initialBanks.map((bank) => bank[key])).size, 38, `${key} values must be unique`);
+    assert.equal(new Set(initialBanks.map((bank) => bank[key])).size, 40, `${key} values must be unique`);
   }
   const byCode = new Map(initialBanks.map((bank) => [bank.backendCode, bank.name]));
   assert.equal(byCode.get("bank_a"), "NCBA");

@@ -2,6 +2,7 @@ import type {
   Bank, DashboardData, DemoStreamEvent, DemoStreamStatus, KnowledgeBaseEntry, RiskCodeReference,
   Transaction, UploadSummary, Validation,
 } from "./types";
+import { riskCodeInfo } from "./explain";
 
 const configuredApiUrl = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 const API_BASE_URL = configuredApiUrl && !configuredApiUrl.startsWith("http")
@@ -63,6 +64,16 @@ function parseStringArray(value: unknown): string[] {
   }
 }
 
+function parseEvidenceFields(value: unknown): Record<string, unknown> {
+  if (typeof value !== "string") return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function parseEvidence(value: unknown): string[] {
   if (typeof value !== "string") return [];
   try {
@@ -98,13 +109,8 @@ function parseRiskCodes(payload: unknown): RiskCodeReference[] {
   }
   return Object.entries(payload.codes).flatMap(([code, value]) => {
     if (!isRecord(value) || typeof value.name !== "string") return [];
-    return [{
-      code,
-      label: value.name,
-      text: typeof value.family === "string"
-        ? `${value.family} signal used by the central validation standard.`
-        : "Signal used by the central validation standard.",
-    }];
+    const info = riskCodeInfo(code, value.name);
+    return [{ code, label: info.title, text: info.detail }];
   });
 }
 
@@ -161,6 +167,8 @@ function transactionFromHistory(
       label: riskCodeNames.get(firstRiskCode) ?? "Central fraud signal",
     },
     evidence: evidence.length ? evidence : [explanation || "No additional evidence recorded."],
+    reasonCodes,
+    evidenceFields: parseEvidenceFields(row.evidence),
     action: explanation || (status === "validated_fraud"
       ? "Validated fraud alert routed to the receiving institution."
       : "Result retained in the shared validation history."),
