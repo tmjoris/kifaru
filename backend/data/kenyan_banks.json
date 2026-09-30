@@ -1,5 +1,5 @@
 {
-  "source": "Kenya Deposit Insurance Corporation member institutions (37 commercial banks and 1 mortgage finance institution), cross-checked against the Central Bank of Kenya directory of licensed banks, July 2026. Names are real; every Kifaru record for them is synthetic.",
+  "source": "Kenya Deposit Insurance Corporation member institutions (37 commercial banks and 1 mortgage finance institution), cross-checked against the Central Bank of Kenya directory of licensed banks, July 2026, plus Kenya's two largest mobile money providers, both CBK-authorised payment service providers. Names are real; every Kifaru record for them is synthetic.",
   "institutions": [
     {"code": "ke:abc-bank-african-banking-corporation", "id": "abc-bank-african-banking-corporation", "name": "ABC Bank", "legal_name": "African Banking Corporation Limited", "ref": "ABC", "type": "bank", "threshold": 0.50},
     {"code": "ke:absa-bank-kenya", "id": "absa-bank-kenya", "name": "Absa Bank Kenya", "legal_name": "Absa Bank Kenya PLC", "ref": "ABSA", "type": "bank", "threshold": 0.50},
@@ -38,6 +38,8 @@
     {"code": "ke:stanbic-bank-kenya", "id": "stanbic-bank-kenya", "name": "Stanbic Bank Kenya", "legal_name": "Stanbic Bank Kenya Limited", "ref": "STANBIC", "type": "bank", "threshold": 0.50},
     {"code": "ke:standard-chartered-bank-kenya", "id": "standard-chartered-bank-kenya", "name": "Standard Chartered Kenya", "legal_name": "Standard Chartered Bank Kenya Limited", "ref": "SCB", "type": "bank", "threshold": 0.50},
     {"code": "ke:uba-kenya", "id": "uba-kenya", "name": "UBA Kenya", "legal_name": "UBA Kenya Bank Limited", "ref": "UBA", "type": "bank", "threshold": 0.50},
-    {"code": "ke:victoria-commercial-bank", "id": "victoria-commercial-bank", "name": "Victoria Commercial Bank", "legal_name": "Victoria Commercial Bank Limited", "ref": "VCB", "type": "bank", "threshold": 0.50}
+    {"code": "ke:victoria-commercial-bank", "id": "victoria-commercial-bank", "name": "Victoria Commercial Bank", "legal_name": "Victoria Commercial Bank Limited", "ref": "VCB", "type": "bank", "threshold": 0.50},
+    {"code": "ke:safaricom-m-pesa", "id": "safaricom-m-pesa", "name": "M-Pesa", "legal_name": "Safaricom PLC", "ref": "MPESA", "type": "psp", "threshold": 0.50},
+    {"code": "ke:airtel-money-kenya", "id": "airtel-money-kenya", "name": "Airtel Money", "legal_name": "Airtel Money Kenya Limited", "ref": "AIRTEL", "type": "psp", "threshold": 0.50}
   ]
 }

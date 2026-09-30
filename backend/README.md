@@ -17,7 +17,8 @@ The service listens on `$PORT`, defaulting to `8000`.
 receiving are per-record relationships through `reports.reporting_institution`,
 `reports.destination_institution`, and the corresponding alert fields. A bank is
 never permanently assigned one of those roles. Startup upserts every licensed
-Kenyan bank from `data/kenyan_banks.json` (37 commercial banks and HFC), keeping
+Kenyan bank from `data/kenyan_banks.json` (37 commercial banks and HFC) and the
+two largest mobile money providers (M-Pesa and Airtel Money), keeping
 any threshold an administrator has changed, and installs institution foreign
 keys for new records. The codes `bank_a`, `bank_b`, `psp_c` and `sacco_d` are
 kept for NCBA, KCB, Equity Bank and I&M Bank so that existing records still
