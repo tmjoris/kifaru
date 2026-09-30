@@ -2,17 +2,10 @@ import { useState } from "react";
 import type { Bank, InstitutionKind, Stage } from "../types";
 import { Icon, Logo } from "./Shared";
 
-const ROLE_OPTIONS: { id: Stage; label: string; icon: string }[] = [
-  { id: "reporting", label: "Reporting bank", icon: "flag" },
-  { id: "kifaru", label: "Kifaru exchange", icon: "hub" },
-  { id: "receiving", label: "Receiving bank", icon: "shield" },
-];
-
-const PIPELINE = [
-  ["Detect", "A bank spots fraud"],
-  ["Share", "Kifaru shares a protected signal"],
-  ["Match", "Another bank finds the same pattern"],
-  ["Act", "Staff review or hold the transfer"],
+const ROLE_OPTIONS: { id: Stage; label: string }[] = [
+  { id: "reporting", label: "Reporting bank" },
+  { id: "kifaru", label: "Kifaru exchange" },
+  { id: "receiving", label: "Receiving bank" },
 ];
 
 export function PortalLogin({ banks, onEnterBank, onEnterKifaru }: {
@@ -43,37 +36,27 @@ export function PortalLogin({ banks, onEnterBank, onEnterKifaru }: {
   }
 
   return <main className="portal-screen">
-    <section className="portal-story" aria-label="What Kifaru does">
-      <img src="/kifaru-network.svg"
-        alt="A protected fraud signal moving between financial institutions through Kifaru" />
-      <div className="portal-story-shade" />
-      <div className="portal-story-brand"><Logo /><span>Kifaru</span></div>
-      <div className="portal-story-copy">
-        <h1>Stop fraud before the money moves again.</h1>
-        <p>Kifaru lets banks share protected fraud signals. If one bank flags a device,
-          account or phone number, another bank can catch the same pattern before paying out.</p>
-        <ol className="portal-pipeline">
-          {PIPELINE.map(([label, detail], index) =>
-            <li key={label}>
-              <span>{index + 1}</span>
-              <div><strong>{label}</strong><small>{detail}</small></div>
-            </li>,
-          )}
-        </ol>
-      </div>
-    </section>
+    <aside className="portal-identity" aria-label="Kifaru">
+      <Logo />
+      <span>Kifaru</span>
+      <small>Shared fraud signal exchange</small>
+    </aside>
 
-    <section className="portal-access" aria-labelledby="portal-title">
+    <header className="portal-masthead">
+      <div className="portal-mobile-brand"><Logo /><span>Kifaru</span></div>
+      <p><span className="portal-status-dot" /> Exchange online</p>
       <button className="portal-theme-toggle" type="button" onClick={toggleTheme}
         aria-label={`Use ${theme === "dark" ? "light" : "dark"} theme`}>
         <Icon name={theme === "dark" ? "light_mode" : "dark_mode"} />
       </button>
+    </header>
 
+    <section className="portal-access" aria-labelledby="portal-title">
       <div className="portal-access-inner">
         <header className="portal-header">
-          <div className="portal-mobile-brand"><Logo /><span>Kifaru</span></div>
-          <h2 id="portal-title">Sign in</h2>
-          <p>Use your staff account to open your workspace.</p>
+          <p>Restricted staff system</p>
+          <h1 id="portal-title">Enter the exchange</h1>
+          <span>Use the account issued by your institution.</span>
         </header>
 
         <form className="portal-form" onSubmit={(event) => { event.preventDefault(); signIn(); }}>
@@ -98,18 +81,15 @@ export function PortalLogin({ banks, onEnterBank, onEnterKifaru }: {
             </div>
           </div>
 
-          <fieldset className="portal-fieldset">
-            <legend>Workspace</legend>
-            <div className="portal-role-options">
+          <div className="portal-field">
+            <label htmlFor="portal-role">Workspace</label>
+            <select id="portal-role" className="portal-control" value={role}
+              onChange={(event) => setRole(event.target.value as Stage)}>
               {ROLE_OPTIONS.map((option) =>
-                <button type="button" key={option.id}
-                  className={`portal-role-option ${role === option.id ? "active" : ""}`}
-                  aria-pressed={role === option.id} onClick={() => setRole(option.id)}>
-                  <Icon name={option.icon} /><span>{option.label}</span>
-                </button>,
+                <option value={option.id} key={option.id}>{option.label}</option>,
               )}
-            </div>
-          </fieldset>
+            </select>
+          </div>
 
           {role !== "kifaru" && <div className="portal-field">
             <label htmlFor="portal-institution">Institution</label>
@@ -126,14 +106,57 @@ export function PortalLogin({ banks, onEnterBank, onEnterKifaru }: {
             <button type="button">Forgot password?</button>
           </div>
 
-          <button type="submit" className="btn primary portal-submit"
+          <button type="submit" className="portal-submit"
             disabled={!email.trim() || !password || (role !== "kifaru" && !bankId)}>
-            Sign in
+            Open workspace
           </button>
         </form>
 
-        <p className="portal-help"><Icon name="lock" /> Protected staff access</p>
+        <p className="portal-help"><Icon name="lock" /> Access is logged and monitored.</p>
       </div>
+    </section>
+
+    <section className="portal-signal" aria-labelledby="signal-title">
+      <div className="signal-receipt">
+        <header>
+          <div>
+            <p>Protected signal</p>
+            <h2 id="signal-title">One fingerprint. Two institutions.</h2>
+          </div>
+          <span className="signal-match"><Icon name="check_circle" /> Match found</span>
+        </header>
+
+        <div className="signal-route" aria-label="A fraud signal matched across two banks">
+          <div className="signal-node">
+            <span>Reporting institution</span>
+            <strong>Bank A</strong>
+            <small>Flagged 08:42:16</small>
+          </div>
+          <div className="signal-path">
+            <i />
+            <div><Logo /><span>Kifaru</span></div>
+            <i />
+          </div>
+          <div className="signal-node">
+            <span>Receiving institution</span>
+            <strong>Bank B</strong>
+            <small>Matched 08:42:18</small>
+          </div>
+        </div>
+
+        <dl className="signal-details">
+          <div><dt>Signal ID</dt><dd>KF-6F2A-91D7</dd></div>
+          <div><dt>Match type</dt><dd>Device fingerprint</dd></div>
+          <div><dt>Response time</dt><dd>2.1 seconds</dd></div>
+        </dl>
+
+        <footer>
+          <div><Icon name="visibility_off" /><span><strong>Not shared</strong>Name, balance, full account number</span></div>
+          <div><Icon name="encrypted" /><span><strong>Shared safely</strong>Protected identifier, event time, risk signal</span></div>
+        </footer>
+      </div>
+      <p className="portal-signal-note">Kifaru helps institutions recognise the same fraud pattern
+        before the next transfer is paid out.</p>
     </section>
   </main>;
 }
