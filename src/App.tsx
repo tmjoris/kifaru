@@ -1,16 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadDashboardData, updateInstitutionThreshold, validateCsv } from "./api";
-import { initialBanks, riskCodeCatalog } from "./data";
+import { directoryBank, directoryBanks, initialBanks, riskCodeCatalog } from "./data";
 import {
   counterpartyBankId, displayTransactionId, isVisible, moneyDirection, reportingBankId,
   transactionDirection,
 } from "./domain";
-import type { KnowledgeBaseEntry, RiskCodeReference, Stage, Tab, Transaction, UploadSummary } from "./types";
+import type {
+  Bank, InstitutionKind, KnowledgeBaseEntry, RiskCodeReference, Session, Stage, Tab, Transaction, UploadSummary,
+} from "./types";
 import { BrandDots, Icon, Logo } from "./components/Shared";
 import { Investigation, TransactionTable } from "./components/Transactions";
 import { Reports } from "./components/Reports";
 import { Exchange } from "./components/Exchange";
 import { AdminDetails, KnowledgeBase } from "./components/ReferencePanels";
+import { PortalLogin } from "./components/PortalLogin";
 
 const STAGES: { id: Stage; step: string; label: string; blurb: string; icon: string; railLabel: string }[] = [
   { id: "reporting", step: "1", label: "Reporting bank", blurb: "Detects fraud, publishes a fingerprint", icon: "flag", railLabel: "Report" },
@@ -18,11 +21,31 @@ const STAGES: { id: Stage; step: string; label: string; blurb: string; icon: str
   { id: "receiving", step: "3", label: "Receiving bank", blurb: "Matches it, holds the transfer", icon: "shield", railLabel: "Receive" },
 ];
 
+const SESSION_KEY = "kifaru-session";
+const CUSTOM_INSTITUTIONS_KEY = "kifaru-custom-institutions";
+
+interface CustomInstitution { id: string; name: string; region: string; kind: InstitutionKind }
+
+function readJson<T>(key: string): T | null {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) as T : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
-  const [banks, setBanks] = useState(initialBanks);
-  const [stage, setStage] = useState<Stage>("reporting");
-  const [reportingBankSel, setReportingBankSel] = useState(initialBanks[0].id);
-  const [receivingBankSel, setReceivingBankSel] = useState(initialBanks[1].id);
+  const [session, setSession] = useState<Session | null>(() => readJson<Session>(SESSION_KEY));
+  const [customInstitutions, setCustomInstitutions] = useState<CustomInstitution[]>(
+    () => readJson<CustomInstitution[]>(CUSTOM_INSTITUTIONS_KEY) ?? [],
+  );
+  const bankTemplates = useMemo<Bank[]>(() => [
+    ...initialBanks,
+    ...directoryBanks,
+    ...customInstitutions.map((item) => directoryBank(item.id, item.name, item.region, item.kind)),
+  ], [customInstitutions]);
+  const [banks, setBanks] = useState<Bank[]>(bankTemplates);
   const [tab, setTab] = useState<Tab>("outgoing");
   const [collapsed, setCollapsed] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -41,8 +64,18 @@ export default function App() {
   const uploadController = useRef<AbortController | null>(null);
   const dataController = useRef<AbortController | null>(null);
 
-  const bankId = stage === "receiving" ? receivingBankSel : reportingBankSel;
-  const bank = banks.find((item) => item.id === bankId)!;
+  useEffect(() => {
+    if (session) window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    else window.localStorage.removeItem(SESSION_KEY);
+  }, [session]);
+
+  useEffect(() => {
+    window.localStorage.setItem(CUSTOM_INSTITUTIONS_KEY, JSON.stringify(customInstitutions));
+  }, [customInstitutions]);
+
+  const stage = session?.stage ?? "reporting";
+  const bankId = session?.bankId ?? "";
+  const bank = banks.find((item) => item.id === bankId) ?? banks[0];
   const bankName = (id: string) => id === "external" ? "External network" : banks.find((item) => item.id === id)?.name ?? id;
   const records = transactions.filter((item) => isVisible(item, bankId));
   const selected = transactions.find((item) => item.key === selectedKey);
@@ -67,7 +100,7 @@ export default function App() {
     if (showLoading) setLoadingData(true);
     setDataError("");
     try {
-      const data = await loadDashboardData(initialBanks, controller.signal);
+      const data = await loadDashboardData(bankTemplates, controller.signal);
       setBanks(data.banks);
       setTransactions(data.transactions);
       setRiskCodes(data.riskCodes);
@@ -83,7 +116,7 @@ export default function App() {
         dataController.current = null;
       }
     }
-  }, []);
+  }, [bankTemplates]);
 
   useEffect(() => {
     void refreshData().catch(() => undefined);
@@ -93,24 +126,23 @@ export default function App() {
     };
   }, [refreshData]);
 
-  function goToStage(next: Stage) {
-    setStage(next);
+  function enterPortal(next: Stage, nextBankId: string | null) {
+    setSession({ stage: next, bankId: nextBankId });
     setSelectedKey(null);
-    setQuery("");
-    setFilter("all");
-    setTab(next === "receiving" ? "incoming" : "outgoing");
-  }
-
-  function selectBank(id: string) {
-    if (stage === "receiving") {
-      setReceivingBankSel(id);
-    } else {
-      setReportingBankSel(id);
-    }
     setQuery("");
     setFilter("all");
     setReportView("all");
-    setSelectedKey(null);
+    setTab(next === "receiving" ? "incoming" : "outgoing");
+  }
+
+  function switchPortal() {
+    setSession(null);
+  }
+
+  function addCustomInstitution(name: string, region: string, kind: InstitutionKind, forStage: Stage) {
+    const id = `custom-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-+|-+$)/g, "")}-${Math.random().toString(36).slice(2, 6)}`;
+    setCustomInstitutions((prev) => [...prev, { id, name, region, kind }]);
+    enterPortal(forStage, id);
   }
 
   async function upload(file: File) {
@@ -159,17 +191,24 @@ export default function App() {
   };
   const stageMeta = STAGES.find((item) => item.id === stage)!;
 
+  if (!session) {
+    return <PortalLogin banks={banks} onEnterKifaru={() => enterPortal("kifaru", null)}
+      onEnterBank={(nextStage, nextBankId) => enterPortal(nextStage, nextBankId)}
+      onAddInstitution={(name, region, kind, forStage) => addCustomInstitution(name, region, kind, forStage)} />;
+  }
+
   return <>
     <div className={`app ${collapsed ? "sidebar-collapsed" : ""}`} id="appShell">
-      <nav className="nav-rail" aria-label="Demo walkthrough">
+      <nav className="nav-rail" aria-label="Signed-in portal">
         <div className="nav-rail-brand"><Logo /></div>
-        {STAGES.map((item) =>
-          <button key={item.id} className={`rail-item ${stage === item.id ? "active" : ""}`} aria-pressed={stage === item.id}
-            title={item.blurb} aria-label={item.label} onClick={() => goToStage(item.id)}>
-            <span className="rail-icon"><Icon name={item.icon} /></span>
-            <span className="rail-text">{item.railLabel}</span>
-          </button>,
-        )}
+        <div className="rail-item active" aria-current="page">
+          <span className="rail-icon"><Icon name={stageMeta.icon} /></span>
+          <span className="rail-text">{stageMeta.railLabel}</span>
+        </div>
+        <button className="rail-item rail-signout" aria-label="Switch portal" title="Switch portal" onClick={switchPortal}>
+          <span className="rail-icon"><Icon name="logout" /></span>
+          <span className="rail-text">Switch</span>
+        </button>
         <button className="rail-item rail-toggle" aria-label={collapsed ? "Expand panel" : "Collapse panel"} aria-expanded={!collapsed} onClick={() => setCollapsed(!collapsed)}>
           <span className="rail-icon"><Icon name={collapsed ? "chevron_right" : "chevron_left"} /></span>
         </button>
@@ -180,12 +219,12 @@ export default function App() {
         </div>
         {stage !== "kifaru" && <>
           <p className="sidebar-label">{stage === "receiving" ? "Receiving institution" : "Reporting institution"}</p>
-          <div className="bank-list">{banks.map((item) =>
-            <button className={`bank-card ${bankId === item.id ? "active" : ""}`} key={item.id} title={item.name} aria-label={item.name} aria-pressed={bankId === item.id} onClick={() => selectBank(item.id)}>
-              <span><span className="bank-name">{item.name}</span><span className="bank-meta">{item.region}</span></span>
-              <span className={`dot ${item.health === "warning" ? "warning" : ""}`} aria-hidden="true" />
-            </button>,
-          )}</div>
+          <div className="bank-list">
+            <div className="bank-card active signed-in-card" aria-current="true">
+              <span><span className="bank-name">{bank.name}</span><span className="bank-meta">{bank.region}</span></span>
+              <span className={`dot ${bank.health === "warning" ? "warning" : bank.health === "pending" ? "pending" : ""}`} aria-hidden="true" />
+            </div>
+          </div>
         </>}
         {stage === "reporting" && <div className="side-panel">
           <label className="pill" htmlFor="csvUpload">CSV log upload</label>
@@ -224,6 +263,7 @@ export default function App() {
             {stage === "receiving" && "See matches against the shared exchange and act on them."}</p>
           {dataError && <p className="muted" role="alert">Backend unavailable: {dataError}</p>}
         </div><div className="actions">
+          <button className="btn" onClick={switchPortal}><Icon name="logout" className="btn-icon" />Switch portal</button>
           <button className="btn" onClick={() => {
             const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
             document.documentElement.dataset.theme = next;
@@ -233,9 +273,6 @@ export default function App() {
             setToast("Data refreshed.");
           }).catch(() => undefined)}><Icon name="refresh" className="btn-icon" />{loadingData ? "Loading..." : "Refresh data"}</button>
         </div></section>
-        <nav className="tabs stage-tabs" aria-label="Demo stage">{STAGES.map((item) =>
-          <button key={item.id} className={`tab-btn ${stage === item.id ? "active" : ""}`} aria-pressed={stage === item.id} onClick={() => goToStage(item.id)}>{item.step}. {item.label}</button>,
-        )}</nav>
         {stage === "kifaru"
           ? <Exchange transactions={transactions} bankName={bankName} onOpen={setSelectedKey} />
           : <>
