@@ -2,6 +2,15 @@ import type {
   Bank, DashboardData, KnowledgeBaseEntry, RiskCodeReference, Transaction, UploadSummary, Validation,
 } from "./types";
 
+const configuredApiUrl = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+const API_BASE_URL = configuredApiUrl && !configuredApiUrl.startsWith("http")
+  ? `https://${configuredApiUrl}`
+  : configuredApiUrl;
+
+function apiUrl(path: string) {
+  return `${API_BASE_URL}${path}`;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -27,7 +36,7 @@ function isSummary(value: unknown): value is UploadSummary {
 }
 
 async function fetchJson(path: string, init?: RequestInit): Promise<unknown> {
-  const response = await fetch(path, init);
+  const response = await fetch(apiUrl(path), init);
   const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = isRecord(payload) && typeof payload.detail === "string"
@@ -223,7 +232,7 @@ export async function updateInstitutionThreshold(
 }
 
 export async function validateCsv(csv: string, signal?: AbortSignal) {
-  const response = await fetch("/api/validate-csv", {
+  const response = await fetch(apiUrl("/api/validate-csv"), {
     method: "POST",
     headers: { "Content-Type": "text/csv" },
     body: csv,
