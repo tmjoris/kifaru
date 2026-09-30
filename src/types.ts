@@ -42,6 +42,10 @@ export interface Transaction {
   validationStatus: Outcome;
   riskCode: { code: string; label: string };
   evidence: string[];
+  /** Validator reason codes such as CODE:ATO-460 or CORRO:destination. */
+  reasonCodes?: string[];
+  /** Evidence fields the reporting institution attached to the report. */
+  evidenceFields?: Record<string, unknown>;
   action: string;
   /** Protected destination fingerprint (hashed account or MSISDN). Never a raw identifier. */
   destinationHash: string;

@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	agentVersion         = "kifaru-agent-0.5.0"
+	agentVersion         = "kifaru-agent-0.5.1"
 	defaultValidated     = 0.60
 	defaultInsufficient  = 0.35
 	weightCode           = 0.50
@@ -49,8 +49,9 @@ var migrationFiles embed.FS
 //go:embed data/kenyan_banks.json
 var kenyanBanksJSON []byte
 
-// Institution is one licensed Kenyan bank from data/kenyan_banks.json. The
-// names are real; every report, alert and event Kifaru holds for them is synthetic.
+// Institution is one licensed Kenyan bank or mobile money provider from
+// data/kenyan_banks.json. The names are real; every report, alert and event
+// Kifaru holds for them is synthetic.
 type Institution struct {
 	Code      string  `json:"code"`
 	ID        string  `json:"id"`

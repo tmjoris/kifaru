@@ -57,19 +57,39 @@ const connectorProfiles: { users: string; systems: string; latency: string; inpu
 
 export const kenyanBanks: DirectoryEntry[] = directory.institutions;
 
+/** Illustrative mobile money set-up. It does not describe any provider's real systems. */
+const mobileMoneyProfile = {
+  users: "Mobile money risk desk",
+  systems: "Wallet ledger, agent cash-out network, SIM swap register",
+  latency: "1.2s",
+  inputSources: [
+    { name: "Wallet transaction stream", type: "Transaction feed", method: "Streaming API", status: "Synthetic", cadence: "Realtime" },
+    { name: "Agent cash-out feed", type: "Channel signal", method: "Message queue", status: "Synthetic", cadence: "Realtime" },
+    { name: "SIM swap register", type: "Device signal", method: "REST API", status: "Synthetic", cadence: "On demand" },
+  ],
+};
+
+const regions: Record<InstitutionKind, string> = {
+  bank: "Licensed commercial bank",
+  mortgage: "Mortgage finance institution",
+  psp: "Mobile money provider",
+  sacco: "Deposit-taking SACCO",
+};
+
 /**
  * Every licensed bank in Kenya (37 commercial banks and HFC, the mortgage finance
- * institution), from backend/data/kenyan_banks.json. The names are real; all
- * reports, alerts and connector details shown for them are synthetic.
+ * institution) and the two largest mobile money providers, M-Pesa and Airtel Money,
+ * from backend/data/kenyan_banks.json. The names are real; all reports, alerts and
+ * connector details shown for them are synthetic.
  */
 export const initialBanks: Bank[] = kenyanBanks.map((entry, index) => {
-  const profile = connectorProfiles[index % connectorProfiles.length];
-  const kind: InstitutionKind = entry.type === "mortgage" ? "mortgage" : "bank";
+  const kind: InstitutionKind = entry.type === "mortgage" || entry.type === "psp" ? entry.type : "bank";
+  const profile = kind === "psp" ? mobileMoneyProfile : connectorProfiles[index % connectorProfiles.length];
   return {
     id: entry.id,
     backendCode: entry.code,
     name: entry.name,
-    region: kind === "mortgage" ? "Mortgage finance institution" : "Licensed commercial bank",
+    region: regions[kind],
     users: profile.users,
     shortName: entry.ref,
     health: "healthy",

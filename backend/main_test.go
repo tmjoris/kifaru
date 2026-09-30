@@ -109,8 +109,8 @@ func TestReportFromCSVRejectsCleartextIdentifiers(t *testing.T) {
 }
 
 func TestKenyanBanksDirectoryIsComplete(t *testing.T) {
-	if len(kenyanBanks) != 38 {
-		t.Fatalf("expected 37 commercial banks and 1 mortgage finance institution, got %d", len(kenyanBanks))
+	if len(kenyanBanks) != 40 {
+		t.Fatalf("expected 37 commercial banks, 1 mortgage finance institution and 2 mobile money providers, got %d", len(kenyanBanks))
 	}
 	counts := map[string]int{}
 	seen := map[string]bool{}
@@ -126,7 +126,7 @@ func TestKenyanBanksDirectoryIsComplete(t *testing.T) {
 			t.Fatalf("incomplete entry %+v", bank)
 		}
 	}
-	if counts["bank"] != 37 || counts["mortgage"] != 1 {
+	if counts["bank"] != 37 || counts["mortgage"] != 1 || counts["psp"] != 2 {
 		t.Fatalf("unexpected institution types %v", counts)
 	}
 	for code, name := range map[string]string{"bank_a": "NCBA", "bank_b": "KCB", "psp_c": "Equity Bank", "sacco_d": "I&M Bank"} {
