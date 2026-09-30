@@ -3,6 +3,7 @@ services:
     name: kifaru-api
     runtime: go
     plan: free
+    autoDeployTrigger: commit
     rootDir: backend
     buildCommand: mkdir -p bin && go build -o bin/kifaru-api .
     startCommand: ./bin/kifaru-api
@@ -14,6 +15,7 @@ services:
   - type: web
     name: kifarulive
     runtime: static
+    autoDeployTrigger: commit
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
     envVars:
