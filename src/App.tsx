@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { loadDashboardData, updateInstitutionThreshold, validateCsv } from "./api";
+import {
+  alertStreamUrl, loadDashboardData, updateAlertState, updateInstitutionThreshold, validateCsv,
+} from "./api";
 import { directoryBanks, initialBanks, riskCodeCatalog } from "./data";
 import {
   counterpartyBankId, displayTransactionId, isVisible, moneyDirection, reportingBankId,
@@ -122,6 +124,16 @@ export default function App() {
     };
   }, [refreshData]);
 
+  useEffect(() => {
+    if (!activeSession) return;
+    const institution = isExchange ? "*" : bank.backendCode;
+    const stream = new EventSource(alertStreamUrl(institution));
+    stream.addEventListener("alert", () => {
+      void refreshData(false).catch(() => undefined);
+    });
+    return () => stream.close();
+  }, [activeSession, bank.backendCode, isExchange, refreshData]);
+
   function enterPortal(next: PortalScope, nextBankId: string | null) {
     setSession({ scope: next, bankId: nextBankId });
     setSelectedKey(null);
@@ -156,6 +168,20 @@ export default function App() {
         setUploading(false);
         uploadController.current = null;
       }
+    }
+  }
+
+  async function actOnAlert(
+    alertId: string,
+    state: "acknowledged" | "actioned" | "disputed",
+    comment = "",
+  ) {
+    try {
+      await updateAlertState(alertId, state, comment);
+      await refreshData(false);
+      setToast(`Alert ${state}.`);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Alert update failed.");
     }
   }
 
@@ -301,7 +327,8 @@ export default function App() {
           </>}
       </main>
     </div>
-    {selected && <Investigation transaction={selected} bank={bank} bankName={bankName} onClose={() => setSelectedKey(null)} />}
+    {selected && <Investigation transaction={selected} bank={bank} bankName={bankName}
+      onClose={() => setSelectedKey(null)} onAlertAction={isExchange ? undefined : actOnAlert} />}
     <div className={`toast ${toast ? "show" : ""}`} role="status" aria-live="polite">{toast}</div>
   </>;
 }

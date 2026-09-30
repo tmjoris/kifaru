@@ -50,6 +50,9 @@ export interface Transaction {
   /** Other institutions whose own reports shared this same fingerprint. */
   corroboratingInstitutions: string[];
   corroborationCount: number;
+  alertId?: string;
+  alertState?: "sent" | "acknowledged" | "actioned" | "disputed";
+  alertType?: "hold" | "advisory";
 }
 export interface Validation {
   transaction_id: string;
