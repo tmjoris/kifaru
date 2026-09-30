@@ -35,9 +35,14 @@ export function TransactionTable({ records, bank, bankName, history, title, subt
   </div></Card>;
 }
 
-export function Investigation({ transaction, bank, bankName, onClose }: {
+export function Investigation({ transaction, bank, bankName, onClose, onAlertAction }: {
   transaction: Transaction; bank: Bank; bankName: (id: string) => string;
   onClose: () => void;
+  onAlertAction?: (
+    alertId: string,
+    state: "acknowledged" | "actioned" | "disputed",
+    comment?: string,
+  ) => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -65,7 +70,13 @@ export function Investigation({ transaction, bank, bankName, onClose }: {
       : "None reported yet"],
     ["Risk signals", transaction.evidence.join(" - ")],
     ["Action", transaction.action],
+    ...(transaction.alertType ? [["Alert type", transaction.alertType === "advisory" ? "Advisory" : "Hold requested"]] : []),
+    ...(transaction.alertState ? [["Alert state", transaction.alertState]] : []),
   ];
+  const canAct = transaction.alertId && onAlertAction
+    && counterpartyBankId(transaction) === bank.id
+    && transaction.alertState !== "actioned"
+    && transaction.alertState !== "disputed";
   return <dialog ref={dialog} className="drawer open" aria-labelledby="drawerTitle" onCancel={onClose}>
     <div className="drawer-inner">
       <div className="drawer-head"><p className="eyebrow">Transaction investigation</p>
@@ -82,7 +93,19 @@ export function Investigation({ transaction, bank, bankName, onClose }: {
         )}</div>
       </div>
       <div className="drawer-foot">
-        <p className="muted">Read-only record loaded from the shared Kifaru backend.</p>
+        {canAct && <div className="actions">
+          {transaction.alertState === "sent" && <button className="btn" onClick={() =>
+            void onAlertAction(transaction.alertId!, "acknowledged")}>Acknowledge</button>}
+          {transaction.alertState === "acknowledged" && <button className="btn primary" onClick={() =>
+            void onAlertAction(transaction.alertId!, "actioned")}>Mark actioned</button>}
+          <button className="btn" onClick={() => {
+            const comment = window.prompt("Why is this alert being disputed?");
+            if (comment?.trim()) void onAlertAction(transaction.alertId!, "disputed", comment.trim());
+          }}>Dispute</button>
+        </div>}
+        <p className="muted">{canAct
+          ? "Record the institution's response to this alert."
+          : "Record loaded from the shared Kifaru backend."}</p>
         <button className="btn" onClick={onClose} autoFocus>Close</button>
       </div>
     </div>
