@@ -8,7 +8,8 @@ const API_BASE_URL = configuredApiUrl && !configuredApiUrl.startsWith("http")
   : configuredApiUrl;
 
 function apiUrl(path: string) {
-  return `${API_BASE_URL}${path}`;
+  const resolvedPath = API_BASE_URL ? path.replace(/^\/api(?=\/|$)/, "") : path;
+  return `${API_BASE_URL}${resolvedPath}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
