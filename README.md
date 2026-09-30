@@ -63,6 +63,9 @@ Every institution workspace therefore contains:
 
 The institution selector contains the current Kenyan commercial-bank directory,
 along with the prototype's existing SACCO and payment-provider entries.
+Dense transaction tables prioritise decision fields on briefing-sized desktop
+screens and switch to labelled record cards on mobile. Full provenance and
+customer-reference details remain available in each investigation drawer.
 
 ### Kifaru staff
 

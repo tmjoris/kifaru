@@ -14,13 +14,16 @@ export function TransactionTable({ records, bank, bankName, history, title, subt
     ? ["Report ID", "Role", "Reporting bank", "Customer ref", "Amount", "Risk code", "Matches", "Status", "More"]
     : ["Report ID", "Reporting bank", "Direction", "Customer ref", "Amount", "Confidence", "Risk code", "Matches", "Status", "Validated by", "More"];
   return <Card title={title} subtitle={subtitle} className="card-flat"><div className="table-wrap">
-    <table className="transaction-table"><thead><tr>{headings.map((heading) => <th key={heading} scope="col">{heading}</th>)}</tr></thead>
+    <table className="transaction-table"><thead><tr>{headings.map((heading) => <th key={heading} scope="col"
+      className={heading === "Customer ref" ? "table-secondary"
+        : heading === "Validated by" ? "table-provenance"
+          : heading === "Direction" || heading === "Role" ? "table-direction" : undefined}>{heading}</th>)}</tr></thead>
       <tbody>{records.length ? records.map((transaction) => <tr key={transaction.key} onClick={() => onOpen(transaction.key)}>
         <td data-label="Report ID"><span className="mono">{displayTransactionId(transaction, bank.name)}</span><br /><span className="muted">{history ? "Kifaru validation record" : transaction.merchant}</span></td>
-        {history && <td data-label="Role">{transactionDirection(transaction, bank.id)}</td>}
+        {history && <td data-label="Role" className="table-direction">{transactionDirection(transaction, bank.id)}</td>}
         <td data-label="Reporting bank"><strong>{bankName(reportingBankId(transaction))}</strong></td>
-        {!history && <td data-label="Direction"><span className="pill">{moneyDirection(transaction, bank.id)}</span></td>}
-        <td data-label="Customer ref"><span className="mono">{transaction.customerRef}</span>{!history && <><br /><span className="muted">{transaction.country}</span></>}</td>
+        {!history && <td data-label="Direction" className="table-direction"><span className="pill">{moneyDirection(transaction, bank.id)}</span></td>}
+        <td data-label="Customer ref" className="table-secondary"><span className="mono">{transaction.customerRef}</span>{!history && <><br /><span className="muted">{transaction.country}</span></>}</td>
         <td data-label="Amount"><strong>{transaction.amount}</strong></td>
         {!history && <td data-label="Confidence"><strong>{transaction.score}%</strong></td>}
         <td data-label="Risk code"><span className="pill">{transaction.riskCode.code}</span></td>
@@ -28,7 +31,7 @@ export function TransactionTable({ records, bank, bankName, history, title, subt
           ? <span className="pill fraud" title={transaction.corroboratingInstitutions.map(bankName).join(", ")}>{transaction.corroborationCount} inst.</span>
           : <span className="muted">none yet</span>}</td>
         <td data-label="Status"><Status status={transaction.validationStatus} /></td>
-        {!history && <td data-label="Validated by"><span className="pill">{transaction.flagSource}</span></td>}
+        {!history && <td data-label="Validated by" className="table-provenance"><span className="pill">{transaction.flagSource}</span></td>}
         <td data-label="More"><button className="mini-btn" onClick={(event) => { event.stopPropagation(); onOpen(transaction.key); }}>View more</button></td>
       </tr>) : <tr className="transaction-empty"><td colSpan={headings.length} className="muted">No {title.toLowerCase()} match this bank and the current filters.</td></tr>}</tbody>
     </table>
