@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	agentVersion         = "kifaru-agent-0.3.0"
+	agentVersion         = "kifaru-agent-0.4.0"
 	defaultValidated     = 0.60
 	defaultInsufficient  = 0.35
 	weightCode           = 0.50
@@ -178,44 +178,10 @@ func (a *App) initDB(ctx context.Context) error {
 	}
 	institutions := [][]any{
 		{"external", "External financial network", "external", 0.50},
-		{"bank_a", "NCBA Bank Kenya PLC", "bank", 0.45},
-		{"bank_b", "KCB Bank Kenya Limited", "bank", 0.50},
-		{"psp_c", "Equity Bank Kenya Limited", "bank", 0.40},
-		{"sacco_d", "I&M Bank Limited", "bank", 0.60},
-		{"ke:absa-bank-kenya", "Absa Bank Kenya PLC", "bank", 0.50},
-		{"ke:access-bank-kenya", "Access Bank (Kenya) PLC", "bank", 0.50},
-		{"ke:bank-of-africa-kenya", "Bank of Africa Kenya Limited", "bank", 0.50},
-		{"ke:bank-of-baroda-kenya", "Bank of Baroda (Kenya) Limited", "bank", 0.50},
-		{"ke:bank-of-india-kenya", "Bank of India (Kenya)", "bank", 0.50},
-		{"ke:citibank-n-a-kenya", "Citibank N.A. Kenya", "bank", 0.50},
-		{"ke:commercial-international-bank-kenya-cib", "Commercial International Bank Kenya Limited", "bank", 0.50},
-		{"ke:consolidated-bank-of-kenya", "Consolidated Bank of Kenya Limited", "bank", 0.50},
-		{"ke:co-operative-bank-of-kenya", "Co-operative Bank of Kenya Limited", "bank", 0.50},
-		{"ke:credit-bank", "Credit Bank PLC", "bank", 0.50},
-		{"ke:development-bank-of-kenya", "Development Bank of Kenya Limited", "bank", 0.50},
-		{"ke:diamond-trust-bank-dtb", "Diamond Trust Bank Kenya Limited", "bank", 0.50},
-		{"ke:dib-bank-kenya", "DIB Bank Kenya Limited", "bank", 0.50},
-		{"ke:ecobank-kenya", "Ecobank Kenya Limited", "bank", 0.50},
-		{"ke:family-bank", "Family Bank Limited", "bank", 0.50},
-		{"ke:first-community-bank", "First Community Bank Limited", "bank", 0.50},
-		{"ke:guaranty-trust-bank-kenya-gtbank", "Guaranty Trust Bank (Kenya) Limited", "bank", 0.50},
-		{"ke:guardian-bank", "Guardian Bank Limited", "bank", 0.50},
-		{"ke:gulf-african-bank", "Gulf African Bank Limited", "bank", 0.50},
-		{"ke:habib-bank-ag-zurich", "Habib Bank AG Zurich", "bank", 0.50},
-		{"ke:hfc-limited-housing-finance", "Housing Finance Company of Kenya Limited", "bank", 0.50},
-		{"ke:kingdom-bank", "Kingdom Bank Limited", "bank", 0.50},
-		{"ke:middle-east-bank-kenya", "Middle East Bank (Kenya) Limited", "bank", 0.50},
-		{"ke:m-oriental-bank", "M Oriental Bank Limited", "bank", 0.50},
-		{"ke:national-bank-of-kenya", "National Bank of Kenya Limited", "bank", 0.50},
-		{"ke:paramount-bank", "Paramount Bank Limited", "bank", 0.50},
-		{"ke:prime-bank", "Prime Bank Limited", "bank", 0.50},
-		{"ke:sbm-bank-kenya", "SBM Bank Kenya Limited", "bank", 0.50},
-		{"ke:sidian-bank", "Sidian Bank Limited", "bank", 0.50},
-		{"ke:stanbic-bank-kenya", "Stanbic Bank Kenya Limited", "bank", 0.50},
-		{"ke:standard-chartered-bank-kenya", "Standard Chartered Bank Kenya Limited", "bank", 0.50},
-		{"ke:uba-kenya", "United Bank for Africa Kenya Limited", "bank", 0.50},
-		{"ke:victoria-commercial-bank", "Victoria Commercial Bank PLC", "bank", 0.50},
-		{"ke:abc-bank-african-banking-corporation", "African Banking Corporation Limited", "bank", 0.50},
+		{"bank_a", "Tier-1 Bank A", "bank", 0.45},
+		{"bank_b", "Tier-2 Bank B", "bank", 0.50},
+		{"psp_c", "Mobile Money PSP C", "psp", 0.40},
+		{"sacco_d", "SACCO D", "sacco", 0.60},
 	}
 	for _, values := range institutions {
 		if _, err := a.db.Exec(ctx, `
@@ -875,6 +841,12 @@ func (a *App) normalize(report ReportIn) ([]string, error) {
 		strings.EqualFold(fmt.Sprint(ev["is_new_beneficiary"]), "true") {
 		add("ATO-460")
 	}
+	if truthy(ev["is_emulator"]) || truthy(ev["is_rooted"]) {
+		add("IP-403")
+	}
+	if truthy(ev["ip_country_changed"]) || truthy(ev["vpn_proxy_tor"]) {
+		add("IP-404")
+	}
 	if len(codes) == 0 {
 		return nil, errors.New("report produced no risk codes — nothing to validate")
 	}
@@ -901,6 +873,7 @@ func (a *App) score(
 	if device == "<nil>" {
 		device = ""
 	}
+	since := time.Now().UTC().Add(-30 * 24 * time.Hour).Format("2006-01-02T15:04:05Z")
 	rows, err := store.Query(ctx, `SELECT DISTINCT a.institution_code,a.artefact_type
 		FROM artefacts a
 		WHERE a.institution_code != $1
@@ -912,7 +885,7 @@ func (a *App) score(
 		  AND a.observed_at >= $5
 		ORDER BY a.institution_code`,
 		report.ReportingInstitution, report.DestinationAccountHash, report.DestinationMSISDNHash,
-		device, time.Now().UTC().Add(-30*24*time.Hour).Format("2006-01-02T15:04:05Z"))
+		device, since)
 	if err != nil {
 		return Validation{}, err
 	}
@@ -935,7 +908,34 @@ func (a *App) score(
 			reasons = append(reasons, "CORRO:device_profile")
 		}
 	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return Validation{}, err
+	}
 	score += float64(min(len(corro), corroborationCap)) * weightCorroboration
+
+	// A fraudster who changes phones between institutions still needs the same
+	// cash-out destination, so a destination match from a different device is recorded.
+	if device != "" && len(corro) > 0 {
+		var switched bool
+		if err := store.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1 FROM artefacts m
+			JOIN artefacts d ON d.report_id=m.report_id AND d.artefact_type='device_profile'
+			WHERE m.institution_code != $1
+			  AND (
+			    (m.artefact_type='destination_account' AND m.artefact_hash=$2) OR
+			    (m.artefact_type='destination_msisdn' AND m.artefact_hash=$3)
+			  )
+			  AND m.observed_at >= $4
+			  AND d.artefact_hash != $5)`,
+			report.ReportingInstitution, report.DestinationAccountHash, report.DestinationMSISDNHash,
+			since, device).Scan(&switched); err != nil {
+			return Validation{}, err
+		}
+		if switched {
+			reasons = append(reasons, "LINK:device_switch")
+		}
+	}
 
 	kb, err := kbListsFrom(ctx, store)
 	if err != nil {
@@ -985,23 +985,47 @@ func (a *App) score(
 func (a *App) explain(report ReportIn, validation Validation, codes []string) string {
 	names := make([]string, 0, min(3, len(codes)))
 	for _, code := range codes[:min(3, len(codes))] {
-		names = append(names, strings.ToLower(a.standard.Codes[code].Name))
+		name := a.standard.Codes[code].Name
+		if name != "" {
+			name = strings.ToLower(name[:1]) + name[1:]
+		}
+		names = append(names, name)
 	}
-	amount := fmt.Sprintf("%s %.0f", report.Currency, report.Amount)
+	subject := fmt.Sprintf("A transfer of %s %.0f", report.Currency, report.Amount)
+	if report.Amount <= 0 {
+		subject = "An account event with no transfer"
+	}
+	signals := strings.Join(names, ", ")
+	switchNote := ""
+	if containsString(validation.ReasonCodes, "LINK:device_switch") {
+		switchNote = " Another institution reported the same destination from a different device, which fits a fraudster switching devices."
+	}
+	others := fmt.Sprintf("%d other institution", validation.CorroborationCount)
+	if validation.CorroborationCount != 1 {
+		others += "s"
+	}
 	switch validation.Status {
 	case "VALIDATED_FRAUD":
 		corroboration := "the reporting institution's own evidence"
 		if validation.CorroborationCount > 0 {
-			corroboration = fmt.Sprintf("%d other institutions independently reported the same artefact", validation.CorroborationCount)
+			corroboration = others + " independently reporting the same artefact"
 		}
-		return fmt.Sprintf("A transfer of %s was flagged for %s. This was corroborated by %s. Hold the transaction for step-up verification before release.",
-			amount, strings.Join(names, ", "), corroboration)
+		action := "Hold the transaction for step-up verification before release."
+		if report.Amount <= 0 {
+			action = "No money has moved yet. Verify the customer and watch the destination before the next transfer."
+		}
+		return fmt.Sprintf("%s was flagged for %s. This was corroborated by %s.%s %s",
+			subject, signals, corroboration, switchNote, action)
 	case "INSUFFICIENT_EVIDENCE":
-		return fmt.Sprintf("A transfer of %s showed %s, but no other institution has reported a matching artefact. Monitoring only until another institution corroborates it.",
-			amount, strings.Join(names, ", "))
+		if validation.CorroborationCount > 0 {
+			return fmt.Sprintf("%s showed %s. %s reported a matching artefact, but the score stayed below the alert threshold.%s Monitoring only.",
+				subject, signals, others, switchNote)
+		}
+		return fmt.Sprintf("%s showed %s, but no other institution has reported a matching artefact. Monitoring only until another institution corroborates it.",
+			subject, signals)
 	default:
-		return fmt.Sprintf("A transfer of %s matched %s, but the pattern did not meet the sector standard. Marked not fraud; no alert issued.",
-			amount, strings.Join(names, ", "))
+		return fmt.Sprintf("%s matched %s, but the pattern did not meet the sector standard. Marked not fraud; no alert issued.",
+			subject, signals)
 	}
 }
 
@@ -1243,17 +1267,19 @@ func (a *App) produceDemoEvent(ctx context.Context, force bool) (map[string]any,
 
 func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
 	type scenario struct {
-		eventType   string
-		alertName   string
-		severity    string
-		reporters   [2]string
-		destination string
-		riskCodes   []string
-		amount      float64
-		channel     string
-		tactics     []string
-		techniques  []string
-		evidence    map[string]any
+		eventType      string
+		alertName      string
+		severity       string
+		reporters      [2]string
+		destination    string
+		riskCodes      []string
+		amount         float64
+		channel        string
+		tactics        []string
+		techniques     []string
+		evidence       map[string]any
+		phaseEvidence  [2]map[string]any
+		switchesDevice bool
 	}
 	scenarios := []scenario{
 		{
@@ -1278,11 +1304,11 @@ func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
 			evidence: map[string]any{"is_new_device": true, "is_new_beneficiary": true, "beneficiary_age_minutes": 12},
 		},
 		{
-			eventType: "credential_change_advisory", alertName: "Credential reset from an unfamiliar device",
+			eventType: "credential_change_advisory", alertName: "Credential reset from an unfamiliar device on a foreign network",
 			severity: "Medium", reporters: [2]string{"psp_c", "bank_b"}, destination: "bank_a",
-			riskCodes: []string{"ATO-460"}, amount: 0, channel: "mobile_app",
+			riskCodes: []string{"ATO-460", "ATO-461"}, amount: 0, channel: "mobile_app",
 			tactics: []string{"Persistence", "CredentialAccess"}, techniques: []string{"T1098"},
-			evidence: map[string]any{"is_new_device": true, "credential_changed": true, "transaction_attempted": false},
+			evidence: map[string]any{"is_new_device": true, "credential_changed": true, "transaction_attempted": false, "ip_country_changed": true},
 		},
 		{
 			eventType: "legitimate_payment_anomaly", alertName: "Unusual beneficiary payment requiring corroboration",
@@ -1290,6 +1316,15 @@ func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
 			riskCodes: []string{"BEN-450"}, amount: 9400, channel: "mobile_banking",
 			tactics: []string{"Discovery"}, techniques: []string{"T1087"},
 			evidence: map[string]any{"account_age_days": 1450, "distinct_senders_7d": 1, "known_customer_pattern": true},
+		},
+		{
+			eventType: "device_network_switch", alertName: "New device and new network before a transfer to a fresh beneficiary",
+			severity: "High", reporters: [2]string{"bank_a", "bank_b"}, destination: "sacco_d",
+			riskCodes: []string{"ATO-460", "VEL-430"}, amount: 61500, channel: "mobile_banking",
+			tactics: []string{"DefenseEvasion", "InitialAccess"}, techniques: []string{"T1078", "T1090"},
+			evidence:       map[string]any{"is_new_device": true, "is_new_beneficiary": true, "beneficiary_age_minutes": 6},
+			phaseEvidence:  [2]map[string]any{{"ip_country_changed": true}, {"vpn_proxy_tor": true}},
+			switchesDevice: true,
 		},
 	}
 
@@ -1299,13 +1334,20 @@ func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
 	reporting := selected.reporters[phase]
 	destinationHash := demoHash(fmt.Sprintf("%s:%d", selected.eventType, campaign))
 	subjectHash := demoHash(fmt.Sprintf("subject:%d", offset))
-	deviceProfile := "dp:" + strings.TrimPrefix(demoHash(fmt.Sprintf("device:%d", campaign)), "sha256:")[:20]
+	deviceSeed := fmt.Sprintf("device:%d", campaign)
+	if selected.switchesDevice {
+		deviceSeed = fmt.Sprintf("device:%d:%d", campaign, phase)
+	}
+	deviceProfile := "dp:" + strings.TrimPrefix(demoHash(deviceSeed), "sha256:")[:20]
 	evidence := map[string]any{
 		"synthetic_stream": true,
 		"dataset_basis":    "Microsoft Sentinel public schemas and PaySim-informed transaction patterns",
 		"device_profile":   deviceProfile,
 	}
 	for key, value := range selected.evidence {
+		evidence[key] = value
+	}
+	for key, value := range selected.phaseEvidence[phase] {
 		evidence[key] = value
 	}
 	systemAlertID := fmt.Sprintf("sentinel-demo-%06d", offset)
@@ -1886,7 +1928,11 @@ func (a *App) submitCSV(w http.ResponseWriter, r *http.Request) {
 				row[header] = record[i]
 			}
 		}
-		report := reportFromCSV(row)
+		report, err := reportFromCSV(row)
+		if err != nil {
+			errs = append(errs, map[string]any{"index": index, "error": err.Error()})
+			continue
+		}
 		result, apiErr := a.process(r.Context(), report, "batch")
 		if apiErr != nil {
 			errs = append(errs, map[string]any{"index": index, "error": apiErr.message})
@@ -1917,11 +1963,23 @@ func (a *App) submitCSV(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func reportFromCSV(row map[string]string) ReportIn {
+// cleartextCSVColumns name columns that carry raw customer identifiers. The
+// browser hashes them before upload, so any unhashed value here is refused.
+var cleartextCSVColumns = []string{
+	"customer_ref", "customer", "customer_name", "account_number",
+	"destination_account", "destination_msisdn", "msisdn", "phone_number",
+}
+
+func reportFromCSV(row map[string]string) (ReportIn, error) {
+	for _, column := range cleartextCSVColumns {
+		if value := strings.TrimSpace(row[column]); value != "" && !strings.HasPrefix(value, "sha256:") {
+			return ReportIn{}, fmt.Errorf("column %q holds a cleartext identifier; hash identifiers before upload", column)
+		}
+	}
 	reporting := institutionCode(first(row["reporting_institution"], row["reporting_bank"]))
 	receiving := institutionCode(first(row["destination_institution"], row["receiving_bank"]))
 	transactionRef := first(row["transaction_ref"], row["transaction_id"], "uploaded-transaction")
-	customer := first(row["customer_ref"], row["customer"], row["subject_customer_hash"], "unknown")
+	customer := first(row["subject_customer_hash"], row["customer_ref"], row["customer"])
 	codes := splitCodes(row["risk_codes"])
 	if len(codes) == 0 {
 		codes = deriveUploadCodes(row)
@@ -1944,16 +2002,16 @@ func reportFromCSV(row map[string]string) ReportIn {
 	return ReportIn{
 		ReportingInstitution: reporting, ReportingSystem: first(row["reporting_system"], row["bank_flag_source"], "AG Screener"),
 		TransactionRef: transactionRef, TransactionTimestamp: first(row["transaction_timestamp"], utcNow()),
-		SubjectAccountHash:     firstHash(row["subject_account_hash"], customer),
-		SubjectCustomerHash:    firstHash(row["subject_customer_hash"], customer),
-		DestinationAccountHash: firstHash(row["destination_account_hash"], first(row["destination_account"], receiving+":"+transactionRef)),
-		DestinationMSISDNHash:  hashIfNeeded(row["destination_msisdn_hash"]),
+		SubjectAccountHash:     first(row["subject_account_hash"], customer),
+		SubjectCustomerHash:    customer,
+		DestinationAccountHash: first(row["destination_account_hash"], row["destination_account"]),
+		DestinationMSISDNHash:  first(row["destination_msisdn_hash"], row["destination_msisdn"]),
 		DestinationInstitution: receiving, Amount: floatValue(row["amount"], 0),
 		Currency: first(row["currency"], "KES"), Channel: first(row["channel"], row["payment_rail"]),
 		BankRiskScore: floatValue(row["bank_risk_score"], 0.8),
 		BankThreshold: floatValue(row["bank_threshold"], 0.5), RiskCodes: codes, Evidence: evidence,
 		Narrative: first(row["narrative"], reporting+" submitted "+transactionRef+" from CSV upload."),
-	}
+	}, nil
 }
 
 func dashboardValidation(result map[string]any, report ReportIn) map[string]any {
@@ -2275,6 +2333,13 @@ func boolValue(value string) bool {
 	}
 }
 
+func truthy(value any) bool {
+	if flag, ok := value.(bool); ok {
+		return flag
+	}
+	return value != nil && boolValue(fmt.Sprint(value))
+}
+
 func splitCodes(value string) []string {
 	value = strings.ReplaceAll(value, ",", "|")
 	out := []string{}
@@ -2330,24 +2395,12 @@ func first(values ...string) string {
 	return ""
 }
 
-func hashIfNeeded(value string) string {
-	if value == "" || strings.HasPrefix(value, "sha256:") {
-		return value
-	}
-	sum := sha256.Sum256([]byte("kifaru-upload-salt:" + value))
-	return "sha256:" + hex.EncodeToString(sum[:])[:20]
-}
-
-func firstHash(value, fallback string) string {
-	if value != "" {
-		return hashIfNeeded(value)
-	}
-	return hashIfNeeded(fallback)
-}
-
 func institutionCode(value string) string {
 	if code, ok := map[string]string{
-		"NCBA": "bank_a", "KCB": "bank_b", "Equity": "psp_c", "I&M": "sacco_d",
+		"Bank A": "bank_a", "Tier-1 Bank A": "bank_a",
+		"Bank B": "bank_b", "Tier-2 Bank B": "bank_b",
+		"PSP C": "psp_c", "Mobile Money PSP C": "psp_c",
+		"SACCO D": "sacco_d",
 	}[value]; ok {
 		return code
 	}
@@ -2363,7 +2416,7 @@ func valueOr(value, fallback string) string {
 
 func displayInstitution(value string) string {
 	if display, ok := map[string]string{
-		"bank_a": "NCBA", "bank_b": "KCB", "psp_c": "Equity", "sacco_d": "I&M",
+		"bank_a": "Bank A", "bank_b": "Bank B", "psp_c": "PSP C", "sacco_d": "SACCO D",
 	}[value]; ok {
 		return display
 	}

@@ -3,10 +3,11 @@ import {
   alertStreamUrl, emitDemoStreamEvent, loadDashboardData, loadDemoStream, resetDemoStream,
   setDemoStreamState, updateAlertState, updateInstitutionThreshold, validateCsv,
 } from "./api";
-import { directoryBanks, initialBanks, riskCodeCatalog } from "./data";
+import { initialBanks, riskCodeCatalog } from "./data";
+import { protectIdentifiers } from "./identifiers";
 import {
   counterpartyBankId, displayTransactionId, isVisible, moneyDirection, reportingBankId,
-  transactionDirection,
+  resolveSession, transactionDirection,
 } from "./domain";
 import type {
   Bank, DemoStreamStatus, KnowledgeBaseEntry, PortalScope, RiskCodeReference, Session, Tab,
@@ -32,18 +33,12 @@ function readJson<T>(key: string): T | null {
 }
 
 function readSession(): Session | null {
-  const saved = readJson<Session & { stage?: string }>(SESSION_KEY);
-  if (!saved) return null;
-  if (saved.scope === "institution" || saved.scope === "exchange") return saved;
-  return { scope: saved.stage === "kifaru" ? "exchange" : "institution", bankId: saved.bankId };
+  return resolveSession(readJson<Session & { stage?: string }>(SESSION_KEY), initialBanks.map((bank) => bank.id));
 }
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(readSession);
-  const bankTemplates = useMemo<Bank[]>(() => [
-    ...initialBanks,
-    ...directoryBanks,
-  ], []);
+  const bankTemplates = useMemo<Bank[]>(() => initialBanks, []);
   const [banks, setBanks] = useState<Bank[]>(bankTemplates);
   const [tab, setTab] = useState<Tab>("outgoing");
   const [collapsed, setCollapsed] = useState(false);
@@ -174,10 +169,11 @@ export default function App() {
     setUploadError("");
     setUploadSummary(null);
     try {
-      const payload = await validateCsv(await file.text(), controller.signal);
+      const { csv, hashed } = await protectIdentifiers(await file.text());
+      const payload = await validateCsv(csv, controller.signal);
       await refreshData(false);
       setUploadSummary(payload.summary);
-      setToast(`${payload.summary.total_rows} rows validated.`);
+      setToast(`${payload.summary.total_rows} rows validated. ${hashed} identifiers hashed in this browser before upload.`);
     } catch (error) {
       if (!controller.signal.aborted) {
         setUploadError(error instanceof Error ? error.message : "CSV upload failed.");
@@ -300,7 +296,7 @@ export default function App() {
         </>}
         {!isExchange && <div className="side-panel">
           <label className="pill" htmlFor="csvUpload">CSV log upload</label>
-          <p className="muted">Upload a fraud log to test detection.</p>
+          <p className="muted">Upload a fraud log to test detection. Identifier columns are hashed in this browser first.</p>
           <input className="file-input" id="csvUpload" type="file" accept=".csv,text/csv" disabled={uploading}
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -329,7 +325,7 @@ export default function App() {
       </aside>
       <main className="main">
         <section className="topbar"><div>
-          <p className="eyebrow">{isExchange ? "Ecosystem operations" : "Institution workspace"}</p>
+          <p className="eyebrow">{isExchange ? "Ecosystem operations" : "Institution workspace"} · Synthetic demo data</p>
           <h2>{workspaceMeta.label} <BrandDots /></h2>
           <p className="muted">{isExchange
             ? "Every institution's shared fingerprints, matched across the ecosystem."
