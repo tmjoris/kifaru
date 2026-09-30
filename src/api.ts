@@ -175,8 +175,13 @@ export async function loadDashboardData(bankTemplates: Bank[], signal?: AbortSig
       ? { ...bank, threshold: Math.round(requiredNumber(institution, "threshold") * 100) }
       : bank;
   });
-  const histories = await Promise.all(banks.map((bank) =>
-    fetchJson(`/api/v1/history?institution=${encodeURIComponent(bank.backendCode)}`, { signal })));
+  // Fetch histories sequentially: the demo backend serves every request off a
+  // single shared SQLite connection that is not safe for concurrent access,
+  // so requesting many institutions' history at once can trip it up.
+  const histories: unknown[] = [];
+  for (const bank of banks) {
+    histories.push(await fetchJson(`/api/v1/history?institution=${encodeURIComponent(bank.backendCode)}`, { signal }));
+  }
   const rows = new Map<string, Record<string, unknown>>();
   for (const payload of histories) {
     if (!isRecord(payload) || !Array.isArray(payload.history)) {

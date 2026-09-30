@@ -1,6 +1,11 @@
 export type Stage = "reporting" | "kifaru" | "receiving";
 export type Tab = "outgoing" | "incoming" | "history" | "reports" | "knowledge" | "governance";
 export type Outcome = "validated_fraud" | "not_fraud" | "needs_review";
+export type InstitutionKind = "bank" | "sacco" | "psp";
+export interface Session {
+  stage: Stage;
+  bankId: string | null;
+}
 export interface Source {
   name: string;
   type: string;
@@ -18,6 +23,10 @@ export interface Bank {
   health: string;
   threshold: number;
   soc: string;
+  /** Institution category, used to group and label choices on the portal sign-in screen. */
+  kind?: InstitutionKind;
+  /** True for institutions with no live synthetic backend feed wired up yet (directory-only entries). */
+  pending?: boolean;
   connector: { endpoint: string; systems: string; latency: string; lastSync: string };
   inputSources: Source[];
 }
