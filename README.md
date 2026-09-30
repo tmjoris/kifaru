@@ -70,6 +70,34 @@ Kifaru staff use `/staff`. This route does not ask for an institution. It opens
 the ecosystem view of shared fingerprints, cross-institution matches and
 participating institutions.
 
+## The visibility gap Kifaru closes
+
+One institution can identify a compromised customer while every downstream
+participant sees only a normal-looking transfer. Kifaru connects those partial
+views without moving raw customer identifiers outside each institution.
+
+```mermaid
+flowchart LR
+    Customer["Compromised customer"]
+    BankA["Bank A<br/>detects account takeover"]
+    BankB["Bank B<br/>receives the transfer"]
+    Wallet["Payment provider<br/>sees a wallet credit"]
+    Cashout["Cash-out point"]
+
+    BankA -.->|"protected fraud signal"| Kifaru["Kifaru<br/>shared validation"]
+    BankB -.->|"matching protected artefact"| Kifaru
+    Kifaru ==>|"corroborated alert"| BankB
+
+    Customer --> BankA
+    BankA -->|"transfer"| BankB
+    BankB -->|"forward"| Wallet
+    Wallet -->|"withdrawal"| Cashout
+```
+
+The transaction still moves through institution-owned systems. Kifaru adds the
+shared evidence needed for the receiving institution to recognise the wider
+campaign and decide whether to hold or investigate the funds.
+
 ## System context
 
 ```mermaid
@@ -238,6 +266,8 @@ erDiagram
     VALIDATIONS ||--o| ALERTS : may_create
     ALERTS ||--o{ ALERT_ACTIONS : records
     INSTITUTIONS ||--o{ NOTIFICATIONS : receives
+    DEMO_STREAM_STATE ||--o{ DEMO_EVENTS : allocates
+    DEMO_EVENTS }o--o| REPORTS : generates
 
     INSTITUTIONS {
         text code PK
@@ -293,6 +323,24 @@ erDiagram
         text event_type
         text record_id
         text payload
+    }
+    DEMO_STREAM_STATE {
+        boolean singleton PK
+        boolean enabled
+        integer cadence_seconds
+        bigint next_offset
+        integer emitted_since_reset
+        timestamp last_emitted_at
+    }
+    DEMO_EVENTS {
+        bigint event_offset PK
+        text topic
+        text partition_key
+        jsonb payload
+        text status
+        text report_id FK
+        text outcome
+        timestamp processed_at
     }
 ```
 
@@ -357,6 +405,31 @@ Two consecutive events in a campaign share one protected destination artefact
 but originate from different institutions. This exercises Kifaru's automatic
 corroboration and revalidation path rather than merely changing dashboard
 counters.
+
+```mermaid
+sequenceDiagram
+    actor Staff as Kifaru staff
+    participant UI as Staff event console
+    participant Producer as Go background producer
+    participant Broker as PostgreSQL event log
+    participant Pipeline as Fraud validation pipeline
+    participant Stream as SSE subscribers
+
+    Staff->>UI: Start stream
+    UI->>Producer: Enable 30-second cadence
+    loop Every 30 seconds, up to 500 events
+        Producer->>Broker: Lock state and claim next offset
+        Producer->>Broker: Append pending Sentinel-shaped event
+        Producer->>Pipeline: Submit synthetic protected report
+        Pipeline->>Broker: Commit report, validation and optional alert
+        Producer->>Broker: Record outcome against event offset
+        Producer-->>Stream: Publish processed demo-event
+        Stream-->>UI: Refresh broker and ecosystem views
+    end
+    Staff->>UI: Pause or reset
+    UI->>Broker: Pause producer and remove synthetic records
+    Note over Broker: Immutable audit history remains
+```
 
 Reset removes the stream's reports, validations, alerts, indexed artefacts,
 knowledge-base additions and broker events. Append-only audit records remain.
