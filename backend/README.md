@@ -13,6 +13,12 @@ go run .
 
 The service listens on `$PORT`, defaulting to `8000`.
 
+`institutions` stores neutral institution identity and category. Reporting and
+receiving are per-record relationships through `reports.reporting_institution`,
+`reports.destination_institution`, and the corresponding alert fields. A bank is
+never permanently assigned one of those roles. Startup seeds the licensed Kenyan
+commercial bank directory and installs institution foreign keys for new records.
+
 ## API
 
 ```text
@@ -54,6 +60,6 @@ python scripts/migrate_sqlite_to_postgres.py --reset
 The repository-level `render.yaml` deploys:
 
 - `kifaru-api`: this Go service
-- `kifaru-frontend`: the Vite static frontend
+- `kifarulive`: the Vite static frontend
 
 Set the API service's `DATABASE_URL` to the Neon pooled connection string.

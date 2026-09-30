@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadDashboardData, updateInstitutionThreshold, validateCsv } from "./api";
-import { directoryBank, directoryBanks, initialBanks, riskCodeCatalog } from "./data";
+import { directoryBanks, initialBanks, riskCodeCatalog } from "./data";
 import {
   counterpartyBankId, displayTransactionId, isVisible, moneyDirection, reportingBankId,
   transactionDirection,
 } from "./domain";
 import type {
-  Bank, InstitutionKind, KnowledgeBaseEntry, RiskCodeReference, Session, Stage, Tab, Transaction, UploadSummary,
+  Bank, KnowledgeBaseEntry, PortalScope, RiskCodeReference, Session, Tab, Transaction, UploadSummary,
 } from "./types";
 import { BrandDots, Icon, Logo } from "./components/Shared";
 import { Investigation, TransactionTable } from "./components/Transactions";
@@ -15,16 +15,7 @@ import { Exchange } from "./components/Exchange";
 import { AdminDetails, KnowledgeBase } from "./components/ReferencePanels";
 import { PortalLogin } from "./components/PortalLogin";
 
-const STAGES: { id: Stage; step: string; label: string; blurb: string; icon: string; railLabel: string }[] = [
-  { id: "reporting", step: "1", label: "Reporting bank", blurb: "Detects fraud, publishes a fingerprint", icon: "flag", railLabel: "Report" },
-  { id: "kifaru", step: "2", label: "Kifaru exchange", blurb: "Shares it across institutions", icon: "hub", railLabel: "Exchange" },
-  { id: "receiving", step: "3", label: "Receiving bank", blurb: "Matches it, holds the transfer", icon: "shield", railLabel: "Receive" },
-];
-
 const SESSION_KEY = "kifaru-session";
-const CUSTOM_INSTITUTIONS_KEY = "kifaru-custom-institutions";
-
-interface CustomInstitution { id: string; name: string; region: string; kind: InstitutionKind }
 
 function readJson<T>(key: string): T | null {
   try {
@@ -35,16 +26,19 @@ function readJson<T>(key: string): T | null {
   }
 }
 
+function readSession(): Session | null {
+  const saved = readJson<Session & { stage?: string }>(SESSION_KEY);
+  if (!saved) return null;
+  if (saved.scope === "institution" || saved.scope === "exchange") return saved;
+  return { scope: saved.stage === "kifaru" ? "exchange" : "institution", bankId: saved.bankId };
+}
+
 export default function App() {
-  const [session, setSession] = useState<Session | null>(() => readJson<Session>(SESSION_KEY));
-  const [customInstitutions, setCustomInstitutions] = useState<CustomInstitution[]>(
-    () => readJson<CustomInstitution[]>(CUSTOM_INSTITUTIONS_KEY) ?? [],
-  );
+  const [session, setSession] = useState<Session | null>(readSession);
   const bankTemplates = useMemo<Bank[]>(() => [
     ...initialBanks,
     ...directoryBanks,
-    ...customInstitutions.map((item) => directoryBank(item.id, item.name, item.region, item.kind)),
-  ], [customInstitutions]);
+  ], []);
   const [banks, setBanks] = useState<Bank[]>(bankTemplates);
   const [tab, setTab] = useState<Tab>("outgoing");
   const [collapsed, setCollapsed] = useState(false);
@@ -69,12 +63,14 @@ export default function App() {
     else window.localStorage.removeItem(SESSION_KEY);
   }, [session]);
 
-  useEffect(() => {
-    window.localStorage.setItem(CUSTOM_INSTITUTIONS_KEY, JSON.stringify(customInstitutions));
-  }, [customInstitutions]);
-
-  const stage = session?.stage ?? "reporting";
-  const bankId = session?.bankId ?? "";
+  const staffRoute = window.location.pathname === "/staff";
+  const activeSession = session
+    && ((staffRoute && session.scope === "exchange") || (!staffRoute && session.scope === "institution"))
+    ? session
+    : null;
+  const scope = activeSession?.scope ?? (staffRoute ? "exchange" : "institution");
+  const isExchange = scope === "exchange";
+  const bankId = activeSession?.bankId ?? "";
   const bank = banks.find((item) => item.id === bankId) ?? banks[0];
   const bankName = (id: string) => id === "external" ? "External network" : banks.find((item) => item.id === id)?.name ?? id;
   const records = transactions.filter((item) => isVisible(item, bankId));
@@ -126,23 +122,17 @@ export default function App() {
     };
   }, [refreshData]);
 
-  function enterPortal(next: Stage, nextBankId: string | null) {
-    setSession({ stage: next, bankId: nextBankId });
+  function enterPortal(next: PortalScope, nextBankId: string | null) {
+    setSession({ scope: next, bankId: nextBankId });
     setSelectedKey(null);
     setQuery("");
     setFilter("all");
     setReportView("all");
-    setTab(next === "receiving" ? "incoming" : "outgoing");
+    setTab("outgoing");
   }
 
   function switchPortal() {
     setSession(null);
-  }
-
-  function addCustomInstitution(name: string, region: string, kind: InstitutionKind, forStage: Stage) {
-    const id = `custom-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-+|-+$)/g, "")}-${Math.random().toString(36).slice(2, 6)}`;
-    setCustomInstitutions((prev) => [...prev, { id, name, region, kind }]);
-    enterPortal(forStage, id);
   }
 
   async function upload(file: File) {
@@ -169,15 +159,12 @@ export default function App() {
     }
   }
 
-  const reportingTabs: { id: Tab; label: string }[] = [
-    { id: "outgoing", label: "Flags submitted" }, { id: "reports", label: "Reports" },
-    { id: "knowledge", label: "Knowledge base" }, { id: "governance", label: "Governance" },
-  ];
-  const receivingTabs: { id: Tab; label: string }[] = [
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "outgoing", label: "Flags submitted" },
     { id: "incoming", label: "Alerts received" }, { id: "history", label: "Related history" },
     { id: "reports", label: "Reports" }, { id: "knowledge", label: "Knowledge base" },
+    { id: "governance", label: "Governance" },
   ];
-  const tabs = stage === "receiving" ? receivingTabs : reportingTabs;
   const metrics = [
     { label: "Related history", value: records.length, detail: "Records tied to this bank" },
     { label: "Submitted flags", value: submitted, detail: "From this bank's fraud system" },
@@ -189,12 +176,14 @@ export default function App() {
     outgoing: { title: "Flags submitted", subtitle: "Transactions this bank sent for validation." },
     history: { title: "Related history", subtitle: "All validation records involving this bank." },
   };
-  const stageMeta = STAGES.find((item) => item.id === stage)!;
+  const workspaceMeta = isExchange
+    ? { label: "Kifaru exchange", blurb: "Cross-institution fraud signals and ecosystem matches.", icon: "hub", railLabel: "Exchange" }
+    : { label: bank.name, blurb: "Report, receive, and investigate shared fraud signals.", icon: "account_balance", railLabel: "Workspace" };
 
-  if (!session) {
-    return <PortalLogin banks={banks} onEnterKifaru={() => enterPortal("kifaru", null)}
-      onEnterBank={(nextStage, nextBankId) => enterPortal(nextStage, nextBankId)}
-      onAddInstitution={(name, region, kind, forStage) => addCustomInstitution(name, region, kind, forStage)} />;
+  if (!activeSession) {
+    return <PortalLogin banks={banks} staff={staffRoute}
+      onEnterKifaru={() => enterPortal("exchange", null)}
+      onEnterBank={(nextBankId) => enterPortal("institution", nextBankId)} />;
   }
 
   return <>
@@ -202,8 +191,8 @@ export default function App() {
       <nav className="nav-rail" aria-label="Signed-in portal">
         <div className="nav-rail-brand"><Logo /></div>
         <div className="rail-item active" aria-current="page">
-          <span className="rail-icon"><Icon name={stageMeta.icon} /></span>
-          <span className="rail-text">{stageMeta.railLabel}</span>
+          <span className="rail-icon"><Icon name={workspaceMeta.icon} /></span>
+          <span className="rail-text">{workspaceMeta.railLabel}</span>
         </div>
         <button className="rail-item rail-signout" aria-label="Switch portal" title="Switch portal" onClick={switchPortal}>
           <span className="rail-icon"><Icon name="logout" /></span>
@@ -215,10 +204,10 @@ export default function App() {
       </nav>
       <aside className="sidebar">
         <div className="sidebar-top">
-          <div className="brand"><h1>{stageMeta.label}</h1><p>{stageMeta.blurb}</p></div>
+          <div className="brand"><h1>{workspaceMeta.label}</h1><p>{workspaceMeta.blurb}</p></div>
         </div>
-        {stage !== "kifaru" && <>
-          <p className="sidebar-label">{stage === "receiving" ? "Receiving institution" : "Reporting institution"}</p>
+        {!isExchange && <>
+          <p className="sidebar-label">Institution</p>
           <div className="bank-list">
             <div className="bank-card active signed-in-card" aria-current="true">
               <span><span className="bank-name">{bank.name}</span><span className="bank-meta">{bank.region}</span></span>
@@ -226,7 +215,7 @@ export default function App() {
             </div>
           </div>
         </>}
-        {stage === "reporting" && <div className="side-panel">
+        {!isExchange && <div className="side-panel">
           <label className="pill" htmlFor="csvUpload">CSV log upload</label>
           <p className="muted">Upload a fraud log to test detection.</p>
           <input className="file-input" id="csvUpload" type="file" accept=".csv,text/csv" disabled={uploading}
@@ -246,7 +235,7 @@ export default function App() {
             {!uploading && !uploadError && !uploadSummary && <span className="muted">Validation API: /api</span>}
           </div>
         </div>}
-        {stage === "kifaru" && <div className="side-panel">
+        {isExchange && <div className="side-panel">
           <p className="sidebar-label">How it works</p>
           <ol className="how-it-works">
             <li>Reporting bank detects fraud, publishes a fingerprint</li>
@@ -257,10 +246,11 @@ export default function App() {
       </aside>
       <main className="main">
         <section className="topbar"><div>
-          <p className="eyebrow">Step {stageMeta.step} of 3</p><h2>{stageMeta.label}{stage !== "kifaru" && ` \u00b7 ${bank.name}`} <BrandDots /></h2>
-          <p className="muted">{stage === "reporting" && "Flag suspicious activity and publish a protected fingerprint."}
-            {stage === "kifaru" && "Every institution's shared fingerprints, matched across the ecosystem."}
-            {stage === "receiving" && "See matches against the shared exchange and act on them."}</p>
+          <p className="eyebrow">{isExchange ? "Ecosystem operations" : "Institution workspace"}</p>
+          <h2>{workspaceMeta.label} <BrandDots /></h2>
+          <p className="muted">{isExchange
+            ? "Every institution's shared fingerprints, matched across the ecosystem."
+            : "Submit suspicious activity, receive matched alerts, and investigate related records."}</p>
           {dataError && <p className="muted" role="alert">Backend unavailable: {dataError}</p>}
         </div><div className="actions">
           <button className="btn" onClick={switchPortal}><Icon name="logout" className="btn-icon" />Switch portal</button>
@@ -273,7 +263,7 @@ export default function App() {
             setToast("Data refreshed.");
           }).catch(() => undefined)}><Icon name="refresh" className="btn-icon" />{loadingData ? "Loading..." : "Refresh data"}</button>
         </div></section>
-        {stage === "kifaru"
+        {isExchange
           ? <Exchange transactions={transactions} bankName={bankName} onOpen={setSelectedKey} />
           : <>
             <section className="grid metrics">{metrics.map((metric) =>

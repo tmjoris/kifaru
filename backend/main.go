@@ -159,15 +159,81 @@ func (a *App) initDB(ctx context.Context) error {
 		}
 	}
 	institutions := [][]any{
-		{"bank_a", "Tier-1 Bank A", "bank", 0.45},
-		{"bank_b", "Tier-2 Bank B", "bank", 0.50},
-		{"psp_c", "Mobile Money PSP C", "psp", 0.40},
-		{"sacco_d", "Deposit-taking SACCO D", "sacco", 0.60},
+		{"external", "External financial network", "external", 0.50},
+		{"bank_a", "NCBA Bank Kenya PLC", "bank", 0.45},
+		{"bank_b", "KCB Bank Kenya Limited", "bank", 0.50},
+		{"psp_c", "Equity Bank Kenya Limited", "bank", 0.40},
+		{"sacco_d", "I&M Bank Limited", "bank", 0.60},
+		{"ke:absa-bank-kenya", "Absa Bank Kenya PLC", "bank", 0.50},
+		{"ke:access-bank-kenya", "Access Bank (Kenya) PLC", "bank", 0.50},
+		{"ke:bank-of-africa-kenya", "Bank of Africa Kenya Limited", "bank", 0.50},
+		{"ke:bank-of-baroda-kenya", "Bank of Baroda (Kenya) Limited", "bank", 0.50},
+		{"ke:bank-of-india-kenya", "Bank of India (Kenya)", "bank", 0.50},
+		{"ke:citibank-n-a-kenya", "Citibank N.A. Kenya", "bank", 0.50},
+		{"ke:commercial-international-bank-kenya-cib", "Commercial International Bank Kenya Limited", "bank", 0.50},
+		{"ke:consolidated-bank-of-kenya", "Consolidated Bank of Kenya Limited", "bank", 0.50},
+		{"ke:co-operative-bank-of-kenya", "Co-operative Bank of Kenya Limited", "bank", 0.50},
+		{"ke:credit-bank", "Credit Bank PLC", "bank", 0.50},
+		{"ke:development-bank-of-kenya", "Development Bank of Kenya Limited", "bank", 0.50},
+		{"ke:diamond-trust-bank-dtb", "Diamond Trust Bank Kenya Limited", "bank", 0.50},
+		{"ke:dib-bank-kenya", "DIB Bank Kenya Limited", "bank", 0.50},
+		{"ke:ecobank-kenya", "Ecobank Kenya Limited", "bank", 0.50},
+		{"ke:family-bank", "Family Bank Limited", "bank", 0.50},
+		{"ke:first-community-bank", "First Community Bank Limited", "bank", 0.50},
+		{"ke:guaranty-trust-bank-kenya-gtbank", "Guaranty Trust Bank (Kenya) Limited", "bank", 0.50},
+		{"ke:guardian-bank", "Guardian Bank Limited", "bank", 0.50},
+		{"ke:gulf-african-bank", "Gulf African Bank Limited", "bank", 0.50},
+		{"ke:habib-bank-ag-zurich", "Habib Bank AG Zurich", "bank", 0.50},
+		{"ke:hfc-limited-housing-finance", "Housing Finance Company of Kenya Limited", "bank", 0.50},
+		{"ke:kingdom-bank", "Kingdom Bank Limited", "bank", 0.50},
+		{"ke:middle-east-bank-kenya", "Middle East Bank (Kenya) Limited", "bank", 0.50},
+		{"ke:m-oriental-bank", "M Oriental Bank Limited", "bank", 0.50},
+		{"ke:national-bank-of-kenya", "National Bank of Kenya Limited", "bank", 0.50},
+		{"ke:paramount-bank", "Paramount Bank Limited", "bank", 0.50},
+		{"ke:prime-bank", "Prime Bank Limited", "bank", 0.50},
+		{"ke:sbm-bank-kenya", "SBM Bank Kenya Limited", "bank", 0.50},
+		{"ke:sidian-bank", "Sidian Bank Limited", "bank", 0.50},
+		{"ke:stanbic-bank-kenya", "Stanbic Bank Kenya Limited", "bank", 0.50},
+		{"ke:standard-chartered-bank-kenya", "Standard Chartered Bank Kenya Limited", "bank", 0.50},
+		{"ke:uba-kenya", "United Bank for Africa Kenya Limited", "bank", 0.50},
+		{"ke:victoria-commercial-bank", "Victoria Commercial Bank PLC", "bank", 0.50},
+		{"ke:abc-bank-african-banking-corporation", "African Banking Corporation Limited", "bank", 0.50},
 	}
 	for _, values := range institutions {
 		if _, err := a.db.Exec(ctx, `
 			INSERT INTO institutions(code,name,type,threshold) VALUES ($1,$2,$3,$4)
 			ON CONFLICT (code) DO NOTHING`, values...); err != nil {
+			return err
+		}
+	}
+	constraints := []string{
+		`DO $$ BEGIN
+			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='reports_reporting_institution_fkey') THEN
+				ALTER TABLE reports ADD CONSTRAINT reports_reporting_institution_fkey
+				FOREIGN KEY (reporting_institution) REFERENCES institutions(code) NOT VALID;
+			END IF;
+		END $$`,
+		`DO $$ BEGIN
+			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='reports_destination_institution_fkey') THEN
+				ALTER TABLE reports ADD CONSTRAINT reports_destination_institution_fkey
+				FOREIGN KEY (destination_institution) REFERENCES institutions(code) NOT VALID;
+			END IF;
+		END $$`,
+		`DO $$ BEGIN
+			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='alerts_receiving_institution_fkey') THEN
+				ALTER TABLE alerts ADD CONSTRAINT alerts_receiving_institution_fkey
+				FOREIGN KEY (receiving_institution) REFERENCES institutions(code) NOT VALID;
+			END IF;
+		END $$`,
+		`DO $$ BEGIN
+			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='alerts_reporting_institution_fkey') THEN
+				ALTER TABLE alerts ADD CONSTRAINT alerts_reporting_institution_fkey
+				FOREIGN KEY (reporting_institution) REFERENCES institutions(code) NOT VALID;
+			END IF;
+		END $$`,
+	}
+	for _, statement := range constraints {
+		if _, err := a.db.Exec(ctx, statement); err != nil {
 			return err
 		}
 	}
@@ -326,6 +392,9 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 	}
 	if report.Currency == "" {
 		report.Currency = "KES"
+	}
+	if report.DestinationInstitution == "" {
+		report.DestinationInstitution = "external"
 	}
 	if report.BankThreshold == 0 {
 		report.BankThreshold = institutionThreshold

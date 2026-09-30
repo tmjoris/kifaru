@@ -1732,6 +1732,19 @@
   font-size: 1rem;
 }
 
+.portal-route-link {
+  display: inline-block;
+  margin-top: 1.15rem;
+  color: #0759b8;
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.portal-route-link:hover {
+  text-decoration: underline;
+}
+
 .portal-signal {
   grid-area: signal;
   display: flex;

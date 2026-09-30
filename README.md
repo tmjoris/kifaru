@@ -25,14 +25,14 @@ npm run server
 ```
 
 Vite forwards `/api/*` requests to the backend at `http://127.0.0.1:8000`.
-Choose Admin or Employee, then upload `backend/data/kifaru_events.csv` to populate
-additional records. The dashboard loads persisted backend history, institutions,
-thresholds, risk codes, and knowledge-base entries on startup. Use the institution
-buttons to see each bank's related records.
+The institution sign-in is at `/`; the separate Kifaru operations sign-in is at
+`/staff`. A bank signs into one institution workspace containing submitted flags,
+received alerts, related history, reports, knowledge, and governance. Reporting
+and receiving are roles on each transaction, not permanent bank types.
 
-The React app preserves role views, bank switching, search/outcome filters,
-reports and risk-code drilldowns, read-only investigations, knowledge-base content,
-admin settings, theme switching, and the collapsible sidebar.
+The React app includes the CBK-licensed commercial bank directory, search/outcome
+filters, reports and risk-code drilldowns, read-only investigations,
+knowledge-base content, admin settings, theme switching, and the collapsible sidebar.
 Use `?clawpilotTheme=dark` or `?clawpilotTheme=light` to select the initial theme;
 otherwise it follows the system preference.
 
@@ -53,8 +53,8 @@ otherwise it follows the system preference.
 
 ### Prototype boundaries
 
-CSV uploads call the real prototype API. Role selection is not authentication,
-and bank filtering is client-side, not an authorization boundary. Connector
+CSV uploads call the real prototype API. The sign-in form is demo gating rather
+than authentication, and bank filtering is client-side, not an authorization boundary. Connector
 inventory is illustrative and does not contact external systems. Institution
 threshold changes are persisted by the backend.
 Backend records and institution thresholds persist in Neon PostgreSQL and reload on refresh.
