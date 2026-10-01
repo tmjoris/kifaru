@@ -11,6 +11,8 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
+      - key: FRONTEND_ORIGIN
+        value: https://kifarulive.onrender.com
 
   - type: web
     name: kifarulive
