@@ -124,6 +124,7 @@ export interface DemoStreamStatus {
   cadenceSeconds: number;
   nextOffset: number;
   emittedSinceReset: number;
+  retainedEvents: number;
   maxEvents: number;
   lastEmittedAt: string;
   updatedAt: string;

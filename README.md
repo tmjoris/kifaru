@@ -475,11 +475,15 @@ The second migration creates the synthetic SOC event broker:
 - One durable producer-state row with pause/resume and a 30-second cadence
 - An ordered `sentinel.security-alert` event log with monotonic offsets
 - Processing status, report IDs, outcomes and failure details for every event
-- A 500-event safety cap between resets
+- Rolling retention of the latest 500 processed events and their generated data
 
 The third migration renamed the demo institutions for a time. Names now come
 from `backend/data/kenyan_banks.json` and are refreshed every time the API
 starts, while any threshold an administrator has set is kept.
+
+The fourth migration adds demo users and expiring sessions. The fifth replaces
+the old 500-event stop with rolling retention and resumes deployments that had
+paused only because they reached that former ceiling.
 
 Audit entries are written for validations, automatic and manual revalidation,
 alert decisions, configuration updates, threshold changes and knowledge-base
@@ -495,9 +499,9 @@ project's existing Render and PostgreSQL services:
 - Default cadence: one event every 30 seconds
 - Durable, increasing offsets
 - Pause, resume, emit-one and reset controls
-- Retained processing result for each event
+- Rolling retention of the latest 500 processing results
 - Server-Sent Event notification after processing
-- Automatic pause after 500 events until staff reset the stream
+- Continuous production without an event-count stop
 
 The payloads follow public Microsoft Sentinel `SecurityAlert` conventions,
 including `SystemAlertId`, `AlertName`, `AlertSeverity`, `ProviderName`,
@@ -541,8 +545,9 @@ sequenceDiagram
 
     Staff->>UI: Start stream
     UI->>Producer: Enable 30-second cadence
-    loop Every 30 seconds, up to 500 events
+    loop Every 30 seconds while enabled
         Producer->>Broker: Lock state and claim next offset
+        Producer->>Broker: Remove records beyond rolling retention
         Producer->>Broker: Append pending Sentinel-shaped event
         Producer->>Pipeline: Submit synthetic protected report
         Pipeline->>Broker: Commit report, validation and optional alert
@@ -555,8 +560,9 @@ sequenceDiagram
     Note over Broker: Immutable audit history remains
 ```
 
-Reset removes the stream's reports, validations, alerts, indexed artefacts,
-knowledge-base additions and broker events. Append-only audit records remain.
+Rolling retention and manual reset remove the affected stream reports,
+validations, alerts, indexed artefacts, knowledge-base additions and broker
+events. Append-only audit records remain.
 
 Public references used for the synthetic schema and scenarios:
 
