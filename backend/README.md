@@ -86,9 +86,10 @@ POST  /v1/admin/demo-stream/reset
 The demo-stream endpoints control a durable PostgreSQL-backed
 `sentinel.security-alert` topic. It produces clearly marked synthetic Microsoft
 Sentinel-shaped events every 30 seconds, records ordered offsets and processing
-outcomes, and can remove its generated data through the reset endpoint. Paired
-events share a protected destination artefact across two reporting institutions;
-the second event automatically revalidates the first weak SIM-swap report.
+outcomes, retains the latest 500 processed events with their generated data, and
+can remove all generated data through the reset endpoint. Paired events share a
+protected destination artefact across two reporting institutions; the second
+event automatically revalidates the first weak SIM-swap report.
 
 ## Schema migrations
 
@@ -99,6 +100,8 @@ unseen migration in a PostgreSQL transaction and records the filename in
 `003_synthetic_institutions.sql` retires obsolete directory placeholders.
 `004_authentication.sql` adds demo users and expiring sessions. Startup seeds
 the pitch accounts only after the current institution directory exists.
+`005_rolling_demo_stream.sql` resumes streams stopped by the former event cap;
+the Go producer then maintains rolling retention.
 
 ## Go package layout
 

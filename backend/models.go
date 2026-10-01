@@ -19,7 +19,7 @@ const (
 	weightKnownBad       = 0.30
 	weightKnownGood      = -0.55
 	weightAboveThreshold = 0.10
-	demoStreamMaxEvents  = 500
+	demoStreamRetention  = 500
 )
 
 // Institution is one licensed Kenyan bank or mobile money provider from

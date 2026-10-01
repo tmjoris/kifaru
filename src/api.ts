@@ -435,6 +435,7 @@ function parseDemoStream(payload: unknown): DemoStreamStatus {
     cadenceSeconds: requiredNumber(payload, "cadence_seconds"),
     nextOffset: requiredNumber(payload, "next_offset"),
     emittedSinceReset: requiredNumber(payload, "emitted_since_reset"),
+    retainedEvents: requiredNumber(payload, "retained_events"),
     maxEvents: requiredNumber(payload, "max_events"),
     lastEmittedAt: requiredString(payload, "last_emitted_at"),
     updatedAt: requiredString(payload, "updated_at"),
