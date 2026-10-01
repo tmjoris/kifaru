@@ -148,21 +148,51 @@ func (a *App) advanceGuidedDemo(w http.ResponseWriter, r *http.Request) {
 		}
 		defer func() { _ = tx.Rollback(r.Context()) }()
 		user := authUserFromContext(r.Context())
-		if _, _, apiErr := a.applyAlertTransition(
-			r.Context(), tx, alertID, "acknowledged", "", "", user,
-		); apiErr != nil {
-			fail(apiErr.message)
+		alertRows, err := tx.Query(r.Context(), `SELECT alert_id FROM alerts
+			WHERE report_id IN ($1,$2)
+			ORDER BY CASE WHEN alert_id=$3 THEN 0 ELSE 1 END, issued_at`,
+			firstReportID, secondReportID, alertID)
+		if err != nil {
+			fail(err.Error())
 			return
 		}
-		if _, _, apiErr := a.applyAlertTransition(
-			r.Context(), tx, alertID, "actioned", "held",
-			"Guided scenario: receiving institution recorded a review hold.", user,
-		); apiErr != nil {
-			fail(apiErr.message)
+		alertIDs := []string{}
+		for alertRows.Next() {
+			var scenarioAlertID string
+			if err := alertRows.Scan(&scenarioAlertID); err != nil {
+				alertRows.Close()
+				fail(err.Error())
+				return
+			}
+			alertIDs = append(alertIDs, scenarioAlertID)
+		}
+		alertRows.Close()
+		if err := alertRows.Err(); err != nil {
+			fail(err.Error())
 			return
+		}
+		if len(alertIDs) == 0 {
+			fail("the guided scenario has no receiver alerts to action")
+			return
+		}
+		for _, scenarioAlertID := range alertIDs {
+			if _, _, apiErr := a.applyAlertTransition(
+				r.Context(), tx, scenarioAlertID, "acknowledged", "", "", user,
+			); apiErr != nil {
+				fail(apiErr.message)
+				return
+			}
+			if _, _, apiErr := a.applyAlertTransition(
+				r.Context(), tx, scenarioAlertID, "actioned", "held",
+				"Guided scenario: receiving institution recorded a review hold.", user,
+			); apiErr != nil {
+				fail(apiErr.message)
+				return
+			}
 		}
 		if err := auditRecord(r.Context(), tx, user.Email, "guided_demo.completed",
-			runID, "", `{"outcome":"held"}`, "deterministic demonstration scenario"); err != nil {
+			runID, "", fmt.Sprintf(`{"outcome":"held","alerts":%d}`, len(alertIDs)),
+			"deterministic demonstration scenario"); err != nil {
 			fail(err.Error())
 			return
 		}
