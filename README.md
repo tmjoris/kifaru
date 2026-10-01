@@ -483,7 +483,9 @@ starts, while any threshold an administrator has set is kept.
 
 The fourth migration adds demo users and expiring sessions. The fifth replaces
 the old 500-event stop with rolling retention and resumes deployments that had
-paused only because they reached that former ceiling.
+paused only because they reached that former ceiling. The producer also repairs
+that exact legacy state if a retiring instance reaches the ceiling during a
+rolling deployment.
 
 Audit entries are written for validations, automatic and manual revalidation,
 alert decisions, configuration updates, threshold changes and knowledge-base
