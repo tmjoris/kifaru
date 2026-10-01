@@ -160,9 +160,9 @@ export function PortalLogin({ banks, staff, onEnterBank, onEnterKifaru }: {
         </footer>
       </div>
       <p className="portal-signal-note">Kifaru helps institutions recognise the same fraud pattern
-        before the next transfer is paid out. Four guided accounts open institution workspaces;
-        staff operations cover Kenya's licensed banks, M-Pesa and Airtel Money using synthetic
-        data. No institution has supplied, reviewed or endorsed any record shown here.</p>
+        before the next transfer is paid out. Demo accounts open workspaces for all 38 licensed
+        banks, M-Pesa and Airtel Money using synthetic data. No institution has supplied,
+        reviewed or endorsed any record shown here.</p>
     </section>
   </main>;
 }
