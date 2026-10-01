@@ -1233,6 +1233,17 @@ func TestPostgresPipeline(t *testing.T) {
 		t.Fatalf("guided receiver outcome was not recorded: state=%s outcome=%s",
 			guidedAlertState, guidedOutcome)
 	}
+	var guidedAlertCount, guidedHeldCount int
+	if err := db.QueryRow(ctx, `SELECT COUNT(*),
+		COUNT(*) FILTER (WHERE state='actioned' AND outcome='held')
+		FROM alerts WHERE report_id IN ($1,$2)`, guidedFirstID, guidedSecondID).
+		Scan(&guidedAlertCount, &guidedHeldCount); err != nil {
+		t.Fatal(err)
+	}
+	if guidedAlertCount == 0 || guidedHeldCount != guidedAlertCount {
+		t.Fatalf("guided completion left receiver alerts unactioned: held=%d total=%d",
+			guidedHeldCount, guidedAlertCount)
+	}
 	releaseBody, _ := json.Marshal(map[string]string{
 		"state": "actioned", "outcome": "released", "comment": "Cleared after synthetic review",
 	})
