@@ -2324,3 +2324,216 @@
     border-left: 0;
   }
 }
+
+/* Rows and cards that open an investigation look and act clickable. */
+.transaction-table tbody tr.clickable-row {
+  cursor: pointer;
+}
+
+.transaction-table tbody tr.clickable-row:hover {
+  background: var(--cp-highlight);
+  box-shadow: inset 3px 0 0 var(--cp-accent);
+}
+
+.transaction-table tbody tr.clickable-row:focus-visible {
+  outline: 2px solid var(--cp-accent);
+  outline-offset: -2px;
+}
+
+.open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.open-btn .material-symbols-outlined {
+  font-size: 1.1rem;
+}
+
+.fingerprint-card {
+  cursor: pointer;
+}
+
+.fingerprint-card:hover {
+  border-color: var(--cp-accent);
+}
+
+/* Plain-language risk labels, with the code kept small for specialists. */
+.risk-cell {
+  min-width: 10rem;
+  max-width: 15rem;
+}
+
+.risk-title {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.code-pill {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--cp-border);
+  border-radius: 6px;
+  background: var(--cp-surface-soft);
+  color: var(--cp-text-muted);
+  font-family: var(--cp-mono);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.update-waiting {
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 8px;
+  background: var(--cp-accent-soft);
+  color: var(--cp-text);
+  font-size: 0.85rem;
+}
+
+/* The investigation drawer keeps Close and the alert actions at the top. */
+dialog.drawer {
+  overscroll-behavior: contain;
+}
+
+.drawer-inner {
+  grid-template-rows: auto 1fr;
+}
+
+.drawer-head {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem 1.1rem;
+}
+
+.drawer-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.drawer-title-row .card-title {
+  margin: 0.1rem 0 0;
+}
+
+.drawer-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--cp-border);
+  border-radius: 999px;
+  background: var(--cp-surface);
+  color: var(--cp-text);
+  cursor: pointer;
+}
+
+.drawer-close:hover {
+  background: var(--cp-surface-soft);
+}
+
+.drawer-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  color: var(--cp-text-muted);
+  font-size: 0.85rem;
+}
+
+.drawer-status .pill {
+  flex: none;
+}
+
+.drawer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.drawer-body .sidebar-label {
+  margin-top: 1.1rem;
+}
+
+.drawer-body .sidebar-label:first-child {
+  margin-top: 0;
+}
+
+.risk-summary {
+  padding: 0.8rem;
+  border-radius: 8px;
+  background: var(--cp-surface-soft);
+}
+
+.risk-summary strong {
+  margin-right: 0.5rem;
+}
+
+.risk-summary p {
+  margin: 0.45rem 0 0;
+  color: var(--cp-text-muted);
+  font-size: 0.86rem;
+}
+
+.reason-list,
+.evidence-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reason-list li {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--cp-border);
+  border-radius: 8px;
+}
+
+.reason-list li span:not(.code-pill) {
+  color: var(--cp-text-muted);
+  font-size: 0.84rem;
+}
+
+.reason-list .code-pill {
+  justify-self: start;
+}
+
+.evidence-list li {
+  position: relative;
+  padding-left: 1.1rem;
+  font-size: 0.88rem;
+}
+
+.evidence-list li::before {
+  position: absolute;
+  top: 0.55rem;
+  left: 0.25rem;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50%;
+  background: var(--cp-accent);
+  content: "";
+}
+
+.drawer-note {
+  margin: 1rem 0 0;
+  font-size: 0.8rem;
+}
+
+/* Notifications appear at the top, clear of the Windows taskbar. */
+.toast {
+  top: 1rem;
+  bottom: auto;
+  transform: translateY(-150%);
+}
+
+.toast.show {
+  transform: translateY(0);
+}

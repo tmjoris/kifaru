@@ -28,7 +28,11 @@ func (a *App) submitCSV(w http.ResponseWriter, r *http.Request) {
 				row[header] = record[i]
 			}
 		}
-		report := reportFromCSV(row)
+		report, err := reportFromCSV(row)
+		if err != nil {
+			errs = append(errs, map[string]any{"index": index, "error": err.Error()})
+			continue
+		}
 		if !authorizeReport(w, r, &report) {
 			return
 		}
@@ -62,11 +66,24 @@ func (a *App) submitCSV(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func reportFromCSV(row map[string]string) ReportIn {
+// cleartextCSVColumns names columns that carry raw customer identifiers. The
+// browser hashes them before upload, so any unhashed value here is refused.
+var cleartextCSVColumns = []string{
+	"customer_ref", "customer", "customer_name", "account_number",
+	"destination_account", "destination_msisdn", "msisdn", "phone_number",
+}
+
+func reportFromCSV(row map[string]string) (ReportIn, error) {
+	for _, column := range cleartextCSVColumns {
+		if value := strings.TrimSpace(row[column]); value != "" && !strings.HasPrefix(value, "sha256:") {
+			return ReportIn{}, fmt.Errorf(
+				"column %q holds a cleartext identifier; hash identifiers before upload", column)
+		}
+	}
 	reporting := institutionCode(first(row["reporting_institution"], row["reporting_bank"]))
 	receiving := institutionCode(first(row["destination_institution"], row["receiving_bank"]))
 	transactionRef := first(row["transaction_ref"], row["transaction_id"], "uploaded-transaction")
-	customer := first(row["customer_ref"], row["customer"], row["subject_customer_hash"], "unknown")
+	customer := first(row["subject_customer_hash"], row["customer_ref"], row["customer"])
 	codes := splitCodes(row["risk_codes"])
 	if len(codes) == 0 {
 		codes = deriveUploadCodes(row)
@@ -89,16 +106,16 @@ func reportFromCSV(row map[string]string) ReportIn {
 	return ReportIn{
 		ReportingInstitution: reporting, ReportingSystem: first(row["reporting_system"], row["bank_flag_source"], "AG Screener"),
 		TransactionRef: transactionRef, TransactionTimestamp: first(row["transaction_timestamp"], utcNow()),
-		SubjectAccountHash:     firstHash(row["subject_account_hash"], customer),
-		SubjectCustomerHash:    firstHash(row["subject_customer_hash"], customer),
-		DestinationAccountHash: firstHash(row["destination_account_hash"], first(row["destination_account"], receiving+":"+transactionRef)),
-		DestinationMSISDNHash:  hashIfNeeded(row["destination_msisdn_hash"]),
+		SubjectAccountHash:     first(row["subject_account_hash"], customer),
+		SubjectCustomerHash:    customer,
+		DestinationAccountHash: first(row["destination_account_hash"], row["destination_account"]),
+		DestinationMSISDNHash:  first(row["destination_msisdn_hash"], row["destination_msisdn"]),
 		DestinationInstitution: receiving, Amount: floatValue(row["amount"], 0),
 		Currency: first(row["currency"], "KES"), Channel: first(row["channel"], row["payment_rail"]),
 		BankRiskScore: floatValue(row["bank_risk_score"], 0.8),
 		BankThreshold: floatValue(row["bank_threshold"], 0.5), RiskCodes: codes, Evidence: evidence,
 		Narrative: first(row["narrative"], reporting+" submitted "+transactionRef+" from CSV upload."),
-	}
+	}, nil
 }
 
 func dashboardValidation(result map[string]any, report ReportIn) map[string]any {

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -299,6 +298,13 @@ func boolValue(value string) bool {
 	}
 }
 
+func truthy(value any) bool {
+	if flag, ok := value.(bool); ok {
+		return flag
+	}
+	return value != nil && boolValue(fmt.Sprint(value))
+}
+
 func splitCodes(value string) []string {
 	value = strings.ReplaceAll(value, ",", "|")
 	out := []string{}
@@ -354,28 +360,18 @@ func first(values ...string) string {
 	return ""
 }
 
-func hashIfNeeded(value string) string {
-	if value == "" || strings.HasPrefix(value, "sha256:") {
-		return value
-	}
-	sum := sha256.Sum256([]byte("kifaru-upload-salt:" + value))
-	return "sha256:" + hex.EncodeToString(sum[:])[:20]
-}
-
-func firstHash(value, fallback string) string {
-	if value != "" {
-		return hashIfNeeded(value)
-	}
-	return hashIfNeeded(fallback)
-}
-
 func institutionCode(value string) string {
-	if code, ok := map[string]string{
-		"NCBA": "bank_a", "KCB": "bank_b", "Equity": "psp_c", "I&M": "sacco_d",
-	}[value]; ok {
-		return code
+	wanted := strings.TrimSpace(value)
+	for _, institution := range kenyanBanks {
+		for _, candidate := range []string{
+			institution.Code, institution.ID, institution.Name, institution.LegalName, institution.Ref,
+		} {
+			if candidate != "" && strings.EqualFold(candidate, wanted) {
+				return institution.Code
+			}
+		}
 	}
-	return value
+	return wanted
 }
 
 func valueOr(value, fallback string) string {
@@ -386,10 +382,10 @@ func valueOr(value, fallback string) string {
 }
 
 func displayInstitution(value string) string {
-	if display, ok := map[string]string{
-		"bank_a": "NCBA", "bank_b": "KCB", "psp_c": "Equity", "sacco_d": "I&M",
-	}[value]; ok {
-		return display
+	for _, institution := range kenyanBanks {
+		if institution.Code == value {
+			return institution.Name
+		}
 	}
 	if value == "" {
 		return "External network"

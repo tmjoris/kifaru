@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  counterpartyBankId, displayTransactionId, isVisible, moneyDirection,
-  reportingBankId, riskCounts, transactionFromValidation, validationLabel,
+  campaignChain, counterpartyBankId, displayTransactionId, isVisible, moneyDirection,
+  pipelineSteps, reportingBankId, riskCounts, transactionFromValidation, validationLabel,
 } from "./domain.ts";
+import { parseCsv, protectIdentifiers, toCsv } from "./identifiers.ts";
+import { initialBanks } from "./data.ts";
 import type { Transaction, Validation } from "./types.ts";
 
 const transaction: Transaction = {
@@ -58,4 +60,68 @@ test("API mapping preserves every outcome, untrusted text and unique row identit
   for (const status of ["validated_fraud", "not_fraud", "needs_review"] as const) {
     assert.equal(transactionFromValidation({ ...payload, status }, (name) => name, status).validationStatus, status);
   }
+});
+
+test("advisory alerts are not described as held transfers", () => {
+  const advisory = { ...transaction, alertType: "advisory" as const, amount: "KES 0" };
+  assert.equal(pipelineSteps(advisory).at(-1)?.detail, "Advisory sent, no money moved yet");
+  assert.equal(campaignChain(advisory, (id) => id).at(-1)?.label, "Watch the account");
+  assert.equal(pipelineSteps(transaction).at(-1)?.detail, "Alert sent, transaction held");
+  assert.equal(campaignChain(transaction, (id) => id).at(-1)?.label, "Held for review");
+});
+
+test("CSV parsing keeps quoted commas and round-trips", () => {
+  const rows = parseCsv('a,b\r\n"x, y","say ""hi"""\n');
+  assert.deepEqual(rows, [["a", "b"], ["x, y", 'say "hi"']]);
+  assert.deepEqual(parseCsv(toCsv(rows)), rows);
+  assert.deepEqual(parseCsv('\uFEFFa,b\n"line one\nline two",2\n\n'), [["a", "b"], ["line one\nline two", "2"]]);
+});
+
+test("malformed CSV is refused before anything is sent", async () => {
+  assert.throws(() => parseCsv('a,b\n5" TV,2\n'), /quote appears inside an unquoted field/);
+  assert.throws(() => parseCsv('a,b\n"open,2\n3,4\n'), /never closed/);
+  assert.throws(() => parseCsv('a,b\n"x"y,2\n'), /after a closing quote/);
+  assert.throws(() => parseCsv("a,b\n1,2,3\n"), /has 3 fields; the header has 2/);
+  const smuggled = "reporting_bank,customer_ref,destination_msisdn,amount,narrative\n"
+    + 'Bank A,Alice Wanjiru,0711222333,500,Paid for 5" TV\n'
+    + "Bank B,John Kamau,0722000111,100,Refund\n";
+  await assert.rejects(() => protectIdentifiers(smuggled, "test-key"), /quote appears inside an unquoted field/);
+});
+
+test("the demo lists every licensed bank and the two largest mobile money providers once", () => {
+  assert.equal(initialBanks.length, 40);
+  assert.equal(initialBanks.filter((bank) => bank.kind === "bank").length, 37);
+  assert.deepEqual(initialBanks.filter((bank) => bank.kind === "mortgage").map((bank) => bank.name), ["HFC"]);
+  assert.deepEqual(initialBanks.filter((bank) => bank.kind === "psp").map((bank) => bank.name), ["M-Pesa", "Airtel Money"]);
+  for (const key of ["id", "backendCode", "name", "shortName"] as const) {
+    assert.equal(new Set(initialBanks.map((bank) => bank[key])).size, 40, `${key} values must be unique`);
+  }
+  const byCode = new Map(initialBanks.map((bank) => [bank.backendCode, bank.name]));
+  assert.equal(byCode.get("bank_a"), "NCBA");
+  assert.equal(byCode.get("bank_b"), "KCB");
+  assert.equal(byCode.get("psp_c"), "Equity Bank");
+  assert.equal(byCode.get("sacco_d"), "I&M Bank");
+  for (const name of ["Co-op Bank", "Absa Bank Kenya", "Stanbic Bank Kenya", "DTB", "Standard Chartered Kenya",
+    "Premier Bank Kenya", "National Bank of Kenya", "Kingdom Bank", "Victoria Commercial Bank"]) {
+    assert.ok(initialBanks.some((bank) => bank.name === name), `${name} is missing`);
+  }
+  assert.ok(initialBanks.every((bank) => bank.soc.startsWith("Synthetic demo feed.")));
+});
+
+test("identifier columns are hashed in the browser before upload", async () => {
+  const input = "reporting_bank,customer_ref,destination_msisdn,amount\nBank A,Jane Wanjiku,0712 345 678,5000\n";
+  const { csv, hashed } = await protectIdentifiers(input, "test-key");
+  const [header, row] = parseCsv(csv);
+  assert.equal(hashed, 2);
+  assert.deepEqual(header, ["reporting_bank", "customer_ref", "destination_msisdn", "amount"]);
+  assert.equal(row[0], "Bank A");
+  assert.equal(row[3], "5000");
+  assert.match(row[1], /^sha256:[0-9a-f]{64}$/);
+  assert.match(row[2], /^sha256:[0-9a-f]{64}$/);
+  assert.equal(csv.includes("Jane"), false);
+  assert.equal(csv.includes("0712"), false);
+  const again = await protectIdentifiers("customer_ref\njane wanjiku\n", "test-key");
+  assert.equal(parseCsv(again.csv)[1][0], row[1], "the same person must hash to the same value");
+  const unchanged = await protectIdentifiers(csv, "test-key");
+  assert.equal(unchanged.hashed, 0, "values that are already hashed are left alone");
 });

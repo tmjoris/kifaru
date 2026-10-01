@@ -2,6 +2,7 @@ import type {
   AuthSession, Bank, DashboardData, DemoStreamEvent, DemoStreamStatus, KnowledgeBaseEntry, PortalScope, RiskCodeReference,
   Transaction, UploadSummary, Validation,
 } from "./types";
+import { riskCodeInfo } from "./explain";
 
 const configuredApiUrl = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 const API_BASE_URL = configuredApiUrl && !configuredApiUrl.startsWith("http")
@@ -203,6 +204,16 @@ function parseStringArray(value: unknown): string[] {
   }
 }
 
+function parseEvidenceFields(value: unknown): Record<string, unknown> {
+  if (typeof value !== "string") return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function parseEvidence(value: unknown): string[] {
   if (typeof value !== "string") return [];
   try {
@@ -238,13 +249,8 @@ function parseRiskCodes(payload: unknown): RiskCodeReference[] {
   }
   return Object.entries(payload.codes).flatMap(([code, value]) => {
     if (!isRecord(value) || typeof value.name !== "string") return [];
-    return [{
-      code,
-      label: value.name,
-      text: typeof value.family === "string"
-        ? `${value.family} signal used by the central validation standard.`
-        : "Signal used by the central validation standard.",
-    }];
+    const info = riskCodeInfo(code, value.name);
+    return [{ code, label: info.title, text: info.detail }];
   });
 }
 
@@ -301,6 +307,8 @@ function transactionFromHistory(
       label: riskCodeNames.get(firstRiskCode) ?? "Central fraud signal",
     },
     evidence: evidence.length ? evidence : [explanation || "No additional evidence recorded."],
+    reasonCodes,
+    evidenceFields: parseEvidenceFields(row.evidence),
     action: explanation || (status === "validated_fraud"
       ? "Validated fraud alert routed to the receiving institution."
       : "Result retained in the shared validation history."),
@@ -339,28 +347,23 @@ export async function loadDashboardData(
       ? { ...bank, threshold: Math.round(requiredNumber(institution, "threshold") * 100) }
       : bank;
   });
-  // Keep requests sequential so the initial ecosystem load does not create a
-  // burst of one history query per participating institution.
-  const accessibleBanks = access.scope === "exchange"
-    ? banks.filter((item) => !item.pending)
-    : banks.filter((item) => item.backendCode === access.institutionCode);
-  if (!accessibleBanks.length) {
+  if (access.scope === "institution"
+    && !banks.some((item) => item.backendCode === access.institutionCode)) {
     throw new Error("The authenticated institution is not available in this workspace.");
   }
-  const histories: unknown[] = [];
-  for (const bank of accessibleBanks) {
-    histories.push(await fetchJson(`/api/v1/history?institution=${encodeURIComponent(bank.backendCode)}`, { signal }));
-  }
+  const historyInstitution = access.scope === "exchange" ? "*" : access.institutionCode;
+  const historyPayload = await fetchJson(
+    `/api/v1/history?institution=${encodeURIComponent(historyInstitution)}&limit=2000`,
+    { signal },
+  );
   const rows = new Map<string, Record<string, unknown>>();
-  for (const payload of histories) {
-    if (!isRecord(payload) || !Array.isArray(payload.history)) {
-      throw new Error("The backend returned invalid institution history.");
-    }
-    for (const value of payload.history) {
-      if (!isRecord(value)) continue;
-      const reportId = requiredString(value, "report_id");
-      if (reportId) rows.set(reportId, value);
-    }
+  if (!isRecord(historyPayload) || !Array.isArray(historyPayload.history)) {
+    throw new Error("The backend returned invalid institution history.");
+  }
+  for (const value of historyPayload.history) {
+    if (!isRecord(value)) continue;
+    const reportId = requiredString(value, "report_id");
+    if (reportId) rows.set(reportId, value);
   }
 
   const riskCodes = parseRiskCodes(standardPayload);

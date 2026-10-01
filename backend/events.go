@@ -198,69 +198,86 @@ func (a *App) produceDemoEvent(ctx context.Context, force bool) (map[string]any,
 
 func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
 	type scenario struct {
-		eventType   string
-		alertName   string
-		severity    string
-		reporters   [2]string
-		destination string
-		riskCodes   []string
-		amount      float64
-		channel     string
-		tactics     []string
-		techniques  []string
-		evidence    map[string]any
+		eventType      string
+		alertName      string
+		severity       string
+		riskCodes      []string
+		amount         float64
+		channel        string
+		tactics        []string
+		techniques     []string
+		evidence       map[string]any
+		phaseEvidence  [2]map[string]any
+		switchesDevice bool
 	}
 	scenarios := []scenario{
 		{
 			eventType: "sim_swap_account_takeover", alertName: "SIM change followed by new-device transfer",
-			severity: "High", reporters: [2]string{"bank_a", "bank_b"}, destination: "psp_c",
+			severity:  "High",
 			riskCodes: []string{"ATO-460"}, amount: 48500, channel: "mobile_banking",
 			tactics: []string{"CredentialAccess", "InitialAccess"}, techniques: []string{"T1078"},
 			evidence: map[string]any{"sim_swap_age_days": 0, "is_new_device": true, "is_new_beneficiary": true},
 		},
 		{
 			eventType: "mule_rapid_flow_through", alertName: "New account receiving and rapidly forwarding funds",
-			severity: "High", reporters: [2]string{"sacco_d", "bank_a"}, destination: "psp_c",
+			severity:  "High",
 			riskCodes: []string{"MUL-440"}, amount: 73500, channel: "instant_payment",
 			tactics: []string{"Collection", "Exfiltration"}, techniques: []string{"T1020"},
 			evidence: map[string]any{"flow_through_ratio": 0.96, "dwell_minutes": 4, "account_age_days": 3, "distinct_senders_7d": 9},
 		},
 		{
 			eventType: "beneficiary_change_high_value", alertName: "New beneficiary followed by high-value transfer",
-			severity: "Medium", reporters: [2]string{"bank_b", "sacco_d"}, destination: "bank_a",
+			severity:  "Medium",
 			riskCodes: []string{"BEN-450", "ATO-461"}, amount: 126000, channel: "internet_banking",
 			tactics: []string{"CredentialAccess"}, techniques: []string{"T1078"},
 			evidence: map[string]any{"is_new_device": true, "is_new_beneficiary": true, "beneficiary_age_minutes": 12},
 		},
 		{
-			eventType: "credential_change_advisory", alertName: "Credential reset from an unfamiliar device",
-			severity: "Medium", reporters: [2]string{"psp_c", "bank_b"}, destination: "bank_a",
-			riskCodes: []string{"ATO-460"}, amount: 0, channel: "mobile_app",
+			eventType: "credential_change_advisory", alertName: "Credential reset from an unfamiliar device on a foreign network",
+			severity:  "Medium",
+			riskCodes: []string{"ATO-460", "ATO-461"}, amount: 0, channel: "mobile_app",
 			tactics: []string{"Persistence", "CredentialAccess"}, techniques: []string{"T1098"},
-			evidence: map[string]any{"is_new_device": true, "credential_changed": true, "transaction_attempted": false},
+			evidence: map[string]any{"is_new_device": true, "credential_changed": true, "transaction_attempted": false, "ip_country_changed": true},
 		},
 		{
 			eventType: "legitimate_payment_anomaly", alertName: "Unusual beneficiary payment requiring corroboration",
-			severity: "Low", reporters: [2]string{"bank_a", "bank_b"}, destination: "psp_c",
+			severity:  "Low",
 			riskCodes: []string{"BEN-450"}, amount: 9400, channel: "mobile_banking",
 			tactics: []string{"Discovery"}, techniques: []string{"T1087"},
 			evidence: map[string]any{"account_age_days": 1450, "distinct_senders_7d": 1, "known_customer_pattern": true},
+		},
+		{
+			eventType: "device_network_switch", alertName: "New device and new network before a transfer to a fresh beneficiary",
+			severity:  "High",
+			riskCodes: []string{"ATO-460", "VEL-430"}, amount: 61500, channel: "mobile_banking",
+			tactics: []string{"DefenseEvasion", "InitialAccess"}, techniques: []string{"T1078", "T1090"},
+			evidence:       map[string]any{"is_new_device": true, "is_new_beneficiary": true, "beneficiary_age_minutes": 6},
+			phaseEvidence:  [2]map[string]any{{"ip_country_changed": true}, {"vpn_proxy_tor": true}},
+			switchesDevice: true,
 		},
 	}
 
 	campaign := (offset - 1) / 2
 	phase := (offset - 1) % 2
 	selected := scenarios[campaign%int64(len(scenarios))]
-	reporting := selected.reporters[phase]
+	reporters, destination := demoInstitutions(campaign)
+	reporting := reporters[phase]
 	destinationHash := demoHash(fmt.Sprintf("%s:%d", selected.eventType, campaign))
 	subjectHash := demoHash(fmt.Sprintf("subject:%d", offset))
-	deviceProfile := "dp:" + strings.TrimPrefix(demoHash(fmt.Sprintf("device:%d", campaign)), "sha256:")[:20]
+	deviceSeed := fmt.Sprintf("device:%d", campaign)
+	if selected.switchesDevice {
+		deviceSeed = fmt.Sprintf("device:%d:%d", campaign, phase)
+	}
+	deviceProfile := "dp:" + strings.TrimPrefix(demoHash(deviceSeed), "sha256:")[:20]
 	evidence := map[string]any{
 		"synthetic_stream": true,
 		"dataset_basis":    "Microsoft Sentinel public schemas and PaySim-informed transaction patterns",
 		"device_profile":   deviceProfile,
 	}
 	for key, value := range selected.evidence {
+		evidence[key] = value
+	}
+	for key, value := range selected.phaseEvidence[phase] {
 		evidence[key] = value
 	}
 	systemAlertID := fmt.Sprintf("sentinel-demo-%06d", offset)
@@ -286,7 +303,7 @@ func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
 		TransactionRef:       fmt.Sprintf("DEMO-SENTINEL-%06d", offset),
 		TransactionTimestamp: utcNow(), SubjectAccountHash: subjectHash,
 		SubjectCustomerHash: subjectHash, DestinationAccountHash: destinationHash,
-		DestinationInstitution: selected.destination, Amount: selected.amount, Currency: "KES",
+		DestinationInstitution: destination, Amount: selected.amount, Currency: "KES",
 		Channel: selected.channel, BankRiskScore: 0.86, BankThreshold: 0.50,
 		RiskCodes: selected.riskCodes, Evidence: evidence,
 		Narrative: "Synthetic Microsoft Sentinel event: " + selected.alertName,
@@ -296,6 +313,16 @@ func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
 		"event_type": selected.eventType, "source": "microsoft-sentinel-demo",
 	}
 	return report, payload, metadata
+}
+
+// demoInstitutions rotates every bank and mobile money provider through
+// reporting, corroborating and receiving roles across successive campaigns.
+func demoInstitutions(campaign int64) ([2]string, string) {
+	n := int64(len(kenyanBanks))
+	pick := func(shift int64) string {
+		return kenyanBanks[((campaign*7+shift)%n+n)%n].Code
+	}
+	return [2]string{pick(0), pick(n / 3)}, pick(2 * n / 3)
 }
 
 func demoHash(value string) string {
