@@ -1,5 +1,5 @@
 {
-  "standard": "KIFARU Central Fraud Standard",
+  "standard": "KIFARU Protected Signal Standard",
   "version": "1.0",
   "codes": {
     "IP-401": {
@@ -7,9 +7,9 @@
       "name": "Shared device across unrelated customers",
       "severity_base": 0.3,
       "evidence_fields": [
-        "device_profile_hash",
-        "device_id"
-      ]
+        "device_profile"
+      ],
+      "evidence_mode": "all"
     },
     "IP-402": {
       "family": "Identity & Profile",
@@ -26,16 +26,18 @@
       "evidence_fields": [
         "is_emulator",
         "is_rooted"
-      ]
+      ],
+      "evidence_mode": "any"
     },
     "IP-404": {
       "family": "Identity & Profile",
       "name": "Access from foreign or anonymising ASN",
       "severity_base": 0.22,
       "evidence_fields": [
-        "ip_asn",
-        "ip_org"
-      ]
+        "ip_country_changed",
+        "vpn_proxy_tor"
+      ],
+      "evidence_mode": "any"
     },
     "VEL-429": {
       "family": "Velocity",
@@ -91,7 +93,7 @@
       "name": "Cash-out MSISDN reused across institutions",
       "severity_base": 0.36,
       "evidence_fields": [
-        "beneficiary_msisdn"
+        "destination_msisdn_hash"
       ]
     },
     "BEN-450": {
@@ -108,7 +110,7 @@
       "name": "Multiple unrelated senders converging on one destination",
       "severity_base": 0.4,
       "evidence_fields": [
-        "beneficiary_id"
+        "destination_account_hash"
       ]
     },
     "ATO-460": {
@@ -125,7 +127,7 @@
       "name": "Off-hours session with credential change",
       "severity_base": 0.2,
       "evidence_fields": [
-        "timestamp"
+        "credential_changed"
       ]
     }
   },

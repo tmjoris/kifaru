@@ -51,12 +51,62 @@ func TestNormalizeDerivesBehaviouralCodes(t *testing.T) {
 	}
 }
 
+func TestSignalEvidenceContractRejectsUnknownAndUnsupportedClaims(t *testing.T) {
+	_, standard, err := loadStandard()
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &App{standard: standard}
+	if _, err := app.normalize(ReportIn{RiskCodes: []string{"UNKNOWN-999"}}); err == nil {
+		t.Fatal("unknown risk codes must be rejected")
+	}
+	if _, err := app.normalize(ReportIn{BankRuleIDs: []string{"UNKNOWN_RULE"}}); err == nil {
+		t.Fatal("unknown bank rules must be rejected")
+	}
+	report := ReportIn{
+		Amount:    5000,
+		RiskCodes: []string{"BEN-450"},
+		Evidence:  map[string]any{},
+	}
+	codes, err := app.normalize(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.validateCodeEvidence(report, codes); err == nil ||
+		!strings.Contains(err.Error(), "is_new_beneficiary") {
+		t.Fatalf("missing evidence should be rejected, got %v", err)
+	}
+	report.Evidence["is_new_beneficiary"] = true
+	if err := app.validateCodeEvidence(report, codes); err != nil {
+		t.Fatalf("complete evidence was rejected: %v", err)
+	}
+}
+
+func TestReportValidationRejectsRawNarrativeAndDeviceIdentifiers(t *testing.T) {
+	base := ReportIn{
+		ReportingInstitution: "bank_a",
+		TransactionRef:       "TX-VALIDATION",
+		TransactionTimestamp: time.Now().UTC().Format(time.RFC3339),
+		Evidence:             map[string]any{},
+	}
+	withEmail := base
+	withEmail.Narrative = "Contact jane@example.com about this report"
+	if err := validateReport(withEmail); err == nil || !strings.Contains(err.Error(), "raw email") {
+		t.Fatalf("narrative PII should be rejected, got %v", err)
+	}
+	withDevice := base
+	withDevice.Evidence = map[string]any{"device_profile": "raw-device-id"}
+	if err := validateReport(withDevice); err == nil || !strings.Contains(err.Error(), "device_profile") {
+		t.Fatalf("raw device profile should be rejected, got %v", err)
+	}
+}
+
 func TestAlertType(t *testing.T) {
 	if got := alertTypeFor(ReportIn{Amount: 0}); got != "advisory" {
 		t.Fatalf("zero-value event should be advisory, got %s", got)
 	}
-	if got := alertTypeFor(ReportIn{Amount: 1500}); got != "hold" {
-		t.Fatalf("transfer should request a hold, got %s", got)
+	if got := alertTypeFor(ReportIn{Amount: 1500}); got != "review" {
+		t.Fatalf("transfer should request receiving-institution review, got %s", got)
 	}
 }
 
@@ -95,10 +145,16 @@ func TestReportFromCSVRejectsCleartextIdentifiers(t *testing.T) {
 	}); err == nil || !strings.Contains(err.Error(), "customer_ref") {
 		t.Fatalf("expected cleartext customer_ref rejection, got %v", err)
 	}
+	if _, err := reportFromCSV(map[string]string{
+		"reporting_bank": "NCBA", "receiving_bank": "KCB", "device_profile": "raw-device-id",
+	}); err == nil || !strings.Contains(err.Error(), "device_profile") {
+		t.Fatalf("expected cleartext device_profile rejection, got %v", err)
+	}
 	hash := "sha256:" + strings.Repeat("c", 64)
 	report, err := reportFromCSV(map[string]string{
 		"reporting_bank": "NCBA", "receiving_bank": "KCB", "transaction_id": "TX-9",
 		"subject_customer_hash": hash, "destination_account_hash": hash, "amount": "1200",
+		"device_profile": hash, "new_device": "true", "new_beneficiary": "true",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -108,6 +164,11 @@ func TestReportFromCSVRejectsCleartextIdentifiers(t *testing.T) {
 	}
 	if report.SubjectCustomerHash != hash || report.SubjectAccountHash != hash || report.DestinationAccountHash != hash {
 		t.Fatal("hashed identifiers must pass through unchanged")
+	}
+	if report.Evidence["device_profile"] != hash || report.Evidence["is_new_device"] != true ||
+		report.Evidence["is_new_beneficiary"] != true || !containsString(report.RiskCodes, "ATO-460") {
+		t.Fatalf("CSV evidence was not preserved and derived correctly: %#v %v",
+			report.Evidence, report.RiskCodes)
 	}
 }
 
@@ -232,7 +293,7 @@ func TestPostgresPipeline(t *testing.T) {
 	defer db.Close()
 	_, err = db.Exec(ctx, `DROP TABLE IF EXISTS
 		user_access_requests,auth_sessions,auth_users,demo_events,demo_stream_state,notifications,
-		alert_actions,audit_log,config,knowledge_base,alerts,artefacts,
+		guided_demo_state,alert_actions,audit_log,config,knowledge_base,alerts,artefacts,
 		validations,reports,institutions,schema_migrations CASCADE`)
 	if err != nil {
 		t.Fatal(err)
@@ -389,6 +450,22 @@ func TestPostgresPipeline(t *testing.T) {
 	}
 	if _, _, _, status := login("anthonyjordan@ncba.co.ke", testPassword, "bank_a"); status != http.StatusTooManyRequests {
 		t.Fatalf("locked account should reject the correct password, got %d", status)
+	}
+	if err := app.seedDemoUsers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var failedAttempts int
+	var lockedUntil *time.Time
+	if err := db.QueryRow(ctx, `SELECT failed_attempts,locked_until FROM auth_users
+		WHERE email='anthonyjordan@ncba.co.ke'`).Scan(&failedAttempts, &lockedUntil); err != nil {
+		t.Fatal(err)
+	}
+	if failedAttempts != 0 || lockedUntil != nil {
+		t.Fatalf("demo reseed did not clear lockout: attempts=%d locked_until=%v",
+			failedAttempts, lockedUntil)
+	}
+	if _, err := db.Exec(ctx, `UPDATE auth_users SET password_hash=$1`, string(testHash)); err != nil {
+		t.Fatal(err)
 	}
 	if _, _, _, status := login("anthonyjordan@equitybank.co.ke", testPassword, ""); status != http.StatusForbidden {
 		t.Fatalf("institution account on staff sign-in should fail, got %d", status)
@@ -692,6 +769,13 @@ func TestPostgresPipeline(t *testing.T) {
 		DestinationAccountHash: hash,
 		Amount:                 45000,
 		RiskCodes:              []string{"MUL-440", "ATO-460", "VEL-429"},
+		Evidence: map[string]any{
+			"account_age_days":    3,
+			"distinct_senders_7d": 8,
+			"is_new_device":       true,
+			"is_new_beneficiary":  true,
+			"velocity_1h":         6,
+		},
 	}
 	firstResult, apiErr := app.process(ctx, first, "rest")
 	if apiErr != nil {
@@ -703,8 +787,8 @@ func TestPostgresPipeline(t *testing.T) {
 		WHERE report_id=$1 AND is_current=1`, firstID).Scan(&firstStatus); err != nil {
 		t.Fatal(err)
 	}
-	if firstStatus != "INSUFFICIENT_EVIDENCE" {
-		t.Fatalf("expected held first report, got %s", firstStatus)
+	if firstStatus != statusAwaiting {
+		t.Fatalf("expected first report to await corroboration, got %s", firstStatus)
 	}
 
 	differentArtefactType := first
@@ -720,23 +804,39 @@ func TestPostgresPipeline(t *testing.T) {
 		WHERE report_id=$1 AND is_current=1`, firstID).Scan(&firstStatus); err != nil {
 		t.Fatal(err)
 	}
-	if firstStatus != "INSUFFICIENT_EVIDENCE" {
+	if firstStatus != statusAwaiting {
 		t.Fatalf("different artefact types must not corroborate; got %s", firstStatus)
 	}
 
-	second := first
-	second.ReportingInstitution = "bank_b"
-	second.DestinationInstitution = "bank_a"
-	second.TransactionRef = "TX-CORRO-2"
-	if _, apiErr := app.process(ctx, second, "rest"); apiErr != nil {
+	differentDestination := first
+	differentDestination.ReportingInstitution = "bank_b"
+	differentDestination.DestinationInstitution = "bank_a"
+	differentDestination.TransactionRef = "TX-DIFFERENT-RECEIVER"
+	if _, apiErr := app.process(ctx, differentDestination, "rest"); apiErr != nil {
 		t.Fatal(apiErr.message)
 	}
 	if err := db.QueryRow(ctx, `SELECT status FROM validations
 		WHERE report_id=$1 AND is_current=1`, firstID).Scan(&firstStatus); err != nil {
 		t.Fatal(err)
 	}
-	if firstStatus != "VALIDATED_FRAUD" {
-		t.Fatalf("expected automatic revalidation to validate first report, got %s", firstStatus)
+	if firstStatus != statusAwaiting {
+		t.Fatalf("the same account token at a different receiving institution must not corroborate; got %s", firstStatus)
+	}
+
+	second := first
+	second.ReportingInstitution = "psp_c"
+	second.TransactionRef = "TX-CORRO-2"
+	secondResult, apiErr := app.process(ctx, second, "rest")
+	if apiErr != nil {
+		t.Fatal(apiErr.message)
+	}
+	secondID := secondResult["report_id"].(string)
+	if err := db.QueryRow(ctx, `SELECT status FROM validations
+		WHERE report_id=$1 AND is_current=1`, firstID).Scan(&firstStatus); err != nil {
+		t.Fatal(err)
+	}
+	if firstStatus != statusCorroborated {
+		t.Fatalf("expected automatic revalidation to corroborate the first report, got %s", firstStatus)
 	}
 	var validationCount, alertCount int
 	if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM validations WHERE report_id=$1", firstID).Scan(&validationCount); err != nil {
@@ -763,8 +863,17 @@ func TestPostgresPipeline(t *testing.T) {
 	if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM reports").Scan(&reportCount); err != nil {
 		t.Fatal(err)
 	}
-	if reportCount != 3 {
+	if reportCount != 4 {
 		t.Fatalf("idempotent retry created another report; count=%d", reportCount)
+	}
+	var generatedKnownBad int
+	if err := db.QueryRow(ctx, `SELECT COUNT(*) FROM knowledge_base
+		WHERE list_name='known_bad' AND added_by='Kifaru policy engine'`).
+		Scan(&generatedKnownBad); err != nil {
+		t.Fatal(err)
+	}
+	if generatedKnownBad != 0 {
+		t.Fatalf("corroboration must not automatically promote a destination to known_bad, got %d", generatedKnownBad)
 	}
 
 	var alertID string
@@ -791,6 +900,40 @@ func TestPostgresPipeline(t *testing.T) {
 	if recorder.Code != http.StatusForbidden {
 		t.Fatalf("non-receiving institution should not update an alert, got %d", recorder.Code)
 	}
+	body, _ = json.Marshal(map[string]string{"state": "acknowledged"})
+	request = httptest.NewRequest(http.MethodPost, "/v1/alerts/"+alertID+"/state", bytes.NewReader(body))
+	request = request.WithContext(context.WithValue(request.Context(), authContextKey{}, AuthUser{
+		Email: "analyst@kcb.co.ke", Role: "institution", InstitutionCode: "bank_b",
+	}))
+	recorder = httptest.NewRecorder()
+	app.setAlertState(recorder, request, alertID)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("receiving institution could not acknowledge alert: %d %s",
+			recorder.Code, recorder.Body.String())
+	}
+	body, _ = json.Marshal(map[string]string{"state": "actioned"})
+	request = httptest.NewRequest(http.MethodPost, "/v1/alerts/"+alertID+"/state", bytes.NewReader(body))
+	request = request.WithContext(context.WithValue(request.Context(), authContextKey{}, AuthUser{
+		Email: "analyst@kcb.co.ke", Role: "institution", InstitutionCode: "bank_b",
+	}))
+	recorder = httptest.NewRecorder()
+	app.setAlertState(recorder, request, alertID)
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("actioned alert without an institution outcome should fail, got %d", recorder.Code)
+	}
+	body, _ = json.Marshal(map[string]string{
+		"state": "actioned", "outcome": "held", "comment": "Review hold recorded",
+	})
+	request = httptest.NewRequest(http.MethodPost, "/v1/alerts/"+alertID+"/state", bytes.NewReader(body))
+	request = request.WithContext(context.WithValue(request.Context(), authContextKey{}, AuthUser{
+		Email: "analyst@kcb.co.ke", Role: "institution", InstitutionCode: "bank_b",
+	}))
+	recorder = httptest.NewRecorder()
+	app.setAlertState(recorder, request, alertID)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("receiving institution could not record its outcome: %d %s",
+			recorder.Code, recorder.Body.String())
+	}
 	body, _ = json.Marshal(map[string]string{"state": "disputed", "comment": "Known customer payment"})
 	request = httptest.NewRequest(http.MethodPost, "/v1/alerts/"+alertID+"/state", bytes.NewReader(body))
 	request = request.WithContext(context.WithValue(request.Context(), authContextKey{}, AuthUser{
@@ -808,6 +951,38 @@ func TestPostgresPipeline(t *testing.T) {
 	}
 	if notificationCount != 1 {
 		t.Fatalf("expected reporting-institution notification, got %d", notificationCount)
+	}
+	var quarantinedStatus, firstLifecycle, linkedStatus, linkedAlertState string
+	if err := db.QueryRow(ctx, `SELECT v.status,r.lifecycle_state
+		FROM reports r JOIN validations v ON v.report_id=r.report_id AND v.is_current=1
+		WHERE r.report_id=$1`, firstID).Scan(&quarantinedStatus, &firstLifecycle); err != nil {
+		t.Fatal(err)
+	}
+	if quarantinedStatus != statusQuarantined || firstLifecycle != lifecycleQuarantined {
+		t.Fatalf("dispute did not quarantine its source: status=%s lifecycle=%s",
+			quarantinedStatus, firstLifecycle)
+	}
+	if err := db.QueryRow(ctx, `SELECT v.status,a.state
+		FROM validations v JOIN alerts a ON a.report_id=v.report_id
+		WHERE v.report_id=$1 AND v.is_current=1`, secondID).
+		Scan(&linkedStatus, &linkedAlertState); err != nil {
+		t.Fatal(err)
+	}
+	if linkedStatus != statusAwaiting || linkedAlertState != "retracted" {
+		t.Fatalf("linked intelligence was not reversed: status=%s alert=%s",
+			linkedStatus, linkedAlertState)
+	}
+	notificationRequest := httptest.NewRequest(http.MethodGet, "/v1/notifications?institution=bank_a", nil)
+	notificationRequest = notificationRequest.WithContext(context.WithValue(
+		notificationRequest.Context(), authContextKey{}, AuthUser{
+			Email: "analyst@ncba.co.ke", Role: "institution", InstitutionCode: "bank_a",
+		}))
+	notificationRecorder := httptest.NewRecorder()
+	app.notifications(notificationRecorder, notificationRequest)
+	if notificationRecorder.Code != http.StatusOK ||
+		!strings.Contains(notificationRecorder.Body.String(), `"event_type":"alert.disputed"`) {
+		t.Fatalf("reporting institution could not retrieve its notification: %d %s",
+			notificationRecorder.Code, notificationRecorder.Body.String())
 	}
 
 	badDestination := first
@@ -832,7 +1007,7 @@ func TestPostgresPipeline(t *testing.T) {
 		t.Fatal("expected validation and alert audit records")
 	}
 
-	for query, expected := range map[string]int{"institution=*": 3, "institution=bank_a": 3, "institution=ke:uba-kenya": 0} {
+	for query, expected := range map[string]int{"institution=*": 4, "institution=bank_a": 3, "institution=ke:uba-kenya": 0} {
 		recorder = httptest.NewRecorder()
 		app.history(recorder, httptest.NewRequest(http.MethodGet, "/v1/history?"+query, nil))
 		var payload struct {
@@ -856,7 +1031,7 @@ func TestPostgresPipeline(t *testing.T) {
 		WHERE report_id=$1 AND is_current=1`, firstDemoReportID).Scan(&firstDemoStatus); err != nil {
 		t.Fatal(err)
 	}
-	if firstDemoStatus != "INSUFFICIENT_EVIDENCE" {
+	if firstDemoStatus != statusAwaiting {
 		t.Fatalf("first demo event should await corroboration, got %s", firstDemoStatus)
 	}
 	secondDemo, emitted, err := app.produceDemoEvent(ctx, true)
@@ -872,7 +1047,7 @@ func TestPostgresPipeline(t *testing.T) {
 		WHERE report_id=$1`, firstDemoReportID).Scan(&firstDemoValidationCount); err != nil {
 		t.Fatal(err)
 	}
-	if firstDemoStatus != "VALIDATED_FRAUD" || firstDemoValidationCount != 2 {
+	if firstDemoStatus != statusCorroborated || firstDemoValidationCount != 2 {
 		t.Fatalf("paired demo event should revalidate the first report, status=%s validations=%d",
 			firstDemoStatus, firstDemoValidationCount)
 	}
@@ -983,6 +1158,234 @@ func TestPostgresPipeline(t *testing.T) {
 		t.Fatalf("rolling demo reset failed: %d %s", recorder.Code, recorder.Body.String())
 	}
 
+	staffUser := AuthUser{Email: "staff@kifaru.co.ke", Role: "staff"}
+	advanceGuided := func() map[string]any {
+		t.Helper()
+		guidedRequest := httptest.NewRequest(http.MethodPost, "/v1/admin/guided-demo/advance", nil)
+		guidedRequest = guidedRequest.WithContext(context.WithValue(
+			guidedRequest.Context(), authContextKey{}, staffUser,
+		))
+		guidedRecorder := httptest.NewRecorder()
+		app.advanceGuidedDemo(guidedRecorder, guidedRequest)
+		if guidedRecorder.Code != http.StatusOK {
+			t.Fatalf("guided scenario advance failed: %d %s",
+				guidedRecorder.Code, guidedRecorder.Body.String())
+		}
+		var state map[string]any
+		if err := json.Unmarshal(guidedRecorder.Body.Bytes(), &state); err != nil {
+			t.Fatal(err)
+		}
+		return state
+	}
+	resetGuided := func() {
+		t.Helper()
+		guidedRequest := httptest.NewRequest(http.MethodPost, "/v1/admin/guided-demo/reset", nil)
+		guidedRequest = guidedRequest.WithContext(context.WithValue(
+			guidedRequest.Context(), authContextKey{}, staffUser,
+		))
+		guidedRecorder := httptest.NewRecorder()
+		app.resetGuidedDemo(guidedRecorder, guidedRequest)
+		if guidedRecorder.Code != http.StatusOK {
+			t.Fatalf("guided scenario reset failed: %d %s",
+				guidedRecorder.Code, guidedRecorder.Body.String())
+		}
+		if !strings.Contains(guidedRecorder.Body.String(), `"status":"ready"`) {
+			t.Fatalf("guided scenario did not return to ready: %s", guidedRecorder.Body.String())
+		}
+	}
+
+	guidedState := advanceGuided()
+	guidedFirstID := fmt.Sprint(guidedState["first_report_id"])
+	if fmt.Sprint(guidedState["step"]) != "1" || guidedFirstID == "" {
+		t.Fatalf("unexpected first guided stage: %#v", guidedState)
+	}
+	var guidedStatus string
+	if err := db.QueryRow(ctx, `SELECT status FROM validations
+		WHERE report_id=$1 AND is_current=1`, guidedFirstID).Scan(&guidedStatus); err != nil {
+		t.Fatal(err)
+	}
+	if guidedStatus != statusAwaiting {
+		t.Fatalf("first guided signal should await corroboration, got %s", guidedStatus)
+	}
+	guidedState = advanceGuided()
+	guidedSecondID := fmt.Sprint(guidedState["second_report_id"])
+	guidedAlertID := fmt.Sprint(guidedState["alert_id"])
+	if fmt.Sprint(guidedState["step"]) != "2" || guidedSecondID == "" || guidedAlertID == "" {
+		t.Fatalf("unexpected corroborated guided stage: %#v", guidedState)
+	}
+	if err := db.QueryRow(ctx, `SELECT status FROM validations
+		WHERE report_id=$1 AND is_current=1`, guidedSecondID).Scan(&guidedStatus); err != nil {
+		t.Fatal(err)
+	}
+	if guidedStatus != statusCorroborated {
+		t.Fatalf("second guided signal should be corroborated, got %s", guidedStatus)
+	}
+	guidedState = advanceGuided()
+	if fmt.Sprint(guidedState["status"]) != "completed" || fmt.Sprint(guidedState["step"]) != "3" {
+		t.Fatalf("guided scenario did not complete: %#v", guidedState)
+	}
+	var guidedAlertState, guidedOutcome string
+	if err := db.QueryRow(ctx, "SELECT state,outcome FROM alerts WHERE alert_id=$1", guidedAlertID).
+		Scan(&guidedAlertState, &guidedOutcome); err != nil {
+		t.Fatal(err)
+	}
+	if guidedAlertState != "actioned" || guidedOutcome != "held" {
+		t.Fatalf("guided receiver outcome was not recorded: state=%s outcome=%s",
+			guidedAlertState, guidedOutcome)
+	}
+	releaseBody, _ := json.Marshal(map[string]string{
+		"state": "actioned", "outcome": "released", "comment": "Cleared after synthetic review",
+	})
+	releaseRequest := httptest.NewRequest(http.MethodPost,
+		"/v1/alerts/"+guidedAlertID+"/state", bytes.NewReader(releaseBody))
+	releaseRequest = releaseRequest.WithContext(context.WithValue(
+		releaseRequest.Context(), authContextKey{}, AuthUser{
+			Email: "analyst@equity.co.ke", Role: "institution", InstitutionCode: "psp_c",
+		},
+	))
+	releaseRecorder := httptest.NewRecorder()
+	app.setAlertState(releaseRecorder, releaseRequest, guidedAlertID)
+	if releaseRecorder.Code != http.StatusOK {
+		t.Fatalf("guided alert release failed: %d %s",
+			releaseRecorder.Code, releaseRecorder.Body.String())
+	}
+	var releasedLifecycle, releasedStatus string
+	if err := db.QueryRow(ctx, `SELECT r.lifecycle_state,v.status
+		FROM reports r JOIN validations v ON v.report_id=r.report_id AND v.is_current=1
+		WHERE r.report_id=(SELECT report_id FROM alerts WHERE alert_id=$1)`, guidedAlertID).
+		Scan(&releasedLifecycle, &releasedStatus); err != nil {
+		t.Fatal(err)
+	}
+	if releasedLifecycle != lifecycleCleared || releasedStatus != statusCleared {
+		t.Fatalf("released alert did not clear its source: lifecycle=%s status=%s",
+			releasedLifecycle, releasedStatus)
+	}
+	reopenBody, _ := json.Marshal(map[string]string{
+		"state": "actioned", "outcome": "held", "comment": "Invalid attempt to reopen",
+	})
+	reopenRequest := httptest.NewRequest(http.MethodPost,
+		"/v1/alerts/"+guidedAlertID+"/state", bytes.NewReader(reopenBody))
+	reopenRequest = reopenRequest.WithContext(context.WithValue(
+		reopenRequest.Context(), authContextKey{}, AuthUser{
+			Email: "analyst@equity.co.ke", Role: "institution", InstitutionCode: "psp_c",
+		},
+	))
+	reopenRecorder := httptest.NewRecorder()
+	app.setAlertState(reopenRecorder, reopenRequest, guidedAlertID)
+	if reopenRecorder.Code != http.StatusConflict {
+		t.Fatalf("released outcome should be terminal, got %d", reopenRecorder.Code)
+	}
+	disputeBody, _ := json.Marshal(map[string]string{
+		"state": "disputed", "comment": "Receiver found conflicting evidence",
+	})
+	disputeRequest := httptest.NewRequest(http.MethodPost,
+		"/v1/alerts/"+guidedAlertID+"/state", bytes.NewReader(disputeBody))
+	disputeRequest = disputeRequest.WithContext(context.WithValue(
+		disputeRequest.Context(), authContextKey{}, AuthUser{
+			Email: "analyst@equity.co.ke", Role: "institution", InstitutionCode: "psp_c",
+		},
+	))
+	disputeRecorder := httptest.NewRecorder()
+	app.setAlertState(disputeRecorder, disputeRequest, guidedAlertID)
+	if disputeRecorder.Code != http.StatusOK {
+		t.Fatalf("released alert should still allow a later dispute: %d %s",
+			disputeRecorder.Code, disputeRecorder.Body.String())
+	}
+	var lifecycleReasonsRaw string
+	if err := db.QueryRow(ctx, `SELECT reason_codes FROM validations
+		WHERE report_id=(SELECT report_id FROM alerts WHERE alert_id=$1) AND is_current=1`,
+		guidedAlertID).Scan(&lifecycleReasonsRaw); err != nil {
+		t.Fatal(err)
+	}
+	var lifecycleReasons []string
+	if err := json.Unmarshal([]byte(lifecycleReasonsRaw), &lifecycleReasons); err != nil {
+		t.Fatal(err)
+	}
+	lifecycleReasonCount := 0
+	for _, reason := range lifecycleReasons {
+		if strings.HasPrefix(reason, "LIFECYCLE:") {
+			lifecycleReasonCount++
+		}
+	}
+	if lifecycleReasonCount != 1 || !containsString(lifecycleReasons, "LIFECYCLE:quarantined") {
+		t.Fatalf("current validation retained stale lifecycle reasons: %v", lifecycleReasons)
+	}
+	resetGuided()
+	for _, reportID := range []string{guidedFirstID, guidedSecondID} {
+		var count int
+		if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM reports WHERE report_id=$1", reportID).
+			Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("guided reset retained report %s", reportID)
+		}
+	}
+
+	guidedState = advanceGuided()
+	retractID := fmt.Sprint(guidedState["first_report_id"])
+	retractBody, _ := json.Marshal(map[string]string{
+		"state": lifecycleRetracted, "comment": "Reporter withdrew the synthetic signal",
+	})
+	retractRequest := httptest.NewRequest(http.MethodPatch,
+		"/v1/reports/"+retractID+"/lifecycle", bytes.NewReader(retractBody))
+	retractRequest = retractRequest.WithContext(context.WithValue(
+		retractRequest.Context(), authContextKey{}, AuthUser{
+			Email: "analyst@ncba.co.ke", Role: "institution", InstitutionCode: "bank_a",
+		},
+	))
+	retractRecorder := httptest.NewRecorder()
+	app.reportLifecycle(retractRecorder, retractRequest, retractID)
+	if retractRecorder.Code != http.StatusOK {
+		t.Fatalf("reporting institution could not retract its signal: %d %s",
+			retractRecorder.Code, retractRecorder.Body.String())
+	}
+	if err := db.QueryRow(ctx, `SELECT lifecycle_state FROM reports WHERE report_id=$1`, retractID).
+		Scan(&releasedLifecycle); err != nil {
+		t.Fatal(err)
+	}
+	if releasedLifecycle != lifecycleRetracted {
+		t.Fatalf("signal lifecycle is %s after retraction", releasedLifecycle)
+	}
+	resetGuided()
+
+	guidedState = advanceGuided()
+	expireID := fmt.Sprint(guidedState["first_report_id"])
+	expireBody, _ := json.Marshal(map[string]string{
+		"state": lifecycleExpired, "comment": "Synthetic retention window elapsed",
+	})
+	expireRequest := httptest.NewRequest(http.MethodPatch,
+		"/v1/reports/"+expireID+"/lifecycle", bytes.NewReader(expireBody))
+	expireRequest = expireRequest.WithContext(context.WithValue(
+		expireRequest.Context(), authContextKey{}, AuthUser{
+			Email: "analyst@ncba.co.ke", Role: "institution", InstitutionCode: "bank_a",
+		},
+	))
+	expireRecorder := httptest.NewRecorder()
+	app.reportLifecycle(expireRecorder, expireRequest, expireID)
+	if expireRecorder.Code != http.StatusForbidden {
+		t.Fatalf("institution should not expire a signal, got %d", expireRecorder.Code)
+	}
+	expireRequest = httptest.NewRequest(http.MethodPatch,
+		"/v1/reports/"+expireID+"/lifecycle", bytes.NewReader(expireBody))
+	expireRequest = expireRequest.WithContext(context.WithValue(
+		expireRequest.Context(), authContextKey{}, staffUser,
+	))
+	expireRecorder = httptest.NewRecorder()
+	app.reportLifecycle(expireRecorder, expireRequest, expireID)
+	if expireRecorder.Code != http.StatusOK {
+		t.Fatalf("staff could not expire a signal: %d %s",
+			expireRecorder.Code, expireRecorder.Body.String())
+	}
+	if err := db.QueryRow(ctx, `SELECT lifecycle_state FROM reports WHERE report_id=$1`, expireID).
+		Scan(&releasedLifecycle); err != nil {
+		t.Fatal(err)
+	}
+	if releasedLifecycle != lifecycleExpired {
+		t.Fatalf("signal lifecycle is %s after expiry", releasedLifecycle)
+	}
+	resetGuided()
+
 	advisoryFirst, advisorySecond := demoOffsets(t, "credential_change_advisory")
 	for index, offset := range []int64{advisoryFirst, advisorySecond} {
 		report, _, _ := demoReport(offset)
@@ -991,11 +1394,11 @@ func TestPostgresPipeline(t *testing.T) {
 			t.Fatal(apiErr.message)
 		}
 		status := result["validation"].(Validation).Status
-		if index == 0 && status != "INSUFFICIENT_EVIDENCE" {
+		if index == 0 && status != statusAwaiting {
 			t.Fatalf("the first credential-reset report should await corroboration, got %s", status)
 		}
-		if index == 1 && status != "VALIDATED_FRAUD" {
-			t.Fatalf("the corroborated credential-reset report should validate, got %s", status)
+		if index == 1 && status != statusCorroborated {
+			t.Fatalf("the corroborated credential-reset report should meet policy, got %s", status)
 		}
 	}
 	var advisoryCount int
@@ -1012,7 +1415,7 @@ func TestPostgresPipeline(t *testing.T) {
 	if apiErr != nil {
 		t.Fatal(apiErr.message)
 	}
-	if status := firstSwitchResult["validation"].(Validation).Status; status != "INSUFFICIENT_EVIDENCE" {
+	if status := firstSwitchResult["validation"].(Validation).Status; status != statusAwaiting {
 		t.Fatalf("the first device-switch report should await corroboration, got %s", status)
 	}
 	secondSwitch, _, _ := demoReport(switchSecond)
@@ -1021,8 +1424,8 @@ func TestPostgresPipeline(t *testing.T) {
 		t.Fatal(apiErr.message)
 	}
 	secondValidation := secondSwitchResult["validation"].(Validation)
-	if secondValidation.Status != "VALIDATED_FRAUD" || !containsString(secondValidation.ReasonCodes, "LINK:device_switch") {
-		t.Fatalf("a device switch should still validate and be flagged: %s %v",
+	if secondValidation.Status != statusCorroborated || !containsString(secondValidation.ReasonCodes, "LINK:device_switch") {
+		t.Fatalf("a device switch should still corroborate and be flagged: %s %v",
 			secondValidation.Status, secondValidation.ReasonCodes)
 	}
 	if !strings.Contains(secondValidation.Explanation, "different device") {
@@ -1034,7 +1437,7 @@ func TestPostgresPipeline(t *testing.T) {
 		Scan(&revalidatedStatus, &revalidatedReasons); err != nil {
 		t.Fatal(err)
 	}
-	if revalidatedStatus != "VALIDATED_FRAUD" || !strings.Contains(revalidatedReasons, "LINK:device_switch") {
+	if revalidatedStatus != statusCorroborated || !strings.Contains(revalidatedReasons, "LINK:device_switch") {
 		t.Fatalf("the first device-switch report should be revalidated: %s %s", revalidatedStatus, revalidatedReasons)
 	}
 }

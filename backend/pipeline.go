@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -97,9 +98,16 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 	if report.DestinationInstitution == "" {
 		report.DestinationInstitution = "external"
 	}
-	if report.BankThreshold == 0 {
-		report.BankThreshold = institutionThreshold
+	var destinationExists bool
+	if err := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM institutions WHERE code=$1 AND active=1)",
+		report.DestinationInstitution).Scan(&destinationExists); err != nil {
+		return nil, &apiError{http.StatusInternalServerError, err.Error()}
 	}
+	if !destinationExists {
+		return nil, &apiError{http.StatusUnprocessableEntity,
+			fmt.Sprintf("unknown destination institution %q", report.DestinationInstitution)}
+	}
+	report.BankThreshold = institutionThreshold
 	if report.Evidence == nil {
 		report.Evidence = map[string]any{}
 	}
@@ -123,6 +131,9 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 	if err != nil {
 		return nil, &apiError{http.StatusUnprocessableEntity, err.Error()}
 	}
+	if err := a.validateCodeEvidence(report, codes); err != nil {
+		return nil, &apiError{http.StatusUnprocessableEntity, err.Error()}
+	}
 	reportID := "rpt-" + randomHex(6)
 	submittedAt := utcNow()
 	validation, err := a.score(ctx, tx, report, reportID, codes, cfg, start)
@@ -131,7 +142,7 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 	}
 	validation.Explanation = a.explain(report, validation, codes)
 	alertType := alertTypeFor(report)
-	if validation.Status == "VALIDATED_FRAUD" {
+	if validation.Status == statusCorroborated {
 		alertID := "alt-" + randomHex(5)
 		validation.AlertID = &alertID
 	}
@@ -189,7 +200,7 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 		"status": validation.Status, "score": validation.ValidationScore,
 		"reason_codes": validation.ReasonCodes, "configuration_version": configVersion,
 	})
-	if err := auditRecord(ctx, tx, "agent", "validation.created", validation.ValidationID,
+	if err := auditRecord(ctx, tx, "policy-engine", "validation.created", validation.ValidationID,
 		"", string(validationAudit), "report validation"); err != nil {
 		return nil, &apiError{http.StatusInternalServerError, err.Error()}
 	}
@@ -204,7 +215,7 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 			"destination_account_hash": report.DestinationAccountHash,
 			"destination_msisdn_hash":  report.DestinationMSISDNHash,
 			"amount":                   report.Amount, "currency": report.Currency, "risk_codes": string(riskJSON),
-			"validation_score": validation.ValidationScore, "validated_by": "KIFARU validation agent",
+			"validation_score": validation.ValidationScore, "validated_by": "Kifaru policy engine",
 			"explanation": validation.Explanation, "state": "sent", "alert_type": alertType,
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO alerts (
@@ -221,15 +232,9 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 			return nil, &apiError{http.StatusInternalServerError, err.Error()}
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO alert_actions(alert_id,action,actor,at)
-			VALUES ($1,'sent','agent',$2)`, alert["alert_id"], alert["issued_at"])
+			VALUES ($1,'sent','policy-engine',$2)`, alert["alert_id"], alert["issued_at"])
 		if err != nil {
 			return nil, &apiError{http.StatusInternalServerError, err.Error()}
-		}
-		if report.DestinationAccountHash != "" {
-			if err := kbAddWith(ctx, tx, report.DestinationAccountHash, "known_bad",
-				"validated via "+reportID, "agent"); err != nil {
-				return nil, &apiError{http.StatusInternalServerError, err.Error()}
-			}
 		}
 		publishedAlerts = append(publishedAlerts, alert)
 	}
@@ -297,20 +302,28 @@ func insertArtefacts(ctx context.Context, store dbRunner, reportID, observedAt s
 			continue
 		}
 		if _, err := store.Exec(ctx, `INSERT INTO artefacts(
-			report_id,institution_code,artefact_type,artefact_hash,observed_at
-		) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
-			reportID, report.ReportingInstitution, artefact.kind, artefact.hash, observedAt); err != nil {
+			report_id,institution_code,artefact_type,artefact_hash,observed_at,match_scope
+		) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+			reportID, report.ReportingInstitution, artefact.kind, artefact.hash, observedAt,
+			artefactScope(artefact.kind, report.DestinationInstitution)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+func artefactScope(kind, destinationInstitution string) string {
+	if kind == "destination_account" || kind == "destination_msisdn" {
+		return destinationInstitution
+	}
+	return ""
+}
+
 func alertTypeFor(report ReportIn) string {
 	if report.Amount <= 0 {
 		return "advisory"
 	}
-	return "hold"
+	return "review"
 }
 
 func (a *App) revalidateCorroborated(
@@ -321,16 +334,27 @@ func (a *App) revalidateCorroborated(
 ) ([]map[string]any, error) {
 	rows, err := tx.Query(ctx, `SELECT DISTINCT v.report_id
 		FROM validations v
+		JOIN reports prior_report ON prior_report.report_id=v.report_id
 		JOIN artefacts prior ON prior.report_id=v.report_id
 		JOIN artefacts current ON current.report_id=$1
 			AND current.artefact_type=prior.artefact_type
 			AND current.artefact_hash=prior.artefact_hash
+			AND current.match_scope=prior.match_scope
+		JOIN reports current_report ON current_report.report_id=current.report_id
+		JOIN validations current_validation ON current_validation.report_id=current.report_id
+			AND current_validation.is_current=1
 		WHERE v.is_current=1
-		  AND v.status IN ('INSUFFICIENT_EVIDENCE','NOT_FRAUD')
+		  AND v.status=$3
+		  AND current_validation.status IN ($3,$4)
+		  AND prior_report.lifecycle_state=$5
+		  AND current_report.lifecycle_state=$5
+		  AND prior_report.expires_at>NOW()
+		  AND current_report.expires_at>NOW()
 		  AND prior.report_id<>$1
 		  AND prior.institution_code<>current.institution_code
 		  AND prior.observed_at >= $2`,
-		newReportID, time.Now().UTC().Add(-30*24*time.Hour).Format("2006-01-02T15:04:05Z"))
+		newReportID, time.Now().UTC().Add(-30*24*time.Hour).Format("2006-01-02T15:04:05Z"),
+		statusAwaiting, statusCorroborated, lifecycleActive)
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +397,7 @@ func (a *App) revalidateCorroborated(
 			return nil, err
 		}
 		validation.Explanation = a.explain(report, validation, codes)
-		if validation.Status == "VALIDATED_FRAUD" {
+		if validation.Status == statusCorroborated {
 			alertID := "alt-" + randomHex(5)
 			validation.AlertID = &alertID
 		}
@@ -398,7 +422,7 @@ func (a *App) revalidateCorroborated(
 			"status": validation.Status, "score": validation.ValidationScore,
 			"corroborating_institutions": validation.CorroboratingInstitutions,
 		})
-		if err := auditRecord(ctx, tx, "agent", "validation.revalidated",
+		if err := auditRecord(ctx, tx, "policy-engine", "validation.revalidated",
 			validation.ValidationID, string(oldValue), string(newValue),
 			"new report supplied matching artefact"); err != nil {
 			return nil, err
@@ -415,7 +439,7 @@ func (a *App) revalidateCorroborated(
 			"destination_account_hash": report.DestinationAccountHash,
 			"destination_msisdn_hash":  report.DestinationMSISDNHash,
 			"amount":                   report.Amount, "currency": report.Currency, "risk_codes": string(riskJSON),
-			"validation_score": validation.ValidationScore, "validated_by": "KIFARU validation agent",
+			"validation_score": validation.ValidationScore, "validated_by": "Kifaru policy engine",
 			"explanation": validation.Explanation, "state": "sent", "alert_type": alertTypeFor(report),
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO alerts (
@@ -431,77 +455,174 @@ func (a *App) revalidateCorroborated(
 			return nil, err
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO alert_actions(alert_id,action,actor,at)
-			VALUES ($1,'sent','agent',$2)`, alert["alert_id"], alert["issued_at"]); err != nil {
+			VALUES ($1,'sent','policy-engine',$2)`, alert["alert_id"], alert["issued_at"]); err != nil {
 			return nil, err
-		}
-		if report.DestinationAccountHash != "" {
-			if err := kbAddWith(ctx, tx, report.DestinationAccountHash, "known_bad",
-				"validated via automatic revalidation "+reportID, "agent"); err != nil {
-				return nil, err
-			}
 		}
 		alerts = append(alerts, alert)
 	}
 	return alerts, nil
 }
 
+var (
+	protectedIdentifierPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	emailPattern               = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
+	longDigitPattern           = regexp.MustCompile(`\b(?:\+?254|0)?[17]\d{8}\b|\b\d{10,16}\b`)
+)
+
 func validateReport(report ReportIn) error {
 	if report.ReportingInstitution == "" || report.TransactionRef == "" || report.TransactionTimestamp == "" {
 		return errors.New("reporting_institution, transaction_ref and transaction_timestamp are required")
+	}
+	transactionTime, err := time.Parse(time.RFC3339, report.TransactionTimestamp)
+	if err != nil {
+		return errors.New("transaction_timestamp must use RFC3339")
+	}
+	if transactionTime.After(time.Now().UTC().Add(5 * time.Minute)) {
+		return errors.New("transaction_timestamp cannot be more than five minutes in the future")
+	}
+	if report.Amount < 0 {
+		return errors.New("amount cannot be negative")
+	}
+	if report.BankRiskScore < 0 || report.BankRiskScore > 1 {
+		return errors.New("bank_risk_score must be between 0 and 1")
+	}
+	if report.BankThreshold != 0 && (report.BankThreshold < 0 || report.BankThreshold > 1) {
+		return errors.New("bank_threshold must be between 0 and 1")
 	}
 	for _, value := range []string{
 		report.SubjectAccountHash, report.SubjectCustomerHash,
 		report.DestinationAccountHash, report.DestinationMSISDNHash,
 	} {
-		if value != "" && !strings.HasPrefix(value, "sha256:") {
-			return errors.New("identifiers must be submitted as 'sha256:...' — KIFARU does not accept cleartext customer data")
+		if value != "" && !protectedIdentifierPattern.MatchString(value) {
+			return errors.New("identifiers must use 'sha256:' followed by a 64-character lowercase hexadecimal digest")
 		}
+	}
+	if device := strings.TrimSpace(fmt.Sprint(report.Evidence["device_profile"])); device != "" && device != "<nil>" &&
+		!protectedIdentifierPattern.MatchString(device) {
+		return errors.New("device_profile must use a protected sha256 digest")
+	}
+	if len(report.Narrative) > 500 {
+		return errors.New("narrative must not exceed 500 characters")
+	}
+	if emailPattern.MatchString(report.Narrative) || longDigitPattern.MatchString(report.Narrative) {
+		return errors.New("narrative appears to contain a raw email, phone number or account identifier")
 	}
 	return nil
 }
 
 func (a *App) normalize(report ReportIn) ([]string, error) {
 	codes := []string{}
-	add := func(code string) {
-		if _, ok := a.standard.Codes[code]; ok && !containsString(codes, code) {
+	add := func(code string) error {
+		if code == "" {
+			return nil
+		}
+		if _, ok := a.standard.Codes[code]; !ok {
+			return fmt.Errorf("unknown risk code %q", code)
+		}
+		if !containsString(codes, code) {
 			codes = append(codes, code)
 		}
+		return nil
 	}
 	for _, code := range report.RiskCodes {
-		add(code)
+		if err := add(code); err != nil {
+			return nil, err
+		}
 	}
 	for _, rule := range report.BankRuleIDs {
-		add(a.standard.BankRuleMapping[rule])
+		code, ok := a.standard.BankRuleMapping[rule]
+		if !ok {
+			return nil, fmt.Errorf("unknown bank rule %q", rule)
+		}
+		if err := add(code); err != nil {
+			return nil, err
+		}
 	}
 	ev := report.Evidence
 	if value, ok := numberValue(ev["flow_through_ratio"]); ok && value > 0.90 {
-		add("MUL-441")
+		_ = add("MUL-441")
 	}
 	if value, ok := numberValue(ev["dwell_minutes"]); ok && value < 10 {
-		add("MUL-442")
+		_ = add("MUL-442")
 	}
 	age, hasAge := numberValue(ev["account_age_days"])
 	senders, hasSenders := numberValue(ev["distinct_senders_7d"])
 	if hasAge && hasSenders && age < 14 && senders >= 5 {
-		add("MUL-440")
+		_ = add("MUL-440")
 	}
 	if value, ok := numberValue(ev["sim_swap_age_days"]); ok && value <= 3 {
-		add("IP-402")
+		_ = add("IP-402")
 	}
 	if strings.EqualFold(fmt.Sprint(ev["is_new_device"]), "true") &&
 		strings.EqualFold(fmt.Sprint(ev["is_new_beneficiary"]), "true") {
-		add("ATO-460")
+		_ = add("ATO-460")
 	}
 	if truthy(ev["is_emulator"]) || truthy(ev["is_rooted"]) {
-		add("IP-403")
+		_ = add("IP-403")
 	}
 	if truthy(ev["ip_country_changed"]) || truthy(ev["vpn_proxy_tor"]) {
-		add("IP-404")
+		_ = add("IP-404")
 	}
 	if len(codes) == 0 {
 		return nil, errors.New("report produced no risk codes — nothing to validate")
 	}
 	return codes, nil
+}
+
+func (a *App) validateCodeEvidence(report ReportIn, codes []string) error {
+	for _, code := range codes {
+		riskCode := a.standard.Codes[code]
+		if len(riskCode.EvidenceFields) == 0 {
+			continue
+		}
+		present := 0
+		missing := []string{}
+		for _, field := range riskCode.EvidenceFields {
+			if reportEvidencePresent(report, field) {
+				present++
+			} else {
+				missing = append(missing, field)
+			}
+		}
+		if riskCode.EvidenceMode == "any" {
+			if present == 0 {
+				return fmt.Errorf("risk code %s requires one of these evidence fields: %s",
+					code, strings.Join(riskCode.EvidenceFields, ", "))
+			}
+			continue
+		}
+		if len(missing) > 0 {
+			return fmt.Errorf("risk code %s is missing required evidence: %s",
+				code, strings.Join(missing, ", "))
+		}
+	}
+	return nil
+}
+
+func reportEvidencePresent(report ReportIn, field string) bool {
+	switch field {
+	case "amount":
+		return report.Amount > 0
+	case "destination_account_hash":
+		return protectedIdentifierPattern.MatchString(report.DestinationAccountHash)
+	case "destination_msisdn_hash":
+		return protectedIdentifierPattern.MatchString(report.DestinationMSISDNHash)
+	}
+	value, ok := report.Evidence[field]
+	if !ok || value == nil {
+		return false
+	}
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		return strings.TrimSpace(typed) != "" && !strings.EqualFold(strings.TrimSpace(typed), "false")
+	default:
+		if number, ok := numberValue(value); ok {
+			return !math.IsNaN(number) && !math.IsInf(number, 0)
+		}
+		return true
+	}
 }
 
 func (a *App) score(
@@ -527,16 +648,22 @@ func (a *App) score(
 	since := time.Now().UTC().Add(-30 * 24 * time.Hour).Format("2006-01-02T15:04:05Z")
 	rows, err := store.Query(ctx, `SELECT DISTINCT a.institution_code,a.artefact_type
 		FROM artefacts a
+		JOIN reports prior_report ON prior_report.report_id=a.report_id
+		JOIN validations prior_validation ON prior_validation.report_id=a.report_id
+			AND prior_validation.is_current=1
 		WHERE a.institution_code != $1
+		  AND prior_report.lifecycle_state=$6
+		  AND prior_report.expires_at>NOW()
+		  AND prior_validation.status IN ($7,$8)
 		  AND (
-		    (a.artefact_type='destination_account' AND a.artefact_hash=$2) OR
-		    (a.artefact_type='destination_msisdn' AND a.artefact_hash=$3) OR
-		    (a.artefact_type='device_profile' AND a.artefact_hash=$4)
+		    (a.artefact_type='destination_account' AND a.artefact_hash=$2 AND a.match_scope=$5) OR
+		    (a.artefact_type='destination_msisdn' AND a.artefact_hash=$3 AND a.match_scope=$5) OR
+		    (a.artefact_type='device_profile' AND a.artefact_hash=$4 AND a.match_scope='')
 		  )
-		  AND a.observed_at >= $5
+		  AND a.observed_at >= $9
 		ORDER BY a.institution_code`,
 		report.ReportingInstitution, report.DestinationAccountHash, report.DestinationMSISDNHash,
-		device, since)
+		device, report.DestinationInstitution, lifecycleActive, statusAwaiting, statusCorroborated, since)
 	if err != nil {
 		return Validation{}, err
 	}
@@ -572,15 +699,22 @@ func (a *App) score(
 		if err := store.QueryRow(ctx, `SELECT EXISTS (
 			SELECT 1 FROM artefacts m
 			JOIN artefacts d ON d.report_id=m.report_id AND d.artefact_type='device_profile'
+			JOIN reports linked_report ON linked_report.report_id=m.report_id
+			JOIN validations linked_validation ON linked_validation.report_id=m.report_id
+				AND linked_validation.is_current=1
 			WHERE m.institution_code != $1
+			  AND linked_report.lifecycle_state=$6
+			  AND linked_report.expires_at>NOW()
+			  AND linked_validation.status IN ($7,$8)
 			  AND (
-			    (m.artefact_type='destination_account' AND m.artefact_hash=$2) OR
-			    (m.artefact_type='destination_msisdn' AND m.artefact_hash=$3)
+			    (m.artefact_type='destination_account' AND m.artefact_hash=$2 AND m.match_scope=$4) OR
+			    (m.artefact_type='destination_msisdn' AND m.artefact_hash=$3 AND m.match_scope=$4)
 			  )
-			  AND m.observed_at >= $4
-			  AND d.artefact_hash != $5)`,
+			  AND m.observed_at >= $5
+			  AND d.artefact_hash != $9)`,
 			report.ReportingInstitution, report.DestinationAccountHash, report.DestinationMSISDNHash,
-			since, device).Scan(&switched); err != nil {
+			report.DestinationInstitution, since, lifecycleActive, statusAwaiting, statusCorroborated,
+			device).Scan(&switched); err != nil {
 			return Validation{}, err
 		}
 		if switched {
@@ -612,11 +746,11 @@ func (a *App) score(
 
 	validated := numberOr(cfg["validated_threshold"], defaultValidated)
 	insufficient := numberOr(cfg["insufficient_threshold"], defaultInsufficient)
-	status := "NOT_FRAUD"
-	if score >= validated {
-		status = "VALIDATED_FRAUD"
+	status := statusBelow
+	if score >= validated && len(corro) > 0 {
+		status = statusCorroborated
 	} else if score >= insufficient {
-		status = "INSUFFICIENT_EVIDENCE"
+		status = statusAwaiting
 	}
 	corroInstitutions := make([]string, 0, len(corro))
 	for institution := range corro {
@@ -627,7 +761,7 @@ func (a *App) score(
 	latency := max(1, int(time.Since(start).Milliseconds()))
 	return Validation{
 		ValidationID: "val-" + randomHex(5), ReportID: reportID, ValidatedAt: utcNow(),
-		AgentVersion: agentVersion, ValidationScore: score, Status: status,
+		AgentVersion: policyVersion, ValidationScore: score, Status: status,
 		ReasonCodes: reasons, CorroboratingInstitutions: corroInstitutions,
 		CorroborationCount: len(corroInstitutions), LatencyMS: latency,
 	}, nil
@@ -656,26 +790,22 @@ func (a *App) explain(report ReportIn, validation Validation, codes []string) st
 		others += "s"
 	}
 	switch validation.Status {
-	case "VALIDATED_FRAUD":
-		corroboration := "the reporting institution's own evidence"
-		if validation.CorroborationCount > 0 {
-			corroboration = others + " independently reporting the same artefact"
-		}
-		action := "Hold the transaction for step-up verification before release."
+	case statusCorroborated:
+		action := "The receiving institution should review the signal and choose its own response."
 		if report.Amount <= 0 {
-			action = "No money has moved yet. Verify the customer and watch the destination before the next transfer."
+			action = "No money has moved yet. The receiving institution should verify the customer and monitor the destination."
 		}
-		return fmt.Sprintf("%s was flagged for %s. This was corroborated by %s.%s %s",
-			subject, signals, corroboration, switchNote, action)
-	case "INSUFFICIENT_EVIDENCE":
+		return fmt.Sprintf("%s was flagged for %s. The protected indicator was corroborated by %s.%s %s",
+			subject, signals, others, switchNote, action)
+	case statusAwaiting:
 		if validation.CorroborationCount > 0 {
-			return fmt.Sprintf("%s showed %s. %s reported a matching artefact, but the score stayed below the alert threshold.%s Monitoring only.",
+			return fmt.Sprintf("%s showed %s. %s reported a matching artefact, but the score stayed below the shared alert policy.%s Keep under review.",
 				subject, signals, others, switchNote)
 		}
-		return fmt.Sprintf("%s showed %s, but no other institution has reported a matching artefact. Monitoring only until another institution corroborates it.",
+		return fmt.Sprintf("%s showed %s, but no qualified report from another institution has matched the same protected artefact. Keep under review while awaiting corroboration.",
 			subject, signals)
 	default:
-		return fmt.Sprintf("%s matched %s, but the pattern did not meet the sector standard. Marked not fraud; no alert issued.",
+		return fmt.Sprintf("%s matched %s, but the signal did not meet the shared alert policy. No receiving-institution alert was issued.",
 			subject, signals)
 	}
 }

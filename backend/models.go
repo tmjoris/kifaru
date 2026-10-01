@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	agentVersion         = "kifaru-agent-0.5.1"
+	policyVersion        = "kifaru-policy-0.5.1"
 	defaultValidated     = 0.60
 	defaultInsufficient  = 0.35
 	weightCode           = 0.50
@@ -20,6 +20,24 @@ const (
 	weightKnownGood      = -0.55
 	weightAboveThreshold = 0.10
 	demoStreamRetention  = 500
+)
+
+const (
+	statusCorroborated = "CORROBORATED_SIGNAL"
+	statusAwaiting     = "AWAITING_CORROBORATION"
+	statusBelow        = "BELOW_ALERT_THRESHOLD"
+	statusQuarantined  = "QUARANTINED"
+	statusRetracted    = "RETRACTED"
+	statusExpired      = "EXPIRED"
+	statusCleared      = "CLEARED"
+)
+
+const (
+	lifecycleActive      = "active"
+	lifecycleQuarantined = "quarantined"
+	lifecycleRetracted   = "retracted"
+	lifecycleExpired     = "expired"
+	lifecycleCleared     = "cleared"
 )
 
 // Institution is one licensed Kenyan bank or mobile money provider from
@@ -37,9 +55,11 @@ type Institution struct {
 }
 
 type RiskCode struct {
-	Family       string  `json:"family"`
-	Name         string  `json:"name"`
-	SeverityBase float64 `json:"severity_base"`
+	Family         string   `json:"family"`
+	Name           string   `json:"name"`
+	SeverityBase   float64  `json:"severity_base"`
+	EvidenceFields []string `json:"evidence_fields"`
+	EvidenceMode   string   `json:"evidence_mode"`
 }
 
 type Standard struct {

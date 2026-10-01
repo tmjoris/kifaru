@@ -48,9 +48,9 @@ export function KnowledgeItems({ items }: { items: { title: string; text: string
   )}</div>;
 }
 
-/** The KIFARU pipeline: Detect -> Fingerprint -> Share -> Match -> Act. */
+/** The Kifaru signal route: detect -> protect -> share -> match -> respond. */
 export function Pipeline({ steps, compact }: { steps: PipelineStep[]; compact?: boolean }) {
-  return <ol className={`pipeline ${compact ? "pipeline-compact" : ""}`} aria-label="Kifaru validation pipeline">
+  return <ol className={`pipeline ${compact ? "pipeline-compact" : ""}`} aria-label="Kifaru signal route">
     {steps.map((step, index) => <li key={step.id} className={`pipeline-step state-${step.state}`}>
       <span className="pipeline-node" aria-hidden="true">{index + 1}</span>
       <span className="pipeline-copy"><strong>{step.label}</strong>{!compact && <span>{step.detail}</span>}</span>
@@ -58,9 +58,9 @@ export function Pipeline({ steps, compact }: { steps: PipelineStep[]; compact?: 
   </ol>;
 }
 
-/** How money and intelligence moved: reporting bank -> shared fingerprint -> receiving bank -> outcome. */
+/** How the protected signal moved from reporter to receiver and recorded outcome. */
 export function CampaignChain({ nodes }: { nodes: ChainNode[] }) {
-  return <div className="chain" role="list" aria-label="Cross-institution fraud chain">
+  return <div className="chain" role="list" aria-label="Cross-institution signal route">
     {nodes.map((node, index) => <Fragment key={node.label + index}>
       <div className={`chain-node kind-${node.kind}`} role="listitem">
         <strong>{node.label}</strong><span>{node.detail}</span>

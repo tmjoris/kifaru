@@ -323,7 +323,12 @@ func deriveUploadCodes(row map[string]string) []string {
 			codes = append(codes, code)
 		}
 	}
-	if floatValue(row["amount"], 0) >= 250000 {
+	newDevice := strings.EqualFold(row["device_status"], "new_device") ||
+		boolValue(first(row["evidence_is_new_device"], row["new_device"]))
+	newBeneficiary := boolValue(first(
+		row["evidence_is_new_beneficiary"], row["new_beneficiary"],
+	)) || floatValue(row["beneficiary_age_minutes"], 999999) <= 60
+	if floatValue(row["amount"], 0) >= 250000 && newBeneficiary {
 		add("BEN-450")
 	}
 	if floatValue(row["transfers_5m"], 0) >= 4 || floatValue(row["transfers_1h"], 0) >= 8 {
@@ -332,8 +337,8 @@ func deriveUploadCodes(row map[string]string) []string {
 	if boolValue(row["ip_country_changed"]) || boolValue(row["vpn_proxy_tor"]) {
 		add("IP-404")
 	}
-	if strings.EqualFold(row["device_status"], "new_device") || boolValue(row["new_device"]) {
-		add("IP-401")
+	if newDevice && newBeneficiary {
+		add("ATO-460")
 	}
 	if floatValue(row["beneficiary_age_minutes"], 999999) <= 60 {
 		add("VEL-430")
@@ -342,10 +347,7 @@ func deriveUploadCodes(row map[string]string) []string {
 	if boolValue(row["password_reset_within_1h"]) {
 		add("ATO-461")
 	}
-	if boolValue(row["vendor_bank_change"]) || boolValue(row["bec_signal"]) {
-		add("BEN-450")
-	}
-	if len(codes) == 0 {
+	if len(codes) == 0 && floatValue(row["amount"], 0) > 0 {
 		add("VEL-431")
 	}
 	return codes
