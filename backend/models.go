@@ -32,6 +32,8 @@ type Institution struct {
 	Ref       string  `json:"ref"`
 	Type      string  `json:"type"`
 	Threshold float64 `json:"threshold"`
+	DemoName  string  `json:"demo_name"`
+	DemoEmail string  `json:"demo_email"`
 }
 
 type RiskCode struct {

@@ -30,10 +30,10 @@ resolve.
 
 ## Authentication and authorization
 
-Startup seeds four institution demo accounts and one Kifaru staff account.
-Passwords are stored only as bcrypt hashes. Successful sign-in creates a random
-opaque token; PostgreSQL stores its SHA-256 digest, CSRF token, user, timestamps
-and expiry.
+Startup seeds an institution demo account for each of the 38 licensed banks,
+M-Pesa and Airtel Money, plus one Kifaru staff account. Passwords are stored only
+as bcrypt hashes. Successful sign-in creates a random opaque token; PostgreSQL
+stores its SHA-256 digest, CSRF token, user, timestamps and expiry.
 
 The plaintext pitch credentials are maintained only in the repository root's
 git-ignored `demo-credentials.txt`.
@@ -99,7 +99,8 @@ unseen migration in a PostgreSQL transaction and records the filename in
 
 `003_synthetic_institutions.sql` retires obsolete directory placeholders.
 `004_authentication.sql` adds demo users and expiring sessions. Startup seeds
-the pitch accounts only after the current institution directory exists.
+the bank and staff pitch accounts only after the current institution directory
+exists.
 `005_rolling_demo_stream.sql` resumes streams stopped by the former event cap;
 the Go producer then maintains rolling retention and repairs the same exact
 legacy state if a retiring instance recreates it during a rolling deployment.

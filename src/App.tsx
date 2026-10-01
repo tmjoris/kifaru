@@ -24,8 +24,6 @@ import { AdminDetails, KnowledgeBase } from "./components/ReferencePanels";
 import { PortalLogin } from "./components/PortalLogin";
 import { DemoStream } from "./components/DemoStream";
 
-const DEMO_LOGIN_CODES = new Set(["bank_a", "bank_b", "psp_c", "sacco_d"]);
-
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
@@ -369,7 +367,7 @@ export default function App() {
   }
 
   if (!activeSession) {
-    return <PortalLogin banks={banks.filter((item) => DEMO_LOGIN_CODES.has(item.backendCode))} staff={staffRoute}
+    return <PortalLogin banks={banks} staff={staffRoute}
       onEnterKifaru={(email, password, keepSignedIn) =>
         authenticate(email, password, null, keepSignedIn)}
       onEnterBank={(email, password, nextBankId, keepSignedIn) =>

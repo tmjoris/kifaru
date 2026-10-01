@@ -260,8 +260,21 @@ func TestPostgresPipeline(t *testing.T) {
 	if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM auth_users").Scan(&demoUserCount); err != nil {
 		t.Fatal(err)
 	}
-	if demoUserCount != 5 {
-		t.Fatalf("expected five seeded demo users, got %d", demoUserCount)
+	if demoUserCount != len(demoLoginInstitutions())+1 {
+		t.Fatalf("expected %d seeded demo users, got %d",
+			len(demoLoginInstitutions())+1, demoUserCount)
+	}
+	for _, institution := range demoLoginInstitutions() {
+		var displayName, institutionCode string
+		if err := db.QueryRow(ctx, `SELECT display_name,institution_code
+			FROM auth_users WHERE email=$1`, demoInstitutionEmail(institution)).
+			Scan(&displayName, &institutionCode); err != nil {
+			t.Fatalf("missing demo user for %s: %v", institution.Name, err)
+		}
+		if displayName != institution.DemoName || institutionCode != institution.Code {
+			t.Fatalf("incorrect demo user for %s: name=%q institution=%q",
+				institution.Name, displayName, institutionCode)
+		}
 	}
 
 	unauthenticated := httptest.NewRequest(http.MethodGet, "/v1/history?institution=psp_c", nil)
@@ -276,13 +289,7 @@ func TestPostgresPipeline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(ctx, `UPDATE auth_users SET password_hash=$1
-		WHERE email IN (
-			'anthonyjordan@ncba.co.ke',
-			'anthonyjordan@equitybank.co.ke',
-			'anthonyjordan@kifaru.co.ke'
-		)`,
-		string(testHash)); err != nil {
+	if _, err := db.Exec(ctx, `UPDATE auth_users SET password_hash=$1`, string(testHash)); err != nil {
 		t.Fatal(err)
 	}
 	login := func(email, password, institution string) (*http.Cookie, string, string, int) {
@@ -310,6 +317,16 @@ func TestPostgresPipeline(t *testing.T) {
 			}
 		}
 		return sessionCookie, payload.CSRFToken, payload.AccessToken, recorder.Code
+	}
+	mobileMoney := demoLoginInstitutions()[len(demoLoginInstitutions())-1]
+	if mobileMoney.Code != "ke:airtel-money-kenya" {
+		t.Fatalf("unexpected final demo institution %q", mobileMoney.Code)
+	}
+	mobileCookie, _, mobileToken, status := login(
+		demoInstitutionEmail(mobileMoney), testPassword, mobileMoney.Code)
+	if status != http.StatusOK || mobileCookie == nil || mobileToken == "" {
+		t.Fatalf("mobile-money login failed: status=%d cookie=%v token=%q",
+			status, mobileCookie, mobileToken)
 	}
 	if _, _, _, status := login("anthonyjordan@equitybank.co.ke", "wrong-password", "psp_c"); status != http.StatusUnauthorized {
 		t.Fatalf("invalid credentials should fail, got %d", status)
