@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { knowledgeBase } from "../data";
-import type { Bank, KnowledgeBaseEntry, RiskCodeReference } from "../types";
+import type { Bank, KnowledgeBaseEntry, RiskCodeReference, UserAccessRequest } from "../types";
 import { Card, KnowledgeItems } from "./Shared";
+import { InstitutionUserAccess } from "./UserAccess";
 
 export function KnowledgeBase({ bank, entries, riskCodes }: {
   bank: Bank; entries: KnowledgeBaseEntry[]; riskCodes: RiskCodeReference[];
@@ -27,8 +28,24 @@ export function KnowledgeBase({ bank, entries, riskCodes }: {
   </div>;
 }
 
-export function AdminDetails({ bank, onThresholdChange, notify }: {
-  bank: Bank; onThresholdChange: (threshold: number) => Promise<void>; notify: (message: string) => void;
+export function AdminDetails({
+  bank,
+  userRequests,
+  userRequestDomain,
+  userRequestsLoading,
+  userRequestsError,
+  onUserRequest,
+  onThresholdChange,
+  notify,
+}: {
+  bank: Bank;
+  userRequests: UserAccessRequest[];
+  userRequestDomain: string;
+  userRequestsLoading: boolean;
+  userRequestsError: string;
+  onUserRequest: (alias: string) => Promise<void>;
+  onThresholdChange: (threshold: number) => Promise<void>;
+  notify: (message: string) => void;
 }) {  const [threshold, setThreshold] = useState(bank.threshold);
   const [saving, setSaving] = useState(false);
 
@@ -52,6 +69,9 @@ export function AdminDetails({ bank, onThresholdChange, notify }: {
     }
   }
   return <div className="grid admin-grid">
+    <InstitutionUserAccess institutionName={bank.name} emailDomain={userRequestDomain}
+      requests={userRequests} loading={userRequestsLoading} error={userRequestsError}
+      onRequest={onUserRequest} notify={notify} />
     <Card className="wide-card" title="Input source connections"
       subtitle={`${bank.name} connector inventory. Transaction and validation data below is loaded from the backend.`}>
       <div className="source-grid">{bank.inputSources.map((source) => <div className="source-item" key={source.name}>

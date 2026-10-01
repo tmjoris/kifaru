@@ -231,7 +231,7 @@ func TestPostgresPipeline(t *testing.T) {
 	}
 	defer db.Close()
 	_, err = db.Exec(ctx, `DROP TABLE IF EXISTS
-		auth_sessions,auth_users,demo_events,demo_stream_state,notifications,
+		user_access_requests,auth_sessions,auth_users,demo_events,demo_stream_state,notifications,
 		alert_actions,audit_log,config,knowledge_base,alerts,artefacts,
 		validations,reports,institutions,schema_migrations CASCADE`)
 	if err != nil {
@@ -484,6 +484,189 @@ func TestPostgresPipeline(t *testing.T) {
 		t.Fatalf("staff ecosystem history failed: %d %s",
 			staffHistoryRecorder.Code, staffHistoryRecorder.Body.String())
 	}
+
+	invalidAliasBody, _ := json.Marshal(map[string]string{"alias": "bad.alias"})
+	invalidAliasRequest := httptest.NewRequest(
+		http.MethodPost, "/v1/user-requests", bytes.NewReader(invalidAliasBody))
+	invalidAliasRequest.Header.Set("Authorization", "Bearer "+equityToken)
+	invalidAliasRequest.Header.Set("X-Kifaru-CSRF", equityCSRF)
+	invalidAliasRecorder := httptest.NewRecorder()
+	app.serveHTTP(invalidAliasRecorder, invalidAliasRequest)
+	if invalidAliasRecorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid alias should fail, got %d %s",
+			invalidAliasRecorder.Code, invalidAliasRecorder.Body.String())
+	}
+
+	createAccessRequest := func(alias string) (*httptest.ResponseRecorder, string) {
+		t.Helper()
+		body, _ := json.Marshal(map[string]string{"alias": alias})
+		request := httptest.NewRequest(
+			http.MethodPost, "/v1/user-requests", bytes.NewReader(body))
+		request.Header.Set("Authorization", "Bearer "+equityToken)
+		request.Header.Set("X-Kifaru-CSRF", equityCSRF)
+		recorder := httptest.NewRecorder()
+		app.serveHTTP(recorder, request)
+		var payload struct {
+			RequestID string `json:"request_id"`
+			Email     string `json:"email"`
+		}
+		if recorder.Code == http.StatusCreated {
+			if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return recorder, payload.RequestID
+	}
+
+	accessRequestRecorder, accessRequestID := createAccessRequest("newanalyst9")
+	if accessRequestRecorder.Code != http.StatusCreated {
+		t.Fatalf("user access request failed: %d %s",
+			accessRequestRecorder.Code, accessRequestRecorder.Body.String())
+	}
+	if !strings.Contains(accessRequestRecorder.Body.String(), `"email":"newanalyst9@equity.co.ke"`) {
+		t.Fatalf("request did not derive the Equity domain: %s", accessRequestRecorder.Body.String())
+	}
+	duplicateAccessRecorder, _ := createAccessRequest("newanalyst9")
+	if duplicateAccessRecorder.Code != http.StatusConflict {
+		t.Fatalf("duplicate pending request should fail, got %d", duplicateAccessRecorder.Code)
+	}
+	existingAccountRecorder, _ := createAccessRequest("johnkamau")
+	if existingAccountRecorder.Code != http.StatusConflict {
+		t.Fatalf("existing account request should fail, got %d %s",
+			existingAccountRecorder.Code, existingAccountRecorder.Body.String())
+	}
+
+	equityRequests := httptest.NewRequest(http.MethodGet, "/v1/user-requests", nil)
+	equityRequests.Header.Set("Authorization", "Bearer "+equityToken)
+	equityRequestsRecorder := httptest.NewRecorder()
+	app.serveHTTP(equityRequestsRecorder, equityRequests)
+	var equityRequestsPayload struct {
+		EmailDomain string              `json:"email_domain"`
+		Requests    []UserAccessRequest `json:"requests"`
+	}
+	if err := json.Unmarshal(equityRequestsRecorder.Body.Bytes(), &equityRequestsPayload); err != nil {
+		t.Fatal(err)
+	}
+	if equityRequestsRecorder.Code != http.StatusOK ||
+		equityRequestsPayload.EmailDomain != "equity.co.ke" ||
+		len(equityRequestsPayload.Requests) != 1 {
+		t.Fatalf("unexpected Equity request list: %d %s",
+			equityRequestsRecorder.Code, equityRequestsRecorder.Body.String())
+	}
+
+	airtelRequests := httptest.NewRequest(http.MethodGet, "/v1/user-requests", nil)
+	airtelRequests.Header.Set("Authorization", "Bearer "+mobileToken)
+	airtelRequestsRecorder := httptest.NewRecorder()
+	app.serveHTTP(airtelRequestsRecorder, airtelRequests)
+	var airtelRequestsPayload struct {
+		EmailDomain string              `json:"email_domain"`
+		Requests    []UserAccessRequest `json:"requests"`
+	}
+	if err := json.Unmarshal(airtelRequestsRecorder.Body.Bytes(), &airtelRequestsPayload); err != nil {
+		t.Fatal(err)
+	}
+	if airtelRequestsRecorder.Code != http.StatusOK ||
+		airtelRequestsPayload.EmailDomain != "airtel.co.ke" ||
+		len(airtelRequestsPayload.Requests) != 0 {
+		t.Fatalf("tenant request isolation failed: %d %s",
+			airtelRequestsRecorder.Code, airtelRequestsRecorder.Body.String())
+	}
+
+	institutionReviewBody, _ := json.Marshal(map[string]string{"decision": "approved"})
+	institutionReview := httptest.NewRequest(http.MethodPatch,
+		"/v1/admin/user-requests/"+accessRequestID, bytes.NewReader(institutionReviewBody))
+	institutionReview.Header.Set("Authorization", "Bearer "+equityToken)
+	institutionReview.Header.Set("X-Kifaru-CSRF", equityCSRF)
+	institutionReviewRecorder := httptest.NewRecorder()
+	app.serveHTTP(institutionReviewRecorder, institutionReview)
+	if institutionReviewRecorder.Code != http.StatusForbidden {
+		t.Fatalf("institution should not review access requests, got %d",
+			institutionReviewRecorder.Code)
+	}
+
+	staffRequests := httptest.NewRequest(http.MethodGet, "/v1/user-requests", nil)
+	staffRequests.Header.Set("Authorization", "Bearer "+staffToken)
+	staffRequestsRecorder := httptest.NewRecorder()
+	app.serveHTTP(staffRequestsRecorder, staffRequests)
+	var staffRequestsPayload struct {
+		Requests []UserAccessRequest `json:"requests"`
+	}
+	if err := json.Unmarshal(staffRequestsRecorder.Body.Bytes(), &staffRequestsPayload); err != nil {
+		t.Fatal(err)
+	}
+	if staffRequestsRecorder.Code != http.StatusOK ||
+		len(staffRequestsPayload.Requests) != 1 ||
+		staffRequestsPayload.Requests[0].InstitutionCode != "psp_c" {
+		t.Fatalf("staff request queue failed: %d %s",
+			staffRequestsRecorder.Code, staffRequestsRecorder.Body.String())
+	}
+
+	reviewAccessRequest := func(requestID, decision string) *httptest.ResponseRecorder {
+		t.Helper()
+		body, _ := json.Marshal(map[string]string{"decision": decision})
+		request := httptest.NewRequest(http.MethodPatch,
+			"/v1/admin/user-requests/"+requestID, bytes.NewReader(body))
+		request.Header.Set("Authorization", "Bearer "+staffToken)
+		request.Header.Set("X-Kifaru-CSRF", staffCSRF)
+		recorder := httptest.NewRecorder()
+		app.serveHTTP(recorder, request)
+		return recorder
+	}
+
+	approvedRecorder := reviewAccessRequest(accessRequestID, "approved")
+	if approvedRecorder.Code != http.StatusOK {
+		t.Fatalf("staff approval failed: %d %s",
+			approvedRecorder.Code, approvedRecorder.Body.String())
+	}
+	secondApprovalRecorder := reviewAccessRequest(accessRequestID, "approved")
+	if secondApprovalRecorder.Code != http.StatusConflict {
+		t.Fatalf("second approval should fail, got %d", secondApprovalRecorder.Code)
+	}
+	var admittedUserID, admittedInstitution string
+	if err := db.QueryRow(ctx, `SELECT user_id,institution_code FROM auth_users
+		WHERE email='newanalyst9@equity.co.ke'`).
+		Scan(&admittedUserID, &admittedInstitution); err != nil {
+		t.Fatal(err)
+	}
+	if admittedUserID != "admitted-"+accessRequestID || admittedInstitution != "psp_c" {
+		t.Fatalf("incorrect admitted user: id=%q institution=%q",
+			admittedUserID, admittedInstitution)
+	}
+	if _, err := db.Exec(ctx, `UPDATE auth_users SET password_hash=$1 WHERE user_id=$2`,
+		string(testHash), admittedUserID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, admittedToken, status := login(
+		"newanalyst9@equity.co.ke", testPassword, "psp_c",
+	); status != http.StatusOK || admittedToken == "" {
+		t.Fatalf("admitted user cannot sign in: status=%d token=%q", status, admittedToken)
+	}
+
+	rejectedRequestRecorder, rejectedRequestID := createAccessRequest("declineduser")
+	if rejectedRequestRecorder.Code != http.StatusCreated {
+		t.Fatalf("rejection test request failed: %d %s",
+			rejectedRequestRecorder.Code, rejectedRequestRecorder.Body.String())
+	}
+	rejectedRecorder := reviewAccessRequest(rejectedRequestID, "rejected")
+	if rejectedRecorder.Code != http.StatusOK {
+		t.Fatalf("staff rejection failed: %d %s",
+			rejectedRecorder.Code, rejectedRecorder.Body.String())
+	}
+	var rejectedUserCount int
+	if err := db.QueryRow(ctx,
+		"SELECT COUNT(*) FROM auth_users WHERE email='declineduser@equity.co.ke'").
+		Scan(&rejectedUserCount); err != nil {
+		t.Fatal(err)
+	}
+	if rejectedUserCount != 0 {
+		t.Fatal("rejected access request created an account")
+	}
+	resubmittedRecorder, resubmittedID := createAccessRequest("declineduser")
+	if resubmittedRecorder.Code != http.StatusCreated || resubmittedID != rejectedRequestID {
+		t.Fatalf("rejected alias should be reusable: %d %s",
+			resubmittedRecorder.Code, resubmittedRecorder.Body.String())
+	}
+
 	logoutRequest := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
 	logoutRequest.Header.Set("Authorization", "Bearer "+staffToken)
 	logoutRequest.Header.Set("X-Kifaru-CSRF", staffCSRF)

@@ -19,6 +19,22 @@ export interface AuthSession {
   institutionName: string;
   expiresAt: string;
 }
+export type UserAccessRequestStatus = "pending" | "approved" | "rejected";
+export interface UserAccessRequest {
+  requestId: string;
+  institutionCode: string;
+  institutionName: string;
+  alias: string;
+  email: string;
+  status: UserAccessRequestStatus;
+  requestedByEmail: string;
+  requestedAt: string;
+  reviewedByEmail: string;
+  reviewedAt: string;
+  reviewNote: string;
+  admittedUserId: string;
+  approvedPasswordTip: string;
+}
 export interface Source {
   name: string;
   type: string;

@@ -1,6 +1,6 @@
 import type {
   AuthSession, Bank, DashboardData, DemoStreamEvent, DemoStreamStatus, KnowledgeBaseEntry, PortalScope, RiskCodeReference,
-  Transaction, UploadSummary, Validation,
+  Transaction, UploadSummary, UserAccessRequest, Validation,
 } from "./types";
 import { riskCodeInfo } from "./explain";
 
@@ -392,6 +392,79 @@ export async function updateInstitutionThreshold(
     body: JSON.stringify({ institution_thresholds: { [backendCode]: thresholdPercent / 100 } }),
     signal,
   });
+}
+
+function parseUserAccessRequest(value: unknown): UserAccessRequest | null {
+  if (!isRecord(value)) return null;
+  const status = requiredString(value, "status");
+  if (!["pending", "approved", "rejected"].includes(status)) return null;
+  const requestId = requiredString(value, "request_id");
+  const email = requiredString(value, "email");
+  if (!requestId || !email) return null;
+  return {
+    requestId,
+    institutionCode: requiredString(value, "institution_code"),
+    institutionName: requiredString(value, "institution_name"),
+    alias: requiredString(value, "alias"),
+    email,
+    status: status as UserAccessRequest["status"],
+    requestedByEmail: requiredString(value, "requested_by_email"),
+    requestedAt: requiredString(value, "requested_at"),
+    reviewedByEmail: requiredString(value, "reviewed_by_email"),
+    reviewedAt: requiredString(value, "reviewed_at"),
+    reviewNote: requiredString(value, "review_note"),
+    admittedUserId: requiredString(value, "admitted_user_id"),
+    approvedPasswordTip: requiredString(value, "approved_password_tip"),
+  };
+}
+
+export async function loadUserAccessRequests(signal?: AbortSignal) {
+  const payload = await fetchJson("/api/v1/user-requests", { signal });
+  if (!isRecord(payload) || !Array.isArray(payload.requests)) {
+    throw new Error("The backend returned an invalid user admission queue.");
+  }
+  return {
+    emailDomain: requiredString(payload, "email_domain"),
+    requests: payload.requests.flatMap((value) => {
+      const request = parseUserAccessRequest(value);
+      return request ? [request] : [];
+    }),
+  };
+}
+
+export async function createUserAccessRequest(alias: string, signal?: AbortSignal) {
+  const payload = await fetchJson("/api/v1/user-requests", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ alias }),
+    signal,
+  });
+  if (!isRecord(payload) || requiredString(payload, "status") !== "pending") {
+    throw new Error("The backend did not create the user addition request.");
+  }
+  return {
+    requestId: requiredString(payload, "request_id"),
+    email: requiredString(payload, "email"),
+  };
+}
+
+export async function decideUserAccessRequest(
+  requestId: string,
+  decision: "approved" | "rejected",
+  signal?: AbortSignal,
+) {
+  const payload = await fetchJson(
+    `/api/v1/admin/user-requests/${encodeURIComponent(requestId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision }),
+      signal,
+    },
+  );
+  if (!isRecord(payload) || requiredString(payload, "status") !== decision) {
+    throw new Error("The backend did not save the user admission decision.");
+  }
 }
 
 export async function updateAlertState(
