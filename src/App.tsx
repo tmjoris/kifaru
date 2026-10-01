@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  createUserAccessRequest, decideUserAccessRequest, emitDemoStreamEvent,
-  loadDashboardData, loadDemoStream, loadUserAccessRequests, login,
-  logout as logoutSession, resetDemoStream, restoreSession, setDemoStreamState,
-  subscribeToAlerts, updateAlertState, updateInstitutionThreshold, validateCsv,
+  advanceGuidedDemo, createUserAccessRequest, decideUserAccessRequest, emitDemoStreamEvent,
+  loadDashboardData, loadDemoStream, loadGuidedDemo, loadUserAccessRequests, login,
+  logout as logoutSession, resetDemoStream, resetGuidedDemo, restoreSession, setDemoStreamState,
+  subscribeToAlerts, updateAlertState, updateInstitutionThreshold, updateReportLifecycle, validateCsv,
 } from "./api";
 import { initialBanks, riskCodeCatalog } from "./data";
 import { protectIdentifiers } from "./identifiers";
@@ -13,9 +13,8 @@ import {
   transactionDirection,
 } from "./domain";
 import type {
-  AuthSession, Bank, DashboardData, DemoStreamStatus, KnowledgeBaseEntry, RiskCodeReference,
-  Session, Tab,
-  Transaction, UploadSummary, UserAccessRequest,
+  AuthSession, Bank, DashboardData, DemoStreamStatus, GuidedDemoStatus, KnowledgeBaseEntry,
+  Notification, RiskCodeReference, Session, Tab, Transaction, UploadSummary, UserAccessRequest,
 } from "./types";
 import { BrandDots, Icon, Logo } from "./components/Shared";
 import { Investigation, TransactionTable } from "./components/Transactions";
@@ -25,6 +24,7 @@ import { AdminDetails, KnowledgeBase } from "./components/ReferencePanels";
 import { PortalLogin } from "./components/PortalLogin";
 import { DemoStream } from "./components/DemoStream";
 import { StaffUserAdmissions } from "./components/UserAccess";
+import { GuidedCampaign, SignalNotifications } from "./components/GuidedCampaign";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -47,7 +47,9 @@ export default function App() {
   const [loadingData, setLoadingData] = useState(true);
   const [dataError, setDataError] = useState("");
   const [demoStream, setDemoStream] = useState<DemoStreamStatus | null>(null);
+  const [guidedDemo, setGuidedDemo] = useState<GuidedDemoStatus | null>(null);
   const [demoBusy, setDemoBusy] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [userAccessRequests, setUserAccessRequests] = useState<UserAccessRequest[]>([]);
   const [userRequestDomain, setUserRequestDomain] = useState("");
   const [userRequestsLoading, setUserRequestsLoading] = useState(false);
@@ -73,7 +75,7 @@ export default function App() {
   const records = transactions.filter((item) => isVisible(item, bankId));
   const selected = transactions.find((item) => item.key === selectedKey);
   const submitted = records.filter((item) => reportingBankId(item) === bankId).length;
-  const received = records.filter((item) => counterpartyBankId(item) === bankId && item.validationStatus === "validated_fraud").length;
+  const received = records.filter((item) => counterpartyBankId(item) === bankId && item.validationStatus === "corroborated").length;
   const visible = records.filter((item) => filter === "all" || item.validationStatus === filter).filter((item) => {
     const text = [item.customerRef, item.merchant, item.country, item.id, displayTransactionId(item, bankRef(reportingBankId(item))),
       transactionDirection(item, bankId), moneyDirection(item, bankId), bankName(reportingBankId(item)),
@@ -114,6 +116,8 @@ export default function App() {
     setRiskCodes(riskCodeCatalog);
     setKnowledgeBaseEntries([]);
     setDemoStream(null);
+    setGuidedDemo(null);
+    setNotifications([]);
     userRequestController.current?.abort();
     setUserAccessRequests([]);
     setUserRequestDomain("");
@@ -170,6 +174,7 @@ export default function App() {
     setTransactions(data.transactions);
     setRiskCodes(data.riskCodes);
     setKnowledgeBaseEntries(data.knowledgeBaseEntries);
+    setNotifications(data.notifications);
   }, []);
 
   // Live updates wait while the pointer is over a list, so rows do not move under the cursor.
@@ -221,6 +226,12 @@ export default function App() {
     return state;
   }, []);
 
+  const refreshGuidedDemo = useCallback(async () => {
+    const state = await loadGuidedDemo();
+    setGuidedDemo(state);
+    return state;
+  }, []);
+
   const refreshUserAccessRequests = useCallback(async (showLoading = true) => {
     if (!activeSession) return;
     const controller = new AbortController();
@@ -265,8 +276,8 @@ export default function App() {
 
   useEffect(() => {
     if (!activeSession || !isExchange) return;
-    void refreshDemoStream().catch(() => undefined);
-  }, [activeSession, isExchange, refreshDemoStream]);
+    void Promise.all([refreshDemoStream(), refreshGuidedDemo()]).catch(() => undefined);
+  }, [activeSession, isExchange, refreshDemoStream, refreshGuidedDemo]);
 
   useEffect(() => {
     if (!activeSession) return;
@@ -276,10 +287,10 @@ export default function App() {
         void refreshData(false, true).catch(() => undefined);
       },
       demoEvent: () => {
-        void Promise.all([refreshData(false, true), refreshDemoStream()]).catch(() => undefined);
+        void Promise.all([refreshData(false, true), refreshDemoStream(), refreshGuidedDemo()]).catch(() => undefined);
       },
     });
-  }, [activeSession, bank.backendCode, isExchange, refreshData, refreshDemoStream]);
+  }, [activeSession, bank.backendCode, isExchange, refreshData, refreshDemoStream, refreshGuidedDemo]);
 
   async function authenticate(email: string, password: string, nextBankId: string | null, keepSignedIn: boolean) {
     const selectedBank = nextBankId ? bankTemplates.find((item) => item.id === nextBankId) : null;
@@ -318,7 +329,7 @@ export default function App() {
       const payload = await validateCsv(csv, controller.signal);
       await refreshData(false);
       setUploadSummary(payload.summary);
-      setToast(`${payload.summary.total_rows} rows validated. ${hashed} identifiers hashed in this browser before upload.`);
+      setToast(`${payload.summary.total_rows} rows processed. ${hashed} identifiers hashed in this browser before upload.`);
     } catch (error) {
       if (!controller.signal.aborted) {
         setUploadError(error instanceof Error ? error.message : "CSV upload failed.");
@@ -334,14 +345,29 @@ export default function App() {
   async function actOnAlert(
     alertId: string,
     state: "acknowledged" | "actioned" | "disputed",
+    outcome: "" | "held" | "released" | "recovered" = "",
     comment = "",
   ) {
     try {
-      await updateAlertState(alertId, state, comment);
+      await updateAlertState(alertId, state, outcome, comment);
       await refreshData(false);
-      setToast(`Alert ${state}.`);
+      setToast(outcome ? `Alert outcome recorded: ${outcome}.` : `Alert ${state}.`);
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Alert update failed.");
+    }
+  }
+
+  async function changeSignalLifecycle(
+    reportId: string,
+    state: "retracted" | "expired",
+    comment: string,
+  ) {
+    try {
+      await updateReportLifecycle(reportId, state, comment);
+      await refreshData(false);
+      setToast(`Signal ${state}. Linked intelligence was recalculated.`);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Signal lifecycle update failed.");
     }
   }
 
@@ -383,6 +409,33 @@ export default function App() {
     }
   }
 
+  async function advanceGuidedCampaign() {
+    setDemoBusy(true);
+    try {
+      setGuidedDemo(await advanceGuidedDemo());
+      await Promise.all([refreshData(false), refreshDemoStream()]);
+      setToast("Guided scenario advanced.");
+    } catch (error) {
+      await refreshGuidedDemo().catch(() => undefined);
+      setToast(error instanceof Error ? error.message : "Unable to advance the guided scenario.");
+    } finally {
+      setDemoBusy(false);
+    }
+  }
+
+  async function clearGuidedCampaign() {
+    setDemoBusy(true);
+    try {
+      setGuidedDemo(await resetGuidedDemo());
+      await Promise.all([refreshData(false), refreshDemoStream()]);
+      setToast("Guided scenario reset.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Unable to reset the guided scenario.");
+    } finally {
+      setDemoBusy(false);
+    }
+  }
+
   async function requestInstitutionUser(alias: string) {
     await createUserAccessRequest(alias);
     await refreshUserAccessRequests(false).catch(() => undefined);
@@ -397,25 +450,25 @@ export default function App() {
   }
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: "outgoing", label: "Flags submitted" },
+    { id: "outgoing", label: "Signals submitted" },
     { id: "incoming", label: "Alerts received" }, { id: "history", label: "Related history" },
     { id: "reports", label: "Reports" }, { id: "knowledge", label: "Knowledge base" },
     { id: "governance", label: "Governance" },
   ];
   const metrics = [
     { label: "Related history", value: records.length, detail: "Records tied to this bank" },
-    { label: "Submitted flags", value: submitted, detail: "From this bank's fraud system" },
-    { label: "Alerts received", value: received, detail: "Validated fraud sent to this bank" },
+    { label: "Submitted signals", value: submitted, detail: "From this institution's risk controls" },
+    { label: "Alerts received", value: received, detail: "Corroborated indicators sent to this bank" },
     { label: "Cross-matched", value: records.filter((item) => item.corroborationCount > 0).length, detail: "Matched by another institution" },
   ];
   const transactionTabs = {
-    incoming: { title: "Alerts received", subtitle: "Validated fraud alerts sent to this bank." },
-    outgoing: { title: "Flags submitted", subtitle: "Transactions this bank sent for validation." },
-    history: { title: "Related history", subtitle: "All validation records involving this bank." },
+    incoming: { title: "Alerts received", subtitle: "Corroborated risk alerts routed to this bank." },
+    outgoing: { title: "Signals submitted", subtitle: "Signals this institution submitted to the shared policy engine." },
+    history: { title: "Related history", subtitle: "All shared-signal records involving this bank." },
   };
   const workspaceMeta = isExchange
-    ? { label: "Kifaru exchange", blurb: "Cross-institution fraud signals and ecosystem matches.", icon: "hub", railLabel: "Exchange" }
-    : { label: bank.name, blurb: "Report, receive, and investigate shared fraud signals.", icon: "account_balance", railLabel: "Workspace" };
+    ? { label: "Kifaru exchange", blurb: "Cross-institution risk signals, protected matches, and receiver outcomes.", icon: "hub", railLabel: "Exchange" }
+    : { label: bank.name, blurb: "Report, receive, and investigate protected risk signals.", icon: "account_balance", railLabel: "Workspace" };
 
   if (!sessionReady) {
     return <main className="portal-auth-loading"><Logo /><p>Checking secure session...</p></main>;
@@ -462,7 +515,7 @@ export default function App() {
         </>}
         {!isExchange && <div className="side-panel">
           <label className="pill" htmlFor="csvUpload">CSV log upload</label>
-          <p className="muted">Upload a fraud log to test detection. Identifier columns are hashed in this browser first.</p>
+          <p className="muted">Upload a synthetic risk log to exercise the policy. Identifier columns are hashed in this browser first.</p>
           <input className="file-input" id="csvUpload" type="file" accept=".csv,text/csv" disabled={uploading}
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -474,7 +527,7 @@ export default function App() {
             {uploadError && <div role="alert"><span className="pill review">Upload failed</span><p>{uploadError}</p></div>}
             {uploadSummary && <>
               <span><strong>{uploadSummary.total_rows}</strong> rows</span>
-              <span><strong>{uploadSummary.validated_fraud}</strong> fraud</span>
+              <span><strong>{uploadSummary.corroborated}</strong> corroborated</span>
               <span><strong>{uploadSummary.needs_review}</strong> review</span>
             </>}
             {!uploading && !uploadError && !uploadSummary && <span className="muted">Validation API: /api</span>}
@@ -483,9 +536,9 @@ export default function App() {
         {isExchange && <div className="side-panel">
           <p className="sidebar-label">How it works</p>
           <ol className="how-it-works">
-            <li>Reporting bank detects fraud, publishes a fingerprint</li>
-            <li>Kifaru shares it across institutions</li>
-            <li>Receiving bank matches it, holds the transfer</li>
+            <li>A reporting institution publishes a protected risk indicator</li>
+            <li>Kifaru looks for a qualified independent match</li>
+            <li>The receiving institution reviews and records its own response</li>
           </ol>
         </div>}
       </aside>
@@ -494,8 +547,8 @@ export default function App() {
           <p className="eyebrow">{isExchange ? "Ecosystem operations" : "Institution workspace"} · Synthetic demo data</p>
           <h2>{workspaceMeta.label} <BrandDots /></h2>
           <p className="muted">{isExchange
-            ? "Every institution's shared fingerprints, matched across the ecosystem."
-            : "Submit suspicious activity, receive matched alerts, and investigate related records."}</p>
+            ? "A synthetic demonstration of protected signals matched and routed across institutions."
+            : "Submit risk signals, receive corroborated alerts, and record your institution's own response."}</p>
           {dataError && <p className="muted" role="alert">Backend unavailable: {dataError}</p>}
         </div><div className="actions">
           <button className="btn" onClick={() => void switchPortal()}><Icon name="logout" className="btn-icon" />Sign out</button>
@@ -514,6 +567,8 @@ export default function App() {
           ? <div className="stack">
             <StaffUserAdmissions requests={userAccessRequests} loading={userRequestsLoading}
               error={userRequestsError} onDecision={reviewInstitutionUser} notify={setToast} />
+            <GuidedCampaign campaign={guidedDemo} busy={demoBusy}
+              onAdvance={advanceGuidedCampaign} onReset={clearGuidedCampaign} />
             <DemoStream stream={demoStream} busy={demoBusy}
               onToggle={controlDemoStream} onEmit={emitDemoEvent} onReset={clearDemoStream} />
             {updateWaiting && <p className="update-waiting" role="status">New activity has arrived. The cards update when you move the pointer off them.</p>}
@@ -522,6 +577,7 @@ export default function App() {
             </div>
           </div>
           : <>
+            <SignalNotifications notifications={notifications} />
             <section className="grid metrics">{metrics.map((metric) =>
               <div className="metric" key={metric.label}><div className="metric-label"><span>{metric.label}</span></div>
                 <div className="metric-value">{metric.value}</div><div className="metric-detail">{metric.detail}</div>
@@ -538,15 +594,17 @@ export default function App() {
                     <input className="input" aria-label="Search transactions" placeholder="Search by institution, risk or report ID" value={query} onChange={(event) => setQuery(event.target.value)} />
                   </div>
                   <select className="select" aria-label="Filter by risk" value={filter} onChange={(event) => setFilter(event.target.value)}>
-                    <option value="all">All outcomes</option><option value="validated_fraud">Validated fraud</option>
-                    <option value="not_fraud">Marked not fraud</option><option value="needs_review">Under review</option>
+                    <option value="all">All outcomes</option><option value="corroborated">Corroborated signals</option>
+                    <option value="below_threshold">Below alert policy</option><option value="needs_review">Awaiting corroboration</option>
+                    <option value="quarantined">Quarantined</option><option value="retracted">Retracted</option>
+                    <option value="expired">Expired</option><option value="cleared">Cleared after review</option>
                   </select>
                 </div>
               </div>
               {updateWaiting && <p className="update-waiting" role="status">New activity has arrived. The list updates when you move the pointer off it.</p>}
               <div onPointerEnter={() => pointerOverList(true)} onPointerLeave={() => pointerOverList(false)}>
                 <TransactionTable {...transactionTabs[tab]} records={visible.filter((item) => tab === "history"
-                  || (tab === "outgoing" ? reportingBankId(item) === bankId : counterpartyBankId(item) === bankId && item.validationStatus === "validated_fraud"))}
+                  || (tab === "outgoing" ? reportingBankId(item) === bankId : counterpartyBankId(item) === bankId && item.alertId))}
                   bank={bank} bankName={bankName} bankRef={bankRef} history={tab === "history"} onOpen={setSelectedKey} />
               </div>
             </>}
@@ -565,7 +623,8 @@ export default function App() {
     </div>
     {selected && <Investigation transaction={selected} viewerBankId={isExchange ? null : bank.id}
       bankName={bankName} bankRef={bankRef}
-      onClose={() => setSelectedKey(null)} onAlertAction={isExchange ? undefined : actOnAlert} />}
+      onClose={() => setSelectedKey(null)} onAlertAction={isExchange ? undefined : actOnAlert}
+      onSignalLifecycle={changeSignalLifecycle} />}
     <div className={`toast ${toast ? "show" : ""}`} role="status" aria-live="polite">{toast}</div>
   </>;
 }

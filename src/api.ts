@@ -1,6 +1,7 @@
 import type {
-  AuthSession, Bank, DashboardData, DemoStreamEvent, DemoStreamStatus, KnowledgeBaseEntry, PortalScope, RiskCodeReference,
-  Transaction, UploadSummary, UserAccessRequest, Validation,
+  AuthSession, Bank, DashboardData, DemoStreamEvent, DemoStreamStatus, GuidedDemoStatus,
+  KnowledgeBaseEntry, Notification, PortalScope, RiskCodeReference, Transaction,
+  UploadSummary, UserAccessRequest, Validation,
 } from "./types";
 import { riskCodeInfo } from "./explain";
 
@@ -28,7 +29,7 @@ function isValidation(value: unknown): value is Validation {
     "currency", "amount", "validated_by", "short_explanation", "recommended_action"];
   return stringFields.every((field) => typeof value[field] === "string")
     && typeof value.confidence === "number" && Number.isFinite(value.confidence)
-    && ["validated_fraud", "not_fraud", "needs_review"].includes(String(value.status))
+    && ["corroborated", "below_threshold", "needs_review"].includes(String(value.status))
     && Array.isArray(value.risk_codes)
     && value.risk_codes.every((code) => isRecord(code) && typeof code.code === "string" && typeof code.label === "string")
     && Array.isArray(value.key_signals) && value.key_signals.every((signal) => typeof signal === "string");
@@ -36,7 +37,7 @@ function isValidation(value: unknown): value is Validation {
 
 function isSummary(value: unknown): value is UploadSummary {
   return isRecord(value)
-    && ["total_rows", "validated_fraud", "not_fraud", "needs_review"]
+    && ["total_rows", "corroborated", "below_threshold", "needs_review"]
       .every((field) => typeof value[field] === "number" && Number.isInteger(value[field]) && Number(value[field]) >= 0)
     && Array.isArray(value.top_risk_codes)
     && value.top_risk_codes.every((item) => isRecord(item) && typeof item.code === "string" && typeof item.count === "number");
@@ -228,8 +229,12 @@ function parseEvidence(value: unknown): string[] {
 }
 
 function backendStatus(value: unknown): Transaction["validationStatus"] {
-  if (value === "VALIDATED_FRAUD") return "validated_fraud";
-  if (value === "NOT_FRAUD") return "not_fraud";
+  if (value === "CORROBORATED_SIGNAL" || value === "VALIDATED_FRAUD") return "corroborated";
+  if (value === "BELOW_ALERT_THRESHOLD" || value === "NOT_FRAUD") return "below_threshold";
+  if (value === "QUARANTINED") return "quarantined";
+  if (value === "RETRACTED") return "retracted";
+  if (value === "EXPIRED") return "expired";
+  if (value === "CLEARED") return "cleared";
   return "needs_review";
 }
 
@@ -245,7 +250,7 @@ function requiredNumber(record: Record<string, unknown>, key: string) {
 
 function parseRiskCodes(payload: unknown): RiskCodeReference[] {
   if (!isRecord(payload) || !isRecord(payload.codes)) {
-    throw new Error("The backend returned an invalid fraud standard.");
+    throw new Error("The backend returned an invalid risk standard.");
   }
   return Object.entries(payload.codes).flatMap(([code, value]) => {
     if (!isRecord(value) || typeof value.name !== "string") return [];
@@ -267,6 +272,34 @@ function parseKnowledgeBase(payload: unknown): KnowledgeBaseEntry[] {
       label: requiredString(value, "label"),
       addedBy: requiredString(value, "added_by"),
       addedAt: requiredString(value, "added_at"),
+    }];
+  });
+}
+
+function parseNotifications(payload: unknown): Notification[] {
+  if (!isRecord(payload) || !Array.isArray(payload.notifications)) {
+    throw new Error("The backend returned invalid signal notifications.");
+  }
+  return payload.notifications.flatMap((value) => {
+    if (!isRecord(value) || typeof value.id !== "number") return [];
+    let parsedPayload: Record<string, unknown> = {};
+    if (typeof value.payload === "string") {
+      try {
+        const decoded: unknown = JSON.parse(value.payload);
+        if (isRecord(decoded)) parsedPayload = decoded;
+      } catch {
+        parsedPayload = {};
+      }
+    } else if (isRecord(value.payload)) {
+      parsedPayload = value.payload;
+    }
+    return [{
+      id: value.id,
+      institutionCode: requiredString(value, "institution_code"),
+      eventType: requiredString(value, "event_type"),
+      recordId: requiredString(value, "record_id"),
+      createdAt: requiredString(value, "created_at"),
+      payload: parsedPayload,
     }];
   });
 }
@@ -300,26 +333,33 @@ function transactionFromHistory(
     country: requiredString(row, "channel") || currency,
     amount: `${currency} ${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
     score: Math.round(requiredNumber(row, "validation_score") * 100),
-    flagSource: requiredString(row, "agent_version") || "Kifaru agent",
+    flagSource: requiredString(row, "agent_version") || "Kifaru policy engine",
     validationStatus: status,
     riskCode: {
       code: firstRiskCode,
-      label: riskCodeNames.get(firstRiskCode) ?? "Central fraud signal",
+      label: riskCodeNames.get(firstRiskCode) ?? "Central risk signal",
     },
     evidence: evidence.length ? evidence : [explanation || "No additional evidence recorded."],
     reasonCodes,
     evidenceFields: parseEvidenceFields(row.evidence),
-    action: explanation || (status === "validated_fraud"
-      ? "Validated fraud alert routed to the receiving institution."
-      : "Result retained in the shared validation history."),
+    action: explanation || (status === "corroborated"
+      ? "Corroborated risk alert routed to the receiving institution."
+      : "Signal retained in the shared history."),
     destinationHash: requiredString(row, "destination_account_hash") || requiredString(row, "destination_msisdn_hash"),
     corroboratingInstitutions,
     corroborationCount: requiredNumber(row, "corroboration_count") || corroboratingInstitutions.length,
+    lifecycleState: (["active", "quarantined", "retracted", "expired", "cleared"]
+      .includes(requiredString(row, "lifecycle_state"))
+      ? requiredString(row, "lifecycle_state") : undefined) as Transaction["lifecycleState"],
+    expiresAt: requiredString(row, "expires_at") || undefined,
     alertId: requiredString(row, "alert_id") || undefined,
-    alertState: (["sent", "acknowledged", "actioned", "disputed"].includes(requiredString(row, "alert_state"))
+    alertState: (["sent", "acknowledged", "actioned", "disputed", "retracted"].includes(requiredString(row, "alert_state"))
       ? requiredString(row, "alert_state") : undefined) as Transaction["alertState"],
-    alertType: (["hold", "advisory"].includes(requiredString(row, "alert_type"))
+    alertType: (["review", "advisory"].includes(requiredString(row, "alert_type"))
       ? requiredString(row, "alert_type") : undefined) as Transaction["alertType"],
+    alertOutcome: (["held", "released", "recovered"].includes(requiredString(row, "alert_outcome"))
+      ? requiredString(row, "alert_outcome") : undefined) as Transaction["alertOutcome"],
+    alertOutcomeNote: requiredString(row, "outcome_note") || undefined,
   };
 }
 
@@ -328,10 +368,13 @@ export async function loadDashboardData(
   access: { scope: PortalScope; institutionCode: string },
   signal?: AbortSignal,
 ): Promise<DashboardData> {
-  const [institutionsPayload, standardPayload, knowledgePayload] = await Promise.all([
+  const historyInstitution = access.scope === "exchange" ? "*" : access.institutionCode;
+  const institutionQuery = encodeURIComponent(historyInstitution);
+  const [institutionsPayload, standardPayload, knowledgePayload, notificationsPayload] = await Promise.all([
     fetchJson("/api/v1/institutions", { signal }),
     fetchJson("/api/v1/standard", { signal }),
     fetchJson("/api/v1/admin/kb", { signal }),
+    fetchJson(`/api/v1/notifications?institution=${institutionQuery}&limit=20`, { signal }),
   ]);
   if (!Array.isArray(institutionsPayload)) {
     throw new Error("The backend returned an invalid institution list.");
@@ -351,9 +394,8 @@ export async function loadDashboardData(
     && !banks.some((item) => item.backendCode === access.institutionCode)) {
     throw new Error("The authenticated institution is not available in this workspace.");
   }
-  const historyInstitution = access.scope === "exchange" ? "*" : access.institutionCode;
   const historyPayload = await fetchJson(
-    `/api/v1/history?institution=${encodeURIComponent(historyInstitution)}&limit=2000`,
+    `/api/v1/history?institution=${institutionQuery}&limit=2000`,
     { signal },
   );
   const rows = new Map<string, Record<string, unknown>>();
@@ -378,6 +420,7 @@ export async function loadDashboardData(
     transactions,
     riskCodes,
     knowledgeBaseEntries: parseKnowledgeBase(knowledgePayload),
+    notifications: parseNotifications(notificationsPayload),
   };
 }
 
@@ -470,11 +513,26 @@ export async function decideUserAccessRequest(
 export async function updateAlertState(
   alertId: string,
   state: "acknowledged" | "actioned" | "disputed",
+  outcome: "" | "held" | "released" | "recovered" = "",
   comment = "",
   signal?: AbortSignal,
 ) {
   await fetchJson(`/api/v1/alerts/${encodeURIComponent(alertId)}/state`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ state, outcome, comment }),
+    signal,
+  });
+}
+
+export async function updateReportLifecycle(
+  reportId: string,
+  state: "retracted" | "expired",
+  comment: string,
+  signal?: AbortSignal,
+) {
+  await fetchJson(`/api/v1/reports/${encodeURIComponent(reportId)}/lifecycle`, {
+    method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ state, comment }),
     signal,
@@ -503,6 +561,7 @@ function parseDemoStream(payload: unknown): DemoStreamStatus {
       createdAt: requiredString(value, "created_at"),
     }];
   });
+  const metrics = isRecord(payload.metrics) ? payload.metrics : {};
   return {
     enabled: payload.enabled === true,
     cadenceSeconds: requiredNumber(payload, "cadence_seconds"),
@@ -515,6 +574,46 @@ function parseDemoStream(payload: unknown): DemoStreamStatus {
     topic: requiredString(payload, "topic"),
     datasetBasis: requiredString(payload, "dataset_basis"),
     events,
+    metrics: {
+      signals: requiredNumber(metrics, "signals"),
+      corroborated: requiredNumber(metrics, "corroborated"),
+      awaiting: requiredNumber(metrics, "awaiting"),
+      belowPolicy: requiredNumber(metrics, "below_policy"),
+      quarantined: requiredNumber(metrics, "quarantined"),
+      alerts: requiredNumber(metrics, "alerts"),
+      acknowledged: requiredNumber(metrics, "acknowledged"),
+      actioned: requiredNumber(metrics, "actioned"),
+      disputed: requiredNumber(metrics, "disputed"),
+      retracted: requiredNumber(metrics, "retracted"),
+      actionedValue: requiredNumber(metrics, "actioned_value"),
+      p95LatencyMs: requiredNumber(metrics, "p95_latency_ms"),
+    },
+  };
+}
+
+function parseGuidedDemo(payload: unknown): GuidedDemoStatus {
+  if (!isRecord(payload)) {
+    throw new Error("The backend returned an invalid guided scenario state.");
+  }
+  const status = requiredString(payload, "status");
+  if (!["ready", "running", "completed", "failed"].includes(status)) {
+    throw new Error("The guided scenario returned an unknown state.");
+  }
+  return {
+    runId: requiredString(payload, "run_id"),
+    step: requiredNumber(payload, "step"),
+    status: status as GuidedDemoStatus["status"],
+    firstReportId: requiredString(payload, "first_report_id"),
+    secondReportId: requiredString(payload, "second_report_id"),
+    alertId: requiredString(payload, "alert_id"),
+    error: requiredString(payload, "error"),
+    updatedAt: requiredString(payload, "updated_at"),
+    reportingInstitutionA: requiredString(payload, "reporting_institution_a"),
+    reportingInstitutionAName: requiredString(payload, "reporting_institution_a_name"),
+    reportingInstitutionB: requiredString(payload, "reporting_institution_b"),
+    reportingInstitutionBName: requiredString(payload, "reporting_institution_b_name"),
+    receivingInstitution: requiredString(payload, "receiving_institution"),
+    receivingInstitutionName: requiredString(payload, "receiving_institution_name"),
   };
 }
 
@@ -537,6 +636,24 @@ export async function emitDemoStreamEvent(signal?: AbortSignal) {
 
 export async function resetDemoStream(signal?: AbortSignal) {
   return parseDemoStream(await fetchJson("/api/v1/admin/demo-stream/reset", {
+    method: "POST",
+    signal,
+  }));
+}
+
+export async function loadGuidedDemo(signal?: AbortSignal) {
+  return parseGuidedDemo(await fetchJson("/api/v1/admin/guided-demo", { signal }));
+}
+
+export async function advanceGuidedDemo(signal?: AbortSignal) {
+  return parseGuidedDemo(await fetchJson("/api/v1/admin/guided-demo/advance", {
+    method: "POST",
+    signal,
+  }));
+}
+
+export async function resetGuidedDemo(signal?: AbortSignal) {
+  return parseGuidedDemo(await fetchJson("/api/v1/admin/guided-demo/reset", {
     method: "POST",
     signal,
   }));

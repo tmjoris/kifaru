@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -277,14 +276,14 @@ func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
 		{
 			eventType: "beneficiary_change_high_value", alertName: "New beneficiary followed by high-value transfer",
 			severity:  "Medium",
-			riskCodes: []string{"BEN-450", "ATO-461"}, amount: 126000, channel: "internet_banking",
+			riskCodes: []string{"BEN-450", "ATO-460"}, amount: 126000, channel: "internet_banking",
 			tactics: []string{"CredentialAccess"}, techniques: []string{"T1078"},
 			evidence: map[string]any{"is_new_device": true, "is_new_beneficiary": true, "beneficiary_age_minutes": 12},
 		},
 		{
 			eventType: "credential_change_advisory", alertName: "Credential reset from an unfamiliar device on a foreign network",
 			severity:  "Medium",
-			riskCodes: []string{"ATO-460", "ATO-461"}, amount: 0, channel: "mobile_app",
+			riskCodes: []string{"IP-401", "IP-404", "ATO-461"}, amount: 0, channel: "mobile_app",
 			tactics: []string{"Persistence", "CredentialAccess"}, techniques: []string{"T1098"},
 			evidence: map[string]any{"is_new_device": true, "credential_changed": true, "transaction_attempted": false, "ip_country_changed": true},
 		},
@@ -293,7 +292,10 @@ func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
 			severity:  "Low",
 			riskCodes: []string{"BEN-450"}, amount: 9400, channel: "mobile_banking",
 			tactics: []string{"Discovery"}, techniques: []string{"T1087"},
-			evidence: map[string]any{"account_age_days": 1450, "distinct_senders_7d": 1, "known_customer_pattern": true},
+			evidence: map[string]any{
+				"account_age_days": 1450, "distinct_senders_7d": 1,
+				"known_customer_pattern": true, "is_new_beneficiary": true,
+			},
 		},
 		{
 			eventType: "device_network_switch", alertName: "New device and new network before a transfer to a fresh beneficiary",
@@ -317,7 +319,7 @@ func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
 	if selected.switchesDevice {
 		deviceSeed = fmt.Sprintf("device:%d:%d", campaign, phase)
 	}
-	deviceProfile := "dp:" + strings.TrimPrefix(demoHash(deviceSeed), "sha256:")[:20]
+	deviceProfile := demoHash(deviceSeed)
 	evidence := map[string]any{
 		"synthetic_stream": true,
 		"dataset_basis":    "Microsoft Sentinel public schemas and PaySim-informed transaction patterns",
@@ -403,6 +405,47 @@ func (a *App) demoStreamSnapshot(ctx context.Context) (map[string]any, error) {
 	state["events"] = events
 	state["topic"] = "sentinel.security-alert"
 	state["dataset_basis"] = "Microsoft Sentinel public schemas and PaySim-informed synthetic transactions"
+	var signals, corroborated, awaiting, belowPolicy, quarantined int
+	if err := a.db.QueryRow(ctx, `SELECT
+		COUNT(*),
+		COUNT(*) FILTER (WHERE v.status=$1),
+		COUNT(*) FILTER (WHERE v.status=$2),
+		COUNT(*) FILTER (WHERE v.status=$3),
+		COUNT(*) FILTER (WHERE r.lifecycle_state=$4)
+		FROM reports r
+		LEFT JOIN validations v ON v.report_id=r.report_id AND v.is_current=1`,
+		statusCorroborated, statusAwaiting, statusBelow, lifecycleQuarantined).
+		Scan(&signals, &corroborated, &awaiting, &belowPolicy, &quarantined); err != nil {
+		return nil, err
+	}
+	var alerts, acknowledged, actioned, disputed, retracted int
+	var actionedValue, p95Latency float64
+	if err := a.db.QueryRow(ctx, `SELECT
+		COUNT(*),
+		COUNT(*) FILTER (WHERE state IN ('acknowledged','actioned')),
+		COUNT(*) FILTER (WHERE state='actioned'),
+		COUNT(*) FILTER (WHERE state='disputed'),
+		COUNT(*) FILTER (WHERE state='retracted'),
+		COALESCE(SUM(amount) FILTER (WHERE state='actioned'),0)
+		FROM alerts`).Scan(
+		&alerts, &acknowledged, &actioned, &disputed, &retracted, &actionedValue,
+	); err != nil {
+		return nil, err
+	}
+	if err := a.db.QueryRow(ctx, `SELECT COALESCE(
+		PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms),0
+	) FROM validations
+	WHERE is_current=1 AND status IN ($1,$2,$3)`,
+		statusCorroborated, statusAwaiting, statusBelow).Scan(&p95Latency); err != nil {
+		return nil, err
+	}
+	state["metrics"] = map[string]any{
+		"signals": signals, "corroborated": corroborated, "awaiting": awaiting,
+		"below_policy": belowPolicy, "quarantined": quarantined,
+		"alerts": alerts, "acknowledged": acknowledged, "actioned": actioned,
+		"disputed": disputed, "retracted": retracted,
+		"actioned_value": actionedValue, "p95_latency_ms": p95Latency,
+	}
 	return state, nil
 }
 

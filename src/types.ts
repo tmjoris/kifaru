@@ -1,6 +1,7 @@
 export type PortalScope = "institution" | "exchange";
 export type Tab = "outgoing" | "incoming" | "history" | "reports" | "knowledge" | "governance";
-export type Outcome = "validated_fraud" | "not_fraud" | "needs_review";
+export type Outcome = "corroborated" | "below_threshold" | "needs_review"
+  | "quarantined" | "retracted" | "expired" | "cleared";
 export type InstitutionKind = "bank" | "mortgage" | "sacco" | "psp";
 export interface Session {
   scope: PortalScope;
@@ -81,9 +82,13 @@ export interface Transaction {
   /** Other institutions whose own reports shared this same fingerprint. */
   corroboratingInstitutions: string[];
   corroborationCount: number;
+  lifecycleState?: "active" | "quarantined" | "retracted" | "expired" | "cleared";
+  expiresAt?: string;
   alertId?: string;
-  alertState?: "sent" | "acknowledged" | "actioned" | "disputed";
-  alertType?: "hold" | "advisory";
+  alertState?: "sent" | "acknowledged" | "actioned" | "disputed" | "retracted";
+  alertType?: "review" | "advisory";
+  alertOutcome?: "held" | "released" | "recovered";
+  alertOutcomeNote?: string;
 }
 export interface Validation {
   transaction_id: string;
@@ -105,10 +110,18 @@ export interface Validation {
 }
 export interface UploadSummary {
   total_rows: number;
-  validated_fraud: number;
-  not_fraud: number;
+  corroborated: number;
+  below_threshold: number;
   needs_review: number;
   top_risk_codes: { code: string; count: number }[];
+}
+export interface Notification {
+  id: number;
+  institutionCode: string;
+  eventType: string;
+  recordId: string;
+  createdAt: string;
+  payload: Record<string, unknown>;
 }
 export interface RiskCodeReference {
   code: string;
@@ -147,10 +160,41 @@ export interface DemoStreamStatus {
   topic: string;
   datasetBasis: string;
   events: DemoStreamEvent[];
+  metrics: {
+    signals: number;
+    corroborated: number;
+    awaiting: number;
+    belowPolicy: number;
+    quarantined: number;
+    alerts: number;
+    acknowledged: number;
+    actioned: number;
+    disputed: number;
+    retracted: number;
+    actionedValue: number;
+    p95LatencyMs: number;
+  };
+}
+export interface GuidedDemoStatus {
+  runId: string;
+  step: number;
+  status: "ready" | "running" | "completed" | "failed";
+  firstReportId: string;
+  secondReportId: string;
+  alertId: string;
+  error: string;
+  updatedAt: string;
+  reportingInstitutionA: string;
+  reportingInstitutionAName: string;
+  reportingInstitutionB: string;
+  reportingInstitutionBName: string;
+  receivingInstitution: string;
+  receivingInstitutionName: string;
 }
 export interface DashboardData {
   banks: Bank[];
   transactions: Transaction[];
   riskCodes: RiskCodeReference[];
   knowledgeBaseEntries: KnowledgeBaseEntry[];
+  notifications: Notification[];
 }

@@ -69,31 +69,31 @@ const RISK_CODES: Record<string, Explanation> = {
     detail: "Login details were changed during an unusual session, often the first step of an account takeover.",
   },
   "GEN-400": {
-    title: "General fraud signal",
-    detail: "The institution flagged this activity, but it does not fit a more specific category.",
+    title: "General risk signal",
+    detail: "The institution flagged this activity, but it does not fit a more specific shared-policy category.",
   },
 };
 
 const REASONS: Record<string, Explanation> = {
   "CORRO:destination": {
     title: "Another institution reported the same receiving account",
-    detail: "Two institutions flagging the same account independently is strong evidence of fraud.",
+    detail: "The protected destination matched an active report from another institution.",
   },
   "CORRO:msisdn": {
     title: "Another institution reported the same receiving phone number",
-    detail: "Two institutions flagging the same number independently is strong evidence of fraud.",
+    detail: "The protected mobile-money number matched an active report from another institution.",
   },
   "CORRO:device_profile": {
     title: "Another institution saw the same device",
-    detail: "The same phone or computer appeared in fraud reports at different institutions.",
+    detail: "The protected device fingerprint appeared in active reports from different institutions.",
   },
   "KB:known_bad": {
-    title: "The receiving account is already on the fraud list",
-    detail: "It was confirmed as fraudulent in an earlier case.",
+    title: "The receiving account is on the managed risk list",
+    detail: "An authorized operator added this protected identifier to a manually managed list.",
   },
   "KB:known_bad_msisdn": {
-    title: "The receiving phone number is already on the fraud list",
-    detail: "It was confirmed as fraudulent in an earlier case.",
+    title: "The receiving phone number is on the managed risk list",
+    detail: "An authorized operator added this protected identifier to a manually managed list.",
   },
   "KB:suppressed_legitimate": {
     title: "The receiving account is on the trusted list",
@@ -101,20 +101,24 @@ const REASONS: Record<string, Explanation> = {
   },
   "BANK:above_threshold": {
     title: "The reporting institution's own system rated it high risk",
-    detail: "Its fraud score passed that institution's alert threshold.",
+    detail: "Its risk score passed that institution's alert threshold.",
   },
   "LINK:device_switch": {
     title: "Same receiving account, different device",
-    detail: "Another institution reported this account from a different device, which fits a fraudster switching phones to avoid detection.",
+    detail: "Another institution reported this account from a different device. This links submitted artefacts but does not identify the person involved.",
   },
 };
 
 const REASON_ORDER = ["CODE", "CORRO", "LINK", "KB", "BANK"];
 
 export const STATUS_HELP: Record<string, string> = {
-  validated_fraud: "Kifaru confirmed this as fraud and alerted the institution receiving the money.",
-  needs_review: "Not enough evidence yet. Kifaru is waiting for another institution to report the same account.",
-  not_fraud: "The evidence did not meet the fraud standard, so no alert was sent.",
+  corroborated: "The signal met policy and matched an eligible active report from another institution.",
+  needs_review: "The signal remains active while Kifaru waits for qualified independent corroboration.",
+  below_threshold: "The signal did not meet the shared alert policy, so no receiving-institution alert was sent.",
+  quarantined: "The signal is isolated while a receiving institution's dispute is reviewed.",
+  retracted: "The reporting institution withdrew this signal from active corroboration.",
+  expired: "The signal reached the end of its active retention period.",
+  cleared: "The receiving institution cleared the activity after review.",
 };
 
 export const ALERT_STATE_HELP: Record<string, string> = {
@@ -122,13 +126,14 @@ export const ALERT_STATE_HELP: Record<string, string> = {
   acknowledged: "Acknowledged by the receiving institution",
   actioned: "Actioned by the receiving institution",
   disputed: "Disputed by the receiving institution",
+  retracted: "Retracted after the underlying corroboration changed",
 };
 
 /** Plain title and explanation for a risk code such as ATO-460. */
 export function riskCodeInfo(code: string, fallbackName = ""): Explanation {
   return RISK_CODES[code] ?? {
     title: fallbackName || code,
-    detail: fallbackName ? `${fallbackName}.` : "A fraud signal from the central standard.",
+    detail: fallbackName ? `${fallbackName}.` : "A risk signal from the shared policy standard.",
   };
 }
 
@@ -143,7 +148,7 @@ export function explainReasons(reasons: string[]): ReasonExplanation[] {
     return index === -1 ? REASON_ORDER.length : index;
   };
   return [...new Set(reasons)]
-    .filter((reason) => reason.includes(":"))
+    .filter((reason) => reason.includes(":") && !reason.startsWith("LIFECYCLE:"))
     .sort((a, b) => rank(a) - rank(b))
     .map((reason) => {
       const [kind, value = ""] = reason.split(":");
@@ -178,6 +183,7 @@ export function describeEvidence(fields: Record<string, unknown>): string[] {
     switch (key) {
       case "synthetic_stream":
       case "dataset_basis":
+      case "guided_demo":
         break;
       case "sentinel_security_alert":
         if (value && typeof value === "object" && typeof (value as Record<string, unknown>).AlertName === "string") {

@@ -1,14 +1,14 @@
 # Kifaru
 
-Kifaru is a shared fraud-validation platform for Kenyan financial institutions.
-It receives fraud signals that banks, SACCOs and payment providers have already
-detected, checks them against a common risk standard, looks for corroboration
-from other institutions and alerts the institution that can still stop the
-money.
+Kifaru is a synthetic concept demonstration of a protected risk-signal exchange
+for Kenyan financial institutions. Its primary job is to show how two
+institutions could report the same beneficiary or mule-risk indicator, how that
+independent match could be routed to the institution receiving the funds, and
+how the receiver could record its own decision.
 
-Kifaru does not replace an institution's fraud system and does not block
-payments. It gives the receiving institution timely, explainable evidence so
-its own staff can decide what to do.
+Kifaru does not identify a human fraudster, confirm fraud, block a payment, or
+replace an institution's fraud system. It links protected artefacts and preserves
+institution decision authority.
 
 **Live application:** https://kifarulive.onrender.com
 
@@ -16,634 +16,312 @@ its own staff can decide what to do.
 
 **API health:** https://kifaru-api.onrender.com/health
 
-## Project status
+All reports, alerts, connector states, outcomes, and metrics shown in the
+application are synthetic. Institution names are used for demonstration only;
+no named institution has supplied, reviewed, participated in, or endorsed the
+records shown.
 
-The application is a deployed school-project prototype built with synthetic
-data. The core validation flow, PostgreSQL persistence, institution dashboards,
-cross-institution matching, automatic revalidation, alert lifecycle and
-continuous integration are implemented.
+## Demonstrated objective
 
-Demo sign-in is enforced by the Go API. Passwords are verified with bcrypt,
-sessions are stored in PostgreSQL, and every protected route checks the user's
-role and assigned institution. This is real authentication for the pitch
-environment, but it is not a replacement for a production identity provider,
-MFA or bank-managed access governance.
+The focused use case is cross-institution beneficiary and mule-risk
+intelligence:
 
-### Starting code
+1. An institution's existing controls detect suspicious activity.
+2. The institution submits structured evidence and protected identifiers.
+3. Kifaru validates the evidence contract and applies a deterministic policy.
+4. A signal remains active but does not alert a receiver until it has a
+   qualified match from another institution.
+5. When the policy and corroboration requirements are met, Kifaru routes a
+   review alert to the destination institution.
+6. The receiving institution acknowledges the alert and records `held`,
+   `released`, or `recovered` as its own outcome.
+7. Retraction, dispute, release, or expiry removes a signal from active
+   corroboration and recalculates linked intelligence.
 
-The first two commits, `fa432c5` ("starting") and `81aeba3` ("separated the
-dashboards"), were pushed by GitHub user `bsylvia24-png` on 29 and 30 September
-2026. They add the starting prototype: a FastAPI backend, the synthetic
-datasets and scripts, and the first React dashboard. Every later commit is by
-`tmjoris`, beginning with the move of the backend to Go and Neon PostgreSQL.
+The interface makes this route visible:
 
-## What the system does
-
-1. An institution submits a suspected fraud report through REST, webhook,
-   SOC-style connector, batch JSON or CSV.
-2. Kifaru rejects clear identifiers and reports that contain no recognised
-   risk code.
-3. Institution rule IDs and behavioural evidence are mapped to the central
-   Kifaru fraud standard.
-4. A deterministic validator scores the report using risk severity,
-   corroboration, knowledge-base matches and the institution's threshold.
-5. The report receives one outcome:
-   `VALIDATED_FRAUD`, `INSUFFICIENT_EVIDENCE` or `NOT_FRAUD`.
-6. Only validated fraud produces an alert for the destination institution.
-7. A new matching report automatically causes earlier weak reports to be
-   evaluated again.
-8. Connected dashboards receive new alerts through Server-Sent Events.
-9. Analysts can acknowledge, action or dispute alerts. A dispute requires a
-   comment and creates a notification for the reporting institution.
-
-## Users and workspaces
-
-### Institution staff
-
-Institution staff sign in at `/`. A bank is not permanently classified as a
-"reporting bank" or a "receiving bank". Those are roles in a particular report.
-Every institution workspace therefore contains:
-
-- Flags submitted
-- Alerts received
-- Related history
-- Reports and risk-code analysis
-- Knowledge-base information
-- Institution governance and threshold settings
-
-The ecosystem includes every licensed bank in Kenya: the 37 commercial banks
-and HFC, the one mortgage finance institution. The list comes from the
-Kenya Deposit Insurance Corporation's member institutions (membership is
-compulsory for every licensed bank), cross-checked against the Central Bank of
-Kenya's July 2026 directory, and lives in `backend/data/kenyan_banks.json`.
-The API and the dashboard both read that one file. The directory also includes
-Kenya's two largest mobile money providers, M-Pesa (Safaricom PLC) and Airtel
-Money (Airtel Money Kenya Limited), where stolen funds are often cashed out.
-
-The names are real. Every report, alert, connector detail and event shown
-for them is synthetic, generated by Kifaru for the demonstration. No institution
-has supplied, reviewed or endorsed any of it, and the sign-in screen and every
-workspace header say so.
-
-The authenticated institution selector covers all 38 licensed banks, M-Pesa and
-Airtel Money. Every directory participant has six working demonstration
-accounts: one institution-specific identity and the same five reusable Kenyan
-demo identities. All are listed in the local ignored `demo-credentials.txt`.
-Dense transaction tables prioritise decision fields on briefing-sized desktop
-screens and switch to labelled record cards on mobile. Full provenance and
-customer-reference details remain available in each investigation drawer.
-
-### Kifaru staff
-
-Kifaru staff use `/staff`. This route does not ask for an institution. It opens
-the ecosystem view of shared fingerprints, cross-institution matches and
-participating institutions.
-
-## Demo authentication
-
-The browser never decides which institution a person may view. A successful
-login creates an opaque random session token, stores only its SHA-256 digest in
-PostgreSQL and binds it to a user with either an institution or staff role.
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant UI as React sign-in
-    participant API as Go authentication API
-    participant DB as PostgreSQL
-
-    User->>UI: Enter work email and password
-    UI->>API: POST /v1/auth/login
-    API->>DB: Load account and bcrypt password hash
-    API->>API: Verify password and institution assignment
-    API->>DB: Store hashed random session token and expiry
-    API-->>UI: Session token, CSRF token and authorised role
-    UI->>API: Authenticated API and event-stream requests
-    API->>DB: Resolve session and enforce role or institution
-    API-->>UI: Only authorised records
+```text
+reporting institution
+        \
+         protected beneficiary indicator --> receiving institution --> recorded outcome
+        /
+corroborating institution
 ```
 
-Authentication controls include:
+The relationship map links submitted artefacts, not people. A matching account,
+mobile-money number, or device fingerprint can support an investigation, but it
+does not establish that the same human controlled every event.
 
-- Bcrypt password verification; plaintext passwords are never stored in the
-  repository or database
-- Five-minute account lockout after five failed password attempts
-- Eight-hour browser sessions, or seven days when **Keep me signed in** is used
-- Opaque bearer sessions whose stored database value is a one-way digest
-- CSRF tokens on state-changing browser requests
-- Institution users restricted to their assigned institution
-- Alert actions restricted to the receiving institution
-- Staff-only access to global statistics, audit history, knowledge-base writes,
-  manual revalidation and synthetic-stream controls
-- Authenticated live-event streaming with automatic reconnection
-- Login and logout entries in the append-only audit history
+## Product surfaces
 
-The 240 institution accounts and the Kifaru staff account all use the same local
-demonstration password. Their complete details are kept in
-`demo-credentials.txt`, which is deliberately ignored by Git. Do not reuse those
-credentials for any real service. Generated addresses use clean institution
-domains such as `lucynaserian@airtel.co.ke`; names are concatenated without `.`,
-`+` or `-` separators. These remain synthetic demonstration identities.
+### Institution workspace
 
-### Institution user admission
+Institution staff sign in at `/`. The API binds every session to one
+institution and limits the workspace to related records.
 
-An authenticated institution user can request another account from the
-**Governance** tab by entering only an alias such as `janekamau`. The API takes
-the institution from the authenticated session and appends its configured demo
-domain, so the browser cannot choose a different tenant or email domain. Kifaru
-staff review the resulting queue in `/staff`.
+The workspace provides:
 
-```mermaid
-sequenceDiagram
-    actor Requester as Institution user
-    actor Staff as Kifaru staff
-    participant UI as React workspace
-    participant API as Go admission API
-    participant DB as PostgreSQL
+- Signals submitted by the institution
+- Corroborated alerts received by the institution
+- Related signal history
+- Policy score and evidence explanations
+- Receiving-institution outcomes
+- Reporter-controlled signal retraction
+- Notifications when shared intelligence changes
+- Risk-code reports and masked knowledge-base entries
+- Institution threshold controls
+- Alias-only user admission requests
 
-    Requester->>UI: Enter alias only
-    UI->>API: POST /v1/user-requests { alias }
-    API->>DB: Resolve authenticated institution
-    API->>API: Validate alias and append institution domain
-    API->>DB: Store pending request and audit event
-    Staff->>API: GET /v1/user-requests
-    API-->>Staff: Ecosystem admission queue
-    Staff->>API: PATCH /v1/admin/user-requests/{id}
-    API->>DB: Lock pending request and recheck email uniqueness
-    API->>DB: Create tenant-bound user, approve request and audit atomically
-    API-->>Staff: Admission confirmed
-    Requester->>API: Sign in with admitted account
-```
+### Kifaru staff workspace
 
-Pending duplicates are rejected. A rejected alias can be corrected and
-resubmitted, while approved requests cannot be decided or submitted again.
-Approved accounts use the shared pitch-demo password already documented in the
-ignored credential file. A production deployment should replace that shortcut
-with bank-managed SSO, an activation link, or a secure temporary-password
-delivery and reset flow.
+Kifaru staff sign in at `/staff`. The staff view provides:
 
-## The visibility gap Kifaru closes
+- Ecosystem-wide synthetic signal history
+- The protected-indicator relationship map
+- A deterministic guided campaign
+- The continuous Sentinel-shaped synthetic stream
+- Honest operational counts and policy latency
+- Institution user-admission decisions
+- Stream and guided-scenario reset controls
 
-One institution can identify a compromised customer while every downstream
-participant sees only a normal-looking transfer. Kifaru connects those partial
-views without moving raw customer identifiers outside each institution.
+The directory represents 37 commercial banks, HFC as the mortgage finance
+institution, M-Pesa, and Airtel Money. Representation in the directory does not
+mean operational participation.
 
-```mermaid
-flowchart LR
-    Customer["Compromised customer"]
-    BankA["Bank A<br/>detects account takeover"]
-    BankB["Bank B<br/>receives the transfer"]
-    Wallet["Payment provider<br/>sees a wallet credit"]
-    Cashout["Cash-out point"]
+## Guided campaign
 
-    BankA -.->|"protected fraud signal"| Kifaru["Kifaru<br/>shared validation"]
-    BankB -.->|"matching protected artefact"| Kifaru
-    Kifaru ==>|"corroborated alert"| BankB
+The guided campaign is a deterministic NCBA → KCB → Equity Bank scenario built
+for a reliable presentation flow:
 
-    Customer --> BankA
-    BankA -->|"transfer"| BankB
-    BankB -->|"forward"| Wallet
-    Wallet -->|"withdrawal"| Cashout
-```
+1. **First report:** NCBA publishes a synthetic protected beneficiary signal.
+   It remains `AWAITING_CORROBORATION`.
+2. **Independent match:** KCB reports the same destination token, scoped to the
+   same receiving institution. Both reports are recalculated and meet policy.
+3. **Alert delivery:** Kifaru routes a `review` alert to Equity Bank.
+4. **Receiver outcome:** the receiver acknowledges the alert and records a
+   synthetic review hold.
 
-The transaction still moves through institution-owned systems. Kifaru adds the
-shared evidence needed for the receiving institution to recognise the wider
-campaign and decide whether to hold or investigate the funds.
+Reset removes the guided reports, validations, alerts, actions, notifications,
+and artefacts while leaving immutable audit history intact.
 
-## System context
+## Signal outcomes
 
-```mermaid
-flowchart LR
-    FraudSystem["Institution fraud system"]
-    Analyst["Institution analyst"]
-    KifaruStaff["Kifaru staff"]
-    Kifaru["Kifaru platform"]
-    Database[("Neon PostgreSQL")]
-    BankSystem["Institution payment system"]
+Kifaru uses explicit signal and lifecycle states:
 
-    FraudSystem -->|"Hashed fraud report"| Kifaru
-    Analyst -->|"Review alerts and record decisions"| Kifaru
-    KifaruStaff -->|"Monitor shared signals"| Kifaru
-    Kifaru -->|"Reports, validations, alerts and audit"| Database
-    Kifaru -->|"Advisory or hold recommendation"| Analyst
-    Analyst -->|"Human decision outside Kifaru"| BankSystem
-```
+| Backend state | Interface label | Meaning |
+|---|---|---|
+| `CORROBORATED_SIGNAL` | Corroborated signal | Meets policy and has an eligible independent institution match |
+| `AWAITING_CORROBORATION` | Awaiting corroboration | Active evidence exists, but no qualifying match or alert threshold has been reached |
+| `BELOW_ALERT_THRESHOLD` | Below alert policy | Retained without a receiving-institution alert |
+| `QUARANTINED` | Quarantined | A receiving institution disputed the source alert |
+| `RETRACTED` | Retracted | The reporting institution withdrew the signal |
+| `EXPIRED` | Expired | The active retention period ended |
+| `CLEARED` | Cleared after review | The receiver released the activity after review |
 
-Customer names, raw account numbers, raw phone numbers and hashing secrets stay
-inside the participating institution. Kifaru receives protected identifiers,
-amounts, institution codes, rule IDs and supporting evidence.
+Only `CORROBORATED_SIGNAL` creates a new receiver alert. Inactive lifecycle
+states cannot support another report.
 
-## Deployed architecture
+## Qualified corroboration
 
-The original design proposed FastAPI. The implementation uses Go instead. The
-framework changed, but the important design properties remain: one stateless API,
-one PostgreSQL database, deterministic scoring and a React dashboard.
+A match contributes to corroboration only when all of these conditions hold:
 
-```mermaid
-flowchart TB
-    Browser["Browser\nReact 19 + TypeScript"]
-    Static["Render static service\nkifarulive"]
-    API["Render Go web service\nkifaru-api"]
-    Neon[("Neon PostgreSQL")]
-    GitHub["GitHub repository"]
-    Actions["GitHub Actions\nNode + Go + PostgreSQL"]
+- It was reported by a different institution.
+- The prior report is active and unexpired.
+- The prior report's current state is awaiting or corroborated.
+- Artefact type, protected hash, and match scope agree.
+- The prior report falls within the configured matching window.
 
-    GitHub -->|"Auto-deploy main"| Static
-    GitHub -->|"Auto-deploy main"| API
-    GitHub --> Actions
-    Browser --> Static
-    Browser -->|"Authenticated HTTPS JSON + event stream"| API
-    API -->|"Pooled PostgreSQL connection"| Neon
-```
+Destination-account and destination-MSISDN hashes are scoped to the receiving
+institution. The same account-number string at two different banks therefore
+does not match. Device fingerprints are treated as ecosystem-wide protected
+artefacts in this demonstration.
 
-The frontend and API are deployed separately. `VITE_API_URL` supplies the API
-hostname during the frontend build. Render provides HTTPS for both services.
+One reporting institution contributes at most once to a report's corroboration
+count. The demonstration verifies institutional separation; it does not prove
+that two institutions relied on independent vendors, telemetry, or underlying
+data sources.
 
-## Backend processing pipeline
+## Evidence contract and policy
 
-The core write path runs inside one PostgreSQL transaction. A report,
-validation, alert, artefacts, knowledge-base update and audit records either
-commit together or roll back together.
+The Go API rejects:
 
-```mermaid
-sequenceDiagram
-    participant I as Institution system
-    participant A as Go API
-    participant D as PostgreSQL
-    participant R as Receiving dashboard
+- Unknown risk codes or bank rule IDs
+- Risk codes without their required evidence fields
+- Clear customer, account, mobile-number, or device identifiers
+- Protected identifiers that are not `sha256:` plus 64 lowercase hexadecimal
+  characters
+- Unknown destination institutions
+- Invalid timestamps, amounts, scores, or thresholds
+- Narratives longer than 500 characters
+- Narratives that appear to contain an email, Kenyan phone number, or long
+  account-like number
 
-    I->>A: Submit protected fraud report
-    A->>A: Validate contract and hash boundary
-    A->>D: Begin transaction
-    A->>D: Check institution and retry key
-    A->>A: Normalise risk codes
-    A->>D: Find corroborating artefacts
-    A->>A: Compute deterministic score
-    A->>D: Store report and indexed artefacts
-    A->>D: Store current validation and audit record
-    alt Validated fraud
-        A->>D: Store alert and initial alert action
-        A->>D: Add destination hash to known-bad list
-    end
-    A->>D: Revalidate earlier matching weak reports
-    A->>D: Commit transaction
-    A-->>I: Report ID, status, score and reasons
-    A-->>R: Server-Sent Event for committed alert
-```
+The reporting threshold is loaded from server-side institution configuration;
+the submitted value is not trusted.
 
-### Retry safety
-
-`(reporting_institution, transaction_ref)` is unique. Repeating a submission
-returns the original report rather than inserting a duplicate. The first
-pipeline migration removes duplicate replay data before installing this
-constraint.
-
-### Automatic revalidation
-
-Artefacts are indexed by protected hash and observation time. Matching is
-limited to reports from other institutions within the 30-day prototype window.
-
-```mermaid
-flowchart TD
-    New["New report stores artefact"]
-    Match{"Same protected hash from\nanother institution?"}
-    Prior["Find current weak validations"]
-    Score["Score each prior report again"]
-    Changed{"Now validated fraud?"}
-    Replace["Mark old validation historical\nand store replacement"]
-    Alert["Create receiving-institution alert"]
-    History["Keep replacement result in history"]
-
-    New --> Match
-    Match -- No --> History
-    Match -- Yes --> Prior --> Score --> Replace --> Changed
-    Changed -- Yes --> Alert
-    Changed -- No --> History
-```
-
-Every replacement validation points to the validation it supersedes. Only one
-validation per report is marked current.
-
-## Validation model
-
-Scoring is deterministic and implemented with named constants in the Go API:
+Scoring is deterministic:
 
 | Input | Weight |
 |---|---:|
 | Risk-code severity | `severity × 0.50` |
-| Each corroborating institution | `+0.18`, capped at three |
-| Known-bad match | `+0.30` |
-| Known-good match | `-0.55` |
-| Institution score above its threshold | `+0.10` |
+| Each eligible corroborating institution | `+0.18`, capped at three |
+| Manually managed known-risk match | `+0.30` |
+| Manually managed known-good match | `-0.55` |
+| Institution score above its configured threshold | `+0.10` |
 
-The resulting score is clamped to `0.00–0.99`.
+The score is clamped to `0.00–0.99`. A report is corroborated only when its
+score reaches `0.60` **and** at least one eligible institution match exists.
+Strong single-source evidence remains awaiting corroboration. Reports at
+`0.35–0.59` remain awaiting; lower scores remain below alert policy.
 
-| Score | Outcome |
-|---|---|
-| `>= 0.60` | `VALIDATED_FRAUD` |
-| `>= 0.35` and `< 0.60` | `INSUFFICIENT_EVIDENCE` |
-| `< 0.35` | `NOT_FRAUD` |
+Kifaru never automatically promotes a corroborated destination to the
+known-risk list. Knowledge-base entries remain deliberate administrative
+decisions.
 
-The validation stores the reason codes, corroborating institutions, agent
-version, decision time, configuration version and plain-language explanation.
-The explanation describes the decision but never changes the score.
+## Reversible lifecycle
 
-### Device and network changes
-
-Fraudsters often change phones, SIM cards or networks to avoid detection.
-Kifaru picks this up in two ways:
-
-- **Within one institution.** The normaliser turns the institution's device and
-  network evidence into risk codes: `ip_country_changed` or `vpn_proxy_tor`
-  adds `IP-404` (access from a foreign or anonymising network), and
-  `is_emulator` or `is_rooted` adds `IP-403`. Institution rules such as
-  `NET_FOREIGN_ASN` and `DEV_UNRECOGNISED_DEVICE` map to the same codes.
-- **Across institutions.** A fraudster can use a new device at each
-  institution, but the stolen money still has to reach the same cash-out
-  account. Corroboration matches on that protected destination, so the reports
-  still link up. When another institution reported the same destination from a
-  different device fingerprint, the validation adds the reason code
-  `LINK:device_switch` and the explanation says so.
-
-`LINK:device_switch` explains a decision and carries no weight, so the scoring
-table above is unchanged.
-
-## Alert lifecycle
-
-Alerts carrying a transferable amount request a hold. Events with no
-transferable amount are marked advisory.
+Signals are not permanent accusations.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Sent
-    Sent --> Acknowledged
-    Sent --> Disputed: Comment required
-    Acknowledged --> Actioned
-    Acknowledged --> Disputed: Comment required
-    Actioned --> [*]
-    Disputed --> [*]
+    [*] --> Active
+    Active --> Quarantined: receiver disputes alert
+    Active --> Retracted: reporter withdraws signal
+    Active --> Expired: retention period ends
+    Active --> Cleared: receiver records released
 ```
 
-Every transition creates an `alert_actions` row and an audit event. A dispute
-also creates a notification addressed to the reporting institution.
+When a signal becomes inactive, Kifaru:
 
-## Data model
+1. Writes a new current validation while retaining the previous record.
+2. Removes the signal from active corroboration.
+3. Rescores linked reports.
+4. Retracts linked alerts that no longer qualify.
+5. Notifies affected reporting and receiving institutions.
+6. Appends the change to immutable audit history.
 
-```mermaid
-erDiagram
-    INSTITUTIONS ||--o{ REPORTS : submits
-    INSTITUTIONS ||--o{ ALERTS : receives
-    REPORTS ||--o{ ARTEFACTS : contains
-    REPORTS ||--o{ VALIDATIONS : evaluated_by
-    VALIDATIONS ||--o| ALERTS : may_create
-    ALERTS ||--o{ ALERT_ACTIONS : records
-    INSTITUTIONS ||--o{ NOTIFICATIONS : receives
-    INSTITUTIONS ||--o{ AUTH_USERS : authorises
-    AUTH_USERS ||--o{ AUTH_SESSIONS : opens
-    INSTITUTIONS ||--o{ USER_ACCESS_REQUESTS : owns
-    AUTH_USERS ||--o{ USER_ACCESS_REQUESTS : acts_on
-    USER_ACCESS_REQUESTS }o--o| AUTH_USERS : admits
-    DEMO_STREAM_STATE ||--o{ DEMO_EVENTS : allocates
-    DEMO_EVENTS }o--o| REPORTS : generates
+Alert states are `sent`, `acknowledged`, `actioned`, `disputed`, and
+`retracted`. An `actioned` alert must include one receiver outcome:
 
-    INSTITUTIONS {
-        text code PK
-        text name
-        text type
-        real threshold
-        integer active
-    }
-    REPORTS {
-        text report_id PK
-        text reporting_institution FK
-        text destination_institution FK
-        text transaction_ref
-        text submitted_at
-        text risk_codes
-        text evidence
-    }
-    ARTEFACTS {
-        text report_id FK
-        text institution_code FK
-        text artefact_type
-        text artefact_hash
-        text observed_at
-    }
-    VALIDATIONS {
-        text validation_id PK
-        text report_id FK
-        real validation_score
-        text status
-        integer configuration_version
-        text supersedes_validation_id
-        integer is_current
-    }
-    ALERTS {
-        text alert_id PK
-        text validation_id
-        text receiving_institution FK
-        text reporting_institution FK
-        text alert_type
-        text state
-    }
-    ALERT_ACTIONS {
-        bigint id PK
-        text alert_id FK
-        text action
-        text comment
-        text actor
-        text at
-    }
-    NOTIFICATIONS {
-        bigint id PK
-        text institution_code FK
-        text event_type
-        text record_id
-        text payload
-    }
-    AUTH_USERS {
-        text user_id PK
-        text email
-        text password_hash
-        text role
-        text institution_code FK
-        integer failed_attempts
-        timestamp locked_until
-    }
-    AUTH_SESSIONS {
-        text token_hash PK
-        text user_id FK
-        text csrf_token
-        timestamp expires_at
-        timestamp last_seen_at
-    }
-    USER_ACCESS_REQUESTS {
-        text request_id PK
-        text institution_code FK
-        text alias
-        text email
-        text status
-        text requested_by FK
-        text reviewed_by FK
-        text admitted_user_id FK
-        timestamp requested_at
-        timestamp reviewed_at
-    }
-    DEMO_STREAM_STATE {
-        boolean singleton PK
-        boolean enabled
-        integer cadence_seconds
-        bigint next_offset
-        integer emitted_since_reset
-        timestamp last_emitted_at
-    }
-    DEMO_EVENTS {
-        bigint event_offset PK
-        text topic
-        text partition_key
-        jsonb payload
-        text status
-        text report_id FK
-        text outcome
-        timestamp processed_at
-    }
-```
+- `held`
+- `released`
+- `recovered`
 
-## Database migrations and audit integrity
+These are recorded institution responses, not actions executed by Kifaru.
 
-SQL migrations live in `backend/migrations/` and are embedded into the Go
-binary. Applied filenames are recorded in `schema_migrations`, so each migration
-runs once.
+## Authentication and user admission
 
-The first migration:
+Authentication is enforced by the Go API:
 
-- Removes duplicate replay submissions while retaining one original report
-- Adds retry-safe report uniqueness
-- Creates and backfills the artefact index
-- Adds validation replacement and configuration-version fields
-- Adds advisory alert classification
-- Adds alert actions and institution notifications
-- Extends audit records with old value, new value and reason
-- Installs a PostgreSQL trigger that rejects audit-row updates and deletes
+- Bcrypt password verification
+- Opaque random session tokens; only their SHA-256 digests are stored
+- Eight-hour sessions, or seven days with **Keep me signed in**
+- Five-minute lockout after five failed attempts
+- CSRF validation on browser mutations
+- Server-side staff and institution roles
+- Institution-scoped history, alerts, notifications, and configuration
+- Receiver-only alert decisions
+- Reporter-only retraction, with staff expiry authority
+- Authenticated Server-Sent Events
 
-The second migration creates the synthetic SOC event broker:
+Every represented institution has six synthetic demonstration accounts: one
+institution-specific identity and five reusable identities. Their addresses and
+password are stored in the local, Git-ignored `demo-credentials.txt`. Those
+credentials must never be reused for a real service.
 
-- One durable producer-state row with pause/resume and a 30-second cadence
-- An ordered `sentinel.security-alert` event log with monotonic offsets
-- Processing status, report IDs, outcomes and failure details for every event
-- Rolling retention of the latest 500 processed events and their generated data
+An institution user can request another account by entering only an alias. The
+API derives the email domain from the authenticated institution. Kifaru staff
+approve or reject requests; approved accounts remain bound to the requesting
+institution.
 
-The third migration renamed the demo institutions for a time. Names now come
-from `backend/data/kenyan_banks.json` and are refreshed every time the API
-starts, while any threshold an administrator has set is kept.
+## Protected identifiers
 
-The fourth migration adds demo users and expiring sessions. The fifth replaces
-the old 500-event stop with rolling retention and resumes deployments that had
-paused only because they reached that former ceiling. The producer also repairs
-that exact legacy state if a retiring instance reaches the ceiling during a
-rolling deployment.
+CSV uploads hash supported identifier columns in the browser before upload:
 
-The sixth migration adds durable institution user-addition requests, their
-pending/approved/rejected lifecycle, tenant and status indexes, reviewer
-metadata and the optional admitted-user link.
+- Customer reference or name
+- Account number
+- Destination account
+- Destination MSISDN or phone number
+- Device profile
 
-Audit entries are written for validations, automatic and manual revalidation,
-alert decisions, configuration updates, threshold changes, knowledge-base
-changes, user requests and staff admission decisions.
+The API independently rejects cleartext identifiers. Institution-facing
+knowledge-base responses are masked, and a receiving institution does not
+receive the reporting customer's protected hash in history responses.
 
-## Synthetic Microsoft Sentinel event stream
+The browser demonstration uses a shared public HMAC key so synthetic uploads
+from separate browsers can match. That is not a production privacy design. A
+real network would require governed tokenisation or privacy-enhancing
+technology, institution-held secrets or an HSM-backed service, key rotation,
+purpose limitation, retention enforcement, and a legal basis for processing.
 
-Kifaru staff can run a continuous synthetic SOC feed from the `/staff`
-workspace. It behaves like a small Kafka topic while remaining deployable on the
-project's existing Render and PostgreSQL services:
+## Synthetic event stream and metrics
+
+Staff can run a continuous Microsoft Sentinel-shaped event stream:
 
 - Topic: `sentinel.security-alert`
-- Default cadence: one event every 30 seconds
-- Durable, increasing offsets
-- Pause, resume, emit-one and reset controls
-- Rolling retention of the latest 500 processing results
-- Server-Sent Event notification after processing
-- Continuous production without an event-count stop
+- One event every 30 seconds by default
+- Durable monotonic offsets
+- Pause, resume, emit-one, and reset controls
+- Rolling retention of the latest 500 processing records
+- Paired reports from different institutions
+- Server-Sent Event refresh after committed processing
 
-The payloads follow public Microsoft Sentinel `SecurityAlert` conventions,
-including `SystemAlertId`, `AlertName`, `AlertSeverity`, `ProviderName`,
-`CompromisedEntity`, `Entities`, `Tactics`, `Techniques` and
-`ExtendedProperties`. Transaction amounts and behavior are synthetic and
-informed by the public PaySim mobile-money simulator. No private SOC logs or
-customer transactions are copied into the repository.
+Scenarios cover SIM swap, account takeover, mule flow-through, beneficiary
+change, credential reset, legitimate anomaly, and device/network switching.
+The events use public Sentinel schema conventions and PaySim-informed synthetic
+transaction patterns.
 
-The producer rotates through paired cross-institution scenarios:
+Displayed metrics are operational observations from current synthetic records:
 
-- SIM change followed by a new-device transfer
-- New mule account receiving and rapidly forwarding funds
-- New beneficiary followed by a high-value transfer
-- Credential reset from an unfamiliar device on a foreign network, with no
-  money moved yet
-- An unusual but potentially legitimate payment requiring corroboration
-- A fraudster who uses a different device and network at each institution
-  before paying a fresh beneficiary
+- Signals
+- Corroborated
+- Awaiting
+- Below policy
+- Quarantined
+- Alerts delivered
+- Acknowledged
+- Receiver-actioned
+- Disputed
+- Retracted
+- Actioned synthetic value
+- p95 policy latency
 
-Two consecutive events in a campaign share one protected destination artefact
-but originate from different institutions. Each campaign draws its two
-reporting institutions and its receiving institution from the full list,
-stepping through it so that every bank and mobile money provider reports,
-corroborates and receives alerts in turn.
-The first report of a campaign
-usually remains `INSUFFICIENT_EVIDENCE`; the matching report from another
-institution upgrades it to `VALIDATED_FRAUD`. This exercises Kifaru's automatic
-corroboration and revalidation path rather than merely changing dashboard
-counters. The credential-reset campaign ends in an advisory alert, because no
-money has moved. The device-switch campaign ends in a hold alert that carries
-`LINK:device_switch`. The legitimate-payment campaign never reaches an alert.
+They do not claim production detection accuracy, fraud prevented, losses
+avoided, participating institutions, or measured real-world effectiveness.
 
-```mermaid
-sequenceDiagram
-    actor Staff as Kifaru staff
-    participant UI as Staff event console
-    participant Producer as Go background producer
-    participant Broker as PostgreSQL event log
-    participant Pipeline as Fraud validation pipeline
-    participant Stream as SSE subscribers
-
-    Staff->>UI: Start stream
-    UI->>Producer: Enable 30-second cadence
-    loop Every 30 seconds while enabled
-        Producer->>Broker: Lock state and claim next offset
-        Producer->>Broker: Remove records beyond rolling retention
-        Producer->>Broker: Append pending Sentinel-shaped event
-        Producer->>Pipeline: Submit synthetic protected report
-        Pipeline->>Broker: Commit report, validation and optional alert
-        Producer->>Broker: Record outcome against event offset
-        Producer-->>Stream: Publish processed demo-event
-        Stream-->>UI: Refresh broker and ecosystem views
-    end
-    Staff->>UI: Pause or reset
-    UI->>Broker: Pause producer and remove synthetic records
-    Note over Broker: Immutable audit history remains
-```
-
-Rolling retention and manual reset remove the affected stream reports,
-validations, alerts, indexed artefacts, knowledge-base additions and broker
-events. Append-only audit records remain.
-
-Public references used for the synthetic schema and scenarios:
+Public references:
 
 - [Microsoft Sentinel security alert schema](https://learn.microsoft.com/en-us/azure/sentinel/security-alert-schema)
 - [SecurityIncident table reference](https://learn.microsoft.com/en-us/azure/azure-monitor/reference/tables/securityincident)
 - [CommonSecurityLog table reference](https://learn.microsoft.com/en-us/azure/azure-monitor/reference/tables/commonsecuritylog)
-- [Microsoft Sentinel public sample data](https://github.com/Azure/Azure-Sentinel/tree/master/Sample%20Data)
+- [Microsoft Sentinel sample data](https://github.com/Azure/Azure-Sentinel/tree/master/Sample%20Data)
 - [PaySim mobile-money simulator](https://github.com/EdgarLopezPhD/PaySim)
 
-## Real-time delivery
+## Architecture
 
-`GET /v1/stream?institution=...` opens a Server-Sent Events connection.
-Institution workspaces subscribe to their own code; the Kifaru staff workspace
-subscribes to the ecosystem stream. The browser reconnects automatically if the
-connection drops, and committed alert events trigger a dashboard refresh.
+```mermaid
+flowchart LR
+    Institution["Institution fraud controls"]
+    UI["React + TypeScript"]
+    API["Go API and policy engine"]
+    DB[("PostgreSQL")]
+    Receiver["Receiving institution analyst"]
 
-Streams are held in memory because the prototype runs one API instance. A
-multi-instance deployment would need PostgreSQL `LISTEN/NOTIFY` or another
-shared delivery mechanism.
+    Institution -->|"protected report + structured evidence"| API
+    UI -->|"authenticated JSON + SSE"| API
+    API -->|"reports, artefacts, validations, alerts, audit"| DB
+    API -->|"corroborated review alert"| Receiver
+    Receiver -->|"acknowledge + recorded outcome"| API
+```
+
+The frontend and API deploy separately on Render. PostgreSQL stores reports,
+scoped artefacts, versioned validations, alerts, outcomes, notifications,
+authentication, admission requests, guided state, event-stream state, and
+append-only audit records.
+
+The main write path is transactional. Report, artefacts, validation, optional
+alert, revalidation, and audit records either commit together or roll back.
+`(reporting_institution, transaction_ref)` provides idempotent retries.
 
 ## Main API routes
 
@@ -658,8 +336,10 @@ GET    /v1/history?institution=
 GET    /v1/reports?institution=
 GET    /v1/alerts?institution=
 GET    /v1/validations/{report_id}
+GET    /v1/notifications?institution=
 GET    /v1/stream?institution=
 POST   /v1/alerts/{alert_id}/state
+PATCH  /v1/reports/{report_id}/lifecycle
 
 POST   /v1/auth/login
 GET    /v1/auth/session
@@ -678,231 +358,140 @@ POST   /v1/admin/kb
 DELETE /v1/admin/kb
 POST   /v1/admin/revalidate
 GET    /v1/admin/audit
+PATCH  /v1/admin/user-requests/{request_id}
+
 GET    /v1/admin/demo-stream
 POST   /v1/admin/demo-stream/state
 POST   /v1/admin/demo-stream/emit
 POST   /v1/admin/demo-stream/reset
-PATCH  /v1/admin/user-requests/{request_id}
+
+GET    /v1/admin/guided-demo
+POST   /v1/admin/guided-demo/advance
+POST   /v1/admin/guided-demo/reset
 ```
 
-## Requirements coverage
+## Migrations and audit integrity
 
-The implementation is based on:
+SQL migrations in `backend/migrations/` are embedded into the API and recorded
+in `schema_migrations`.
 
-- `Kifaru Requirements Specification`, Part I, 25 September 2026
-- `Kifaru System Design and Planning`, Part II, 26 September 2026
+The lifecycle migration:
 
-### Implemented
+- Adds report lifecycle and expiry
+- Adds destination-aware artefact match scope
+- Adds alert outcome and outcome note
+- Migrates legacy result and alert labels
+- Removes automatically generated known-risk entries
+- Creates persistent guided-scenario state
 
-- Server-verified demo authentication with bcrypt passwords
-- PostgreSQL-backed expiring sessions and account lockout
-- Staff and institution roles with server-side institution boundaries
-- Alias-only institution user requests with server-derived email domains
-- Staff approval or rejection with atomic tenant-bound account creation
-- Receiving-institution authorization for alert actions
-- CSRF protection and authenticated event streaming
-- Four ingestion paths
-- Contract validation and protected-identifier gate
-- Unique report IDs and recorded submission channel/time
-- Central risk-code mapping and behavioural derivation
-- Rejection when no risk code can be produced
-- Deterministic three-outcome validation
-- Stored reasons, corroboration, agent version and timing
-- Automatic revalidation after cross-institution corroboration
-- Template explanations independent of the score
-- Destination-only routing for validated fraud
-- No alerts for weak or rejected outcomes
-- Real-time dashboard alert events
-- Advisory alerts for zero-amount events
-- Device and network change signals, and a cross-institution device-switch flag
-- Browser-side hashing of identifier columns in CSV uploads
-- All 38 licensed Kenyan banks and the two largest mobile money providers, each
-  with synthetic activity from the stream
-- Acknowledge, action and dispute lifecycle
-- Mandatory dispute comments and reporting-institution notifications
-- Unified institution views for received alerts, submitted flags and history
-- Search and outcome filtering
-- Ecosystem-wide Kifaru staff view
-- Global and per-institution threshold configuration
-- Ingestion-source configuration
-- Known-good and known-bad knowledge base
-- Automatic known-bad addition after validated fraud
-- Manual revalidation
-- Expanded append-only audit history
-- Durable Microsoft Sentinel-shaped synthetic event stream
-- Ordered event offsets, processing outcomes, pause/resume and reset controls
-- No payment blocking or reversal API
-
-### Prototype limitations
-
-- Accounts are seeded pitch identities or staff-approved demo additions, not
-  accounts provisioned by a bank identity provider.
-- MFA, password recovery, identity lifecycle management and external service
-  credentials are not implemented.
-- Approved additions use the shared demo password; production needs SSO or a
-  secure account-activation and credential-delivery flow.
-- Browser bearer-token storage is suitable for this controlled synthetic-data
-  demo, but a production deployment should use bank-managed SSO and stronger
-  browser isolation.
-- Synthetic identifiers use the historical prototype formats; the API rejects
-  missing hash prefixes but does not yet require a full 64-character digest for
-  every legacy evidence field.
-- SSE delivery is designed for one API instance.
-- The demo broker uses PostgreSQL rather than an external Kafka cluster. It
-  preserves the ordering, offset, retention and consumer-facing behavior needed
-  for this prototype without adding another hosted service.
-- All continuous-stream records are synthetic. Public Sentinel schemas and
-  PaySim patterns inform their shape; they are not real bank SOC events.
-- The API does not yet publish an OpenAPI document.
-- Accuracy and latency figures still need a final measured report from the
-  complete synthetic replay.
-- The frontend and API are separate Render services rather than one origin.
+Audit rows are append-only through a PostgreSQL trigger. Authentication events,
+validations, revalidations, signal lifecycle changes, alert decisions,
+configuration changes, admission decisions, and guided operations are audited.
 
 ## Repository layout
 
 ```text
 .
-├── .github/workflows/ci.yml      # Frontend and PostgreSQL-backed backend CI
+├── .github/workflows/ci.yml
 ├── backend/
-│   ├── data/                     # Fraud standard and synthetic datasets
-│   ├── migrations/               # Ordered PostgreSQL migrations
-│   ├── auth.go                   # Password, session and authorization controls
-│   ├── user_access.go            # Institution requests and staff admission
-│   ├── database.go               # PostgreSQL startup and migrations
-│   ├── router.go                 # HTTP routing and CORS
-│   ├── pipeline.go               # Fraud validation transaction
-│   ├── handlers.go               # Dashboard and administration handlers
-│   ├── events.go                 # SSE and synthetic Sentinel broker
-│   ├── csv_ingest.go             # CSV ingestion adapter
-│   ├── support.go                # Shared persistence and parsing helpers
-│   ├── models.go                 # Shared Go models and constants
-│   ├── main.go                   # Process startup
-│   ├── main_test.go              # Unit and PostgreSQL integration tests
-│   └── schema.sql                # Baseline PostgreSQL schema
-├── public/                       # Static frontend assets
-├── src/                          # React application and API client
-├── render.yaml                   # Render API and frontend services
-└── README.md                     # Project and architecture documentation
+│   ├── data/
+│   ├── migrations/
+│   ├── auth.go
+│   ├── csv_ingest.go
+│   ├── database.go
+│   ├── events.go
+│   ├── guided_demo.go
+│   ├── handlers.go
+│   ├── lifecycle.go
+│   ├── models.go
+│   ├── pipeline.go
+│   ├── router.go
+│   ├── support.go
+│   ├── user_access.go
+│   ├── main.go
+│   └── main_test.go
+├── public/
+├── src/
+├── render.yaml
+└── README.md
 ```
 
 ## Local development
 
-### Requirements
+Requirements:
 
 - Node.js 22.18 or later
 - Go 1.22 or later
-- PostgreSQL, or a Neon PostgreSQL connection string
+- PostgreSQL
 
-### Start the API
+Start the API:
 
 ```bash
 export DATABASE_URL='postgresql://...'
 npm run server
 ```
 
-The API listens on `http://127.0.0.1:8000` unless `PORT` is set.
-
-### Start the frontend
+Start the frontend:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. Vite proxies `/api` to the local Go API.
-The Kifaru staff route is `http://127.0.0.1:5173/staff`.
-Use the accounts in the local, git-ignored `demo-credentials.txt`.
+The API defaults to `http://127.0.0.1:8000`. Vite defaults to
+`http://127.0.0.1:5173` and proxies `/api` to the local API.
 
 ## Tests
-
-Run the local checks:
 
 ```bash
 npm run build
 npm test
+
 cd backend
 go test ./...
 ```
 
-Set `TEST_DATABASE_URL` to run the PostgreSQL integration test locally:
+Set `TEST_DATABASE_URL` to include PostgreSQL integration coverage:
 
 ```bash
 export TEST_DATABASE_URL='postgresql://.../kifaru_test'
 go test ./...
 ```
 
-The backend tests cover:
+Coverage includes:
 
-- Password verification and seeded demo accounts
-- Unauthenticated request rejection
-- Institution mismatch and cross-tenant access rejection
-- Staff-only administration and authenticated logout
-- Alias validation and automatic institution-domain derivation
-- User-request tenant isolation, duplicate handling, approval and rejection
-- Transactional account admission and one-decision-only enforcement
-- Authentication by a newly admitted institution account
-- Clear identifier rejection
-- Cleartext identifier rejection in CSV uploads
-- Behavioural risk-code derivation
-- Device and network risk-code derivation
-- Advisory versus hold alert classification
-- Atomic PostgreSQL processing
-- Automatic revalidation after corroboration
-- Current and superseded validation records
-- Retry idempotency
-- Mandatory dispute comments
-- Reporting-institution notification creation
-- Rollback when persistence fails
-- Audit-record creation
-- Sentinel-shaped synthetic event generation
-- Cross-institution campaign pairing
-- Durable event retention and report processing
-- Stream reset cleanup
-- An advisory alert from the credential-reset campaign
-- A validated device-switch campaign flagged with `LINK:device_switch`
-- A complete institution list: 37 commercial banks, 1 mortgage finance
-  institution and 2 mobile money providers
-- Demo campaigns that reach every institution as reporter and receiver
+- Authentication, lockout, sessions, CSRF, and tenant isolation
+- Institution user requests and staff admission decisions
+- Protected identifier and narrative validation
+- Required risk-code evidence and unknown-code rejection
+- Destination-scoped corroboration
+- Prevention of automatic known-risk promotion
+- Idempotent and atomic processing
+- Versioned revalidation
+- Receiver outcomes
+- Dispute quarantine and linked alert retraction
+- Reporter retraction and staff expiry
+- Institution notifications
+- Guided campaign completion, release, and reset
+- Sentinel-shaped event processing and retention
+- Device/network switching
+- All 40 represented institutions
 
-The frontend tests also check that CSV identifier columns are hashed in the
-browser, that the CSV parser keeps quoted fields intact, and that the dashboard
-lists all 40 institutions once each.
+GitHub Actions builds and tests the frontend, starts PostgreSQL 16, and runs the
+Go integration suite on every push to `main` and every pull request.
 
-GitHub Actions starts PostgreSQL 16, builds and tests the frontend, and runs the
-Go test suite on every push to `main` and every pull request.
+## Operating boundaries
 
-## Deployment
-
-`render.yaml` defines:
-
-- `kifaru-api`: Go web service
-- `kifarulive`: Vite static frontend
-
-The API requires `DATABASE_URL` and an exact `FRONTEND_ORIGIN`. The frontend
-receives `VITE_API_URL` from the API service. Render deploys both services
-automatically after commits reach `main`.
-
-The static build also writes `dist/staff/index.html`, ensuring `/staff` works
-even if a host does not apply single-page-application rewrites.
-
-## Privacy and operating boundaries
-
-- Raw customer identifiers must not be submitted.
-- CSV uploads from the dashboard hash the identifier columns (`customer_ref`,
-  `customer`, `customer_name`, `account_number`, `destination_account`,
-  `destination_msisdn`, `msisdn`, `phone_number`) in the browser with
-  HMAC-SHA256 before sending. The API refuses any row whose identifier columns
-  still hold cleartext. The demo hashing key is public so that uploads from
-  different browsers can match; a real institution would keep its own key, set
-  through `VITE_UPLOAD_HASH_KEY`.
-- Kifaru stores protected artefacts and institution routing data.
-- Request bodies are not written to application logs.
-- Kifaru validates and alerts; it never executes a payment hold.
-- The pitch environment has password sessions and server-side tenant
-  authorization. Production still requires bank-managed SSO and MFA, account
-  provisioning and recovery, service credentials for institution connectors,
-  a hashing-key agreement and a data protection impact assessment.
-- The current data is synthetic and must not be treated as evidence of
-  production accuracy. The institution names are real, but no institution has
-  supplied or reviewed any record, and nothing shown describes a real
-  institution's customers, systems or fraud cases.
+- The application uses synthetic data only.
+- Kifaru records indicators and institution decisions; it does not move money.
+- Correlation is not human identification.
+- Corroboration is not a legal or factual fraud determination.
+- A directory entry is not evidence of participation.
+- The public demonstration key is not a production tokenisation architecture.
+- Demo authentication is not bank-managed SSO, MFA, or connector identity.
+- SSE is currently designed for one API instance.
+- The synthetic PostgreSQL event log is not an external Kafka deployment.
+- Production use would require neutral governance, legal agreements, a DPIA,
+  purpose and retention controls, bank-managed identity, connector
+  authentication, key management, operational monitoring, and measured
+  effectiveness against governed data.

@@ -97,6 +97,8 @@ func (a *App) seedDemoUsers(ctx context.Context) error {
 			role='institution',
 			institution_code=$4,
 			active=TRUE,
+			failed_attempts=0,
+			locked_until=NULL,
 			updated_at=NOW()
 			WHERE role='institution' AND institution_code=$4 AND display_name=$2`,
 			primaryEmail, institution.DemoName, demoPasswordHash, institution.Code)
@@ -137,6 +139,8 @@ func (a *App) seedDemoUsers(ctx context.Context) error {
 		role=excluded.role,
 		institution_code=excluded.institution_code,
 		active=TRUE,
+		failed_attempts=0,
+		locked_until=NULL,
 		updated_at=NOW()`, demoPasswordHash)
 	return err
 }
@@ -164,6 +168,8 @@ func (a *App) upsertDemoInstitutionUser(
 		role=excluded.role,
 		institution_code=excluded.institution_code,
 		active=TRUE,
+		failed_attempts=0,
+		locked_until=NULL,
 		updated_at=NOW()`,
 		userID, email, displayName, demoPasswordHash, institutionCode)
 	return err

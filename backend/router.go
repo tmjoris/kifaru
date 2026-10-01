@@ -89,6 +89,8 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		a.reports(w, r)
 	case r.Method == http.MethodGet && path == "/v1/alerts":
 		a.alerts(w, r)
+	case r.Method == http.MethodGet && path == "/v1/notifications":
+		a.notifications(w, r)
 	case r.Method == http.MethodGet && path == "/v1/stream":
 		a.streamAlerts(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/validations/"):
@@ -143,6 +145,21 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.resetDemoStream(w, r)
+	case r.Method == http.MethodGet && path == "/v1/admin/guided-demo":
+		if !requireRole(w, user, "staff") {
+			return
+		}
+		a.guidedDemoStatus(w, r)
+	case r.Method == http.MethodPost && path == "/v1/admin/guided-demo/advance":
+		if !requireRole(w, user, "staff") {
+			return
+		}
+		a.advanceGuidedDemo(w, r)
+	case r.Method == http.MethodPost && path == "/v1/admin/guided-demo/reset":
+		if !requireRole(w, user, "staff") {
+			return
+		}
+		a.resetGuidedDemo(w, r)
 	case r.Method == http.MethodPatch && strings.HasPrefix(path, "/v1/admin/user-requests/"):
 		requestID := strings.TrimPrefix(path, "/v1/admin/user-requests/")
 		if requestID == "" {
@@ -153,6 +170,13 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/alerts/") && strings.HasSuffix(path, "/state"):
 		id := strings.TrimSuffix(strings.TrimPrefix(path, "/v1/alerts/"), "/state")
 		a.setAlertState(w, r, id)
+	case r.Method == http.MethodPatch && strings.HasPrefix(path, "/v1/reports/") && strings.HasSuffix(path, "/lifecycle"):
+		id := strings.TrimSuffix(strings.TrimPrefix(path, "/v1/reports/"), "/lifecycle")
+		if id == "" {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		a.reportLifecycle(w, r, id)
 	default:
 		writeError(w, http.StatusNotFound, "not found")
 	}
@@ -164,6 +188,6 @@ func (a *App) health(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ok", "agent": agentVersion, "standard": a.standard.Version, "db": "postgresql",
+		"status": "ok", "policy": policyVersion, "standard": a.standard.Version, "db": "postgresql",
 	})
 }
