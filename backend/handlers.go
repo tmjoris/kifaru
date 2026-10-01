@@ -18,6 +18,10 @@ func (a *App) history(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	filter := "WHERE r.reporting_institution=$1 OR r.destination_institution=$1"
+	if institution == "*" {
+		filter = "WHERE $1::text IS NOT NULL"
+	}
 	limit := queryLimit(r, 500)
 	rows, err := a.rows(r.Context(), `SELECT r.report_id,r.submitted_at,r.reporting_institution,
 		r.destination_institution,r.reporting_system,r.transaction_ref,r.subject_customer_hash,
@@ -28,7 +32,7 @@ func (a *App) history(w http.ResponseWriter, r *http.Request) {
 		FROM reports r
 		LEFT JOIN validations v ON v.report_id=r.report_id AND v.is_current=1
 		LEFT JOIN alerts a ON a.alert_id=v.alert_id
-		WHERE r.reporting_institution=$1 OR r.destination_institution=$1
+		`+filter+`
 		ORDER BY r.submitted_at DESC LIMIT $2`, institution, limit)
 	if err != nil {
 		writeError(w, 500, err.Error())

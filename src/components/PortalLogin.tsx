@@ -17,6 +17,10 @@ export function PortalLogin({ banks, staff, onEnterBank, onEnterKifaru }: {
   const [error, setError] = useState("");
   const [theme, setTheme] = useState(() =>
     document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+  const groups = [
+    { label: "Banks", items: banks.filter((bank) => bank.kind !== "psp") },
+    { label: "Mobile money providers", items: banks.filter((bank) => bank.kind === "psp") },
+  ].filter((group) => group.items.length > 0);
 
   function toggleTheme() {
     const next = theme === "dark" ? "light" : "dark";
@@ -88,8 +92,10 @@ export function PortalLogin({ banks, staff, onEnterBank, onEnterKifaru }: {
             <label htmlFor="portal-institution">Institution</label>
             <select id="portal-institution" className="portal-control"
               value={bankId} onChange={(event) => setBankId(event.target.value)}>
-              {banks.map((bank) =>
-                <option value={bank.id} key={bank.id}>{bank.name}</option>,
+              {groups.map((group) =>
+                <optgroup label={group.label} key={group.label}>
+                  {group.items.map((bank) => <option value={bank.id} key={bank.id}>{bank.name}</option>)}
+                </optgroup>,
               )}
             </select>
           </div>}
@@ -154,7 +160,9 @@ export function PortalLogin({ banks, staff, onEnterBank, onEnterKifaru }: {
         </footer>
       </div>
       <p className="portal-signal-note">Kifaru helps institutions recognise the same fraud pattern
-        before the next transfer is paid out.</p>
+        before the next transfer is paid out. Four guided accounts open institution workspaces;
+        staff operations cover Kenya's licensed banks, M-Pesa and Airtel Money using synthetic
+        data. No institution has supplied, reviewed or endorsed any record shown here.</p>
     </section>
   </main>;
 }

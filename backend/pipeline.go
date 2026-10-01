@@ -492,6 +492,12 @@ func (a *App) normalize(report ReportIn) ([]string, error) {
 		strings.EqualFold(fmt.Sprint(ev["is_new_beneficiary"]), "true") {
 		add("ATO-460")
 	}
+	if truthy(ev["is_emulator"]) || truthy(ev["is_rooted"]) {
+		add("IP-403")
+	}
+	if truthy(ev["ip_country_changed"]) || truthy(ev["vpn_proxy_tor"]) {
+		add("IP-404")
+	}
 	if len(codes) == 0 {
 		return nil, errors.New("report produced no risk codes — nothing to validate")
 	}
@@ -518,6 +524,7 @@ func (a *App) score(
 	if device == "<nil>" {
 		device = ""
 	}
+	since := time.Now().UTC().Add(-30 * 24 * time.Hour).Format("2006-01-02T15:04:05Z")
 	rows, err := store.Query(ctx, `SELECT DISTINCT a.institution_code,a.artefact_type
 		FROM artefacts a
 		WHERE a.institution_code != $1
@@ -529,7 +536,7 @@ func (a *App) score(
 		  AND a.observed_at >= $5
 		ORDER BY a.institution_code`,
 		report.ReportingInstitution, report.DestinationAccountHash, report.DestinationMSISDNHash,
-		device, time.Now().UTC().Add(-30*24*time.Hour).Format("2006-01-02T15:04:05Z"))
+		device, since)
 	if err != nil {
 		return Validation{}, err
 	}
@@ -552,7 +559,34 @@ func (a *App) score(
 			reasons = append(reasons, "CORRO:device_profile")
 		}
 	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return Validation{}, err
+	}
 	score += float64(min(len(corro), corroborationCap)) * weightCorroboration
+
+	// A fraudster who changes phones between institutions still needs the same
+	// cash-out destination, so record a destination match from another device.
+	if device != "" && len(corro) > 0 {
+		var switched bool
+		if err := store.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1 FROM artefacts m
+			JOIN artefacts d ON d.report_id=m.report_id AND d.artefact_type='device_profile'
+			WHERE m.institution_code != $1
+			  AND (
+			    (m.artefact_type='destination_account' AND m.artefact_hash=$2) OR
+			    (m.artefact_type='destination_msisdn' AND m.artefact_hash=$3)
+			  )
+			  AND m.observed_at >= $4
+			  AND d.artefact_hash != $5)`,
+			report.ReportingInstitution, report.DestinationAccountHash, report.DestinationMSISDNHash,
+			since, device).Scan(&switched); err != nil {
+			return Validation{}, err
+		}
+		if switched {
+			reasons = append(reasons, "LINK:device_switch")
+		}
+	}
 
 	kb, err := kbListsFrom(ctx, store)
 	if err != nil {
@@ -602,22 +636,46 @@ func (a *App) score(
 func (a *App) explain(report ReportIn, validation Validation, codes []string) string {
 	names := make([]string, 0, min(3, len(codes)))
 	for _, code := range codes[:min(3, len(codes))] {
-		names = append(names, strings.ToLower(a.standard.Codes[code].Name))
+		name := a.standard.Codes[code].Name
+		if name != "" {
+			name = strings.ToLower(name[:1]) + name[1:]
+		}
+		names = append(names, name)
 	}
-	amount := fmt.Sprintf("%s %.0f", report.Currency, report.Amount)
+	subject := fmt.Sprintf("A transfer of %s %.0f", report.Currency, report.Amount)
+	if report.Amount <= 0 {
+		subject = "An account event with no transfer"
+	}
+	signals := strings.Join(names, ", ")
+	switchNote := ""
+	if containsString(validation.ReasonCodes, "LINK:device_switch") {
+		switchNote = " Another institution reported the same destination from a different device, which fits a fraudster switching devices."
+	}
+	others := fmt.Sprintf("%d other institution", validation.CorroborationCount)
+	if validation.CorroborationCount != 1 {
+		others += "s"
+	}
 	switch validation.Status {
 	case "VALIDATED_FRAUD":
 		corroboration := "the reporting institution's own evidence"
 		if validation.CorroborationCount > 0 {
-			corroboration = fmt.Sprintf("%d other institutions independently reported the same artefact", validation.CorroborationCount)
+			corroboration = others + " independently reporting the same artefact"
 		}
-		return fmt.Sprintf("A transfer of %s was flagged for %s. This was corroborated by %s. Hold the transaction for step-up verification before release.",
-			amount, strings.Join(names, ", "), corroboration)
+		action := "Hold the transaction for step-up verification before release."
+		if report.Amount <= 0 {
+			action = "No money has moved yet. Verify the customer and watch the destination before the next transfer."
+		}
+		return fmt.Sprintf("%s was flagged for %s. This was corroborated by %s.%s %s",
+			subject, signals, corroboration, switchNote, action)
 	case "INSUFFICIENT_EVIDENCE":
-		return fmt.Sprintf("A transfer of %s showed %s, but no other institution has reported a matching artefact. Monitoring only until another institution corroborates it.",
-			amount, strings.Join(names, ", "))
+		if validation.CorroborationCount > 0 {
+			return fmt.Sprintf("%s showed %s. %s reported a matching artefact, but the score stayed below the alert threshold.%s Monitoring only.",
+				subject, signals, others, switchNote)
+		}
+		return fmt.Sprintf("%s showed %s, but no other institution has reported a matching artefact. Monitoring only until another institution corroborates it.",
+			subject, signals)
 	default:
-		return fmt.Sprintf("A transfer of %s matched %s, but the pattern did not meet the sector standard. Marked not fraud; no alert issued.",
-			amount, strings.Join(names, ", "))
+		return fmt.Sprintf("%s matched %s, but the pattern did not meet the sector standard. Marked not fraud; no alert issued.",
+			subject, signals)
 	}
 }

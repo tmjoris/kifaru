@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	agentVersion         = "kifaru-agent-0.3.0"
+	agentVersion         = "kifaru-agent-0.5.1"
 	defaultValidated     = 0.60
 	defaultInsufficient  = 0.35
 	weightCode           = 0.50
@@ -21,6 +21,18 @@ const (
 	weightAboveThreshold = 0.10
 	demoStreamMaxEvents  = 500
 )
+
+// Institution is one licensed Kenyan bank or mobile money provider from
+// data/kenyan_banks.json. All Kifaru records associated with it are synthetic.
+type Institution struct {
+	Code      string  `json:"code"`
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	LegalName string  `json:"legal_name"`
+	Ref       string  `json:"ref"`
+	Type      string  `json:"type"`
+	Threshold float64 `json:"threshold"`
+}
 
 type RiskCode struct {
 	Family       string  `json:"family"`

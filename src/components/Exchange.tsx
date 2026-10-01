@@ -1,4 +1,5 @@
-import { maskedFingerprint } from "../domain";
+import { maskedFingerprint, reportingBankId } from "../domain";
+import { riskCodeInfo } from "../explain";
 import type { Transaction } from "../types";
 import { Card, Status } from "./Shared";
 
@@ -13,7 +14,8 @@ export function Exchange({ transactions, bankName, onOpen }: {
 }) {
   const fingerprints = transactions.filter((item) => item.destinationHash);
   const matched = fingerprints.filter((item) => item.corroborationCount > 0);
-  const institutions = new Set(fingerprints.flatMap((item) => [item.sourceBank, item.destinationBank]));
+  const institutions = new Set(fingerprints.flatMap((item) => [item.sourceBank, item.destinationBank])
+    .filter((id) => id !== "external" && !id.startsWith("unknown:")));
   const sorted = [...fingerprints].sort((a, b) => b.corroborationCount - a.corroborationCount || b.score - a.score);
 
   return <div className="stack">
@@ -27,17 +29,17 @@ export function Exchange({ transactions, bankName, onOpen }: {
           <div className="metric-detail">Fingerprints recognised by more than one institution</div></div>
         <div className="metric"><div className="metric-label"><span>Institutions participating</span></div>
           <div className="metric-value">{institutions.size}</div>
-          <div className="metric-detail">Banks, PSPs and SACCOs publishing or matching indicators</div></div>
+          <div className="metric-detail">Banks and mobile money providers publishing or matching indicators</div></div>
       </div>
     </Card>
-    <Card title="Shared fingerprints" subtitle="Sorted by how many institutions have independently matched each indicator.">
+    <Card title="Shared fingerprints" subtitle="Each card is one receiving account, turned into a protected code. Click a card to see why Kifaru flagged it.">
       {sorted.length ? <div className="fingerprint-grid">{sorted.map((item) => <button key={item.key} className="fingerprint-card" onClick={() => onOpen(item.key)}>
         <div className="fingerprint-head">
           <span className="mono fp-hash">{maskedFingerprint(item.destinationHash)}</span>
           <Status status={item.validationStatus} />
         </div>
-        <strong>{item.riskCode.label}</strong>
-        <span className="muted">Discovered by {bankName(item.sourceBank)} &middot; {item.score}% confidence</span>
+        <strong>{riskCodeInfo(item.riskCode.code, item.riskCode.label).title}</strong>
+        <span className="muted">Reported by {bankName(reportingBankId(item))} &middot; Kifaru score {item.score}%</span>
         <div className="fingerprint-foot">
           {item.corroborationCount > 0
             ? <span className="pill fraud">Matched by {item.corroborationCount} institution{item.corroborationCount === 1 ? "" : "s"}</span>
