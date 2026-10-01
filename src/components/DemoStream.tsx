@@ -17,7 +17,7 @@ export function DemoStream({ stream, busy, onToggle, onEmit, onReset }: {
 }) {
   const events = stream?.events ?? [];
   return <Card title="Synthetic SOC event stream"
-    subtitle="Microsoft Sentinel-shaped alerts, informed by public PaySim transaction patterns. Every record is marked synthetic."
+    subtitle="Microsoft Sentinel-shaped reports exercise the same protected-signal pipeline as uploads and API submissions."
     className="stream-console"
     actions={<span className={`stream-state ${stream?.enabled ? "live" : ""}`}>
       <i />{stream?.enabled ? "Producing" : "Paused"}
@@ -46,6 +46,18 @@ export function DemoStream({ stream, busy, onToggle, onEmit, onReset }: {
           <Icon name="restart_alt" className="btn-icon" />Reset
         </button>
       </div>
+    </div>
+    <div className="stream-outcomes" aria-label="Current demonstration outcomes">
+      <div><span>Signals</span><strong>{stream?.metrics.signals ?? 0}</strong></div>
+      <div><span>Corroborated</span><strong>{stream?.metrics.corroborated ?? 0}</strong></div>
+      <div><span>Awaiting match</span><strong>{stream?.metrics.awaiting ?? 0}</strong></div>
+      <div><span>Alerts delivered</span><strong>{stream?.metrics.alerts ?? 0}</strong></div>
+      <div><span>Receiver actions</span><strong>{stream?.metrics.actioned ?? 0}</strong></div>
+      <div><span>Disputed or retracted</span>
+        <strong>{(stream?.metrics.disputed ?? 0) + (stream?.metrics.retracted ?? 0)}</strong></div>
+      <div><span>Actioned synthetic value</span>
+        <strong>KES {(stream?.metrics.actionedValue ?? 0).toLocaleString()}</strong></div>
+      <div><span>Policy p95</span><strong>{Math.round(stream?.metrics.p95LatencyMs ?? 0)} ms</strong></div>
     </div>
     <div className="stream-log" aria-live="polite">
       <div className="stream-log-head">

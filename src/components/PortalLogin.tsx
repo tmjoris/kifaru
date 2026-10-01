@@ -46,7 +46,7 @@ export function PortalLogin({ banks, staff, onEnterBank, onEnterKifaru }: {
     <aside className="portal-identity" aria-label="Kifaru">
       <Logo />
       <span>Kifaru</span>
-      <small>Shared fraud signal exchange</small>
+      <small>Protected risk signal exchange</small>
     </aside>
 
     <header className="portal-masthead">
@@ -130,7 +130,7 @@ export function PortalLogin({ banks, staff, onEnterBank, onEnterKifaru }: {
           <span className="signal-match"><Icon name="check_circle" /> Match found</span>
         </header>
 
-        <div className="signal-route" aria-label="A fraud signal matched across two banks">
+        <div className="signal-route" aria-label="A protected risk signal matched across two banks">
           <div className="signal-node">
             <span>Reporting institution</span>
             <strong>Bank A</strong>
@@ -156,11 +156,11 @@ export function PortalLogin({ banks, staff, onEnterBank, onEnterKifaru }: {
 
         <footer>
           <div><Icon name="visibility_off" /><span><strong>Not shared</strong>Name, balance, full account number</span></div>
-          <div><Icon name="encrypted" /><span><strong>Shared safely</strong>Protected identifier, event time, risk signal</span></div>
+          <div><Icon name="encrypted" /><span><strong>Shared in the demonstration</strong>Protected identifier, event time, risk signal</span></div>
         </footer>
       </div>
-      <p className="portal-signal-note">Kifaru helps institutions recognise the same fraud pattern
-        before the next transfer is paid out. Six demo accounts per institution open workspaces
+      <p className="portal-signal-note">Kifaru demonstrates how institutions could recognise the same
+        protected risk indicator while the receiving institution retains the decision. Demo accounts open workspaces
         for all 38 licensed banks, M-Pesa and Airtel Money using synthetic data. No institution
         has supplied, reviewed or endorsed any record shown here.</p>
     </section>

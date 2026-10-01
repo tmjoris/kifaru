@@ -1,10 +1,11 @@
 /**
- * Identifier columns in an uploaded fraud log. Their values are replaced with
+ * Identifier columns in an uploaded risk log. Their values are replaced with
  * keyed hashes in the browser, so the API never receives raw customer data.
  */
 export const IDENTIFIER_COLUMNS = [
   "customer_ref", "customer", "customer_name", "account_number",
   "destination_account", "destination_msisdn", "msisdn", "phone_number",
+  "device_profile", "evidence_device_profile",
 ];
 
 /**

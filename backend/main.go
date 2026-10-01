@@ -46,6 +46,9 @@ func main() {
 		Addr:              ":" + port,
 		Handler:           app.withCORS(http.HandlerFunc(app.serveHTTP)),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       20 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 	log.Printf("KIFARU Go API listening on %s", server.Addr)
 	log.Fatal(server.ListenAndServe())

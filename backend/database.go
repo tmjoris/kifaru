@@ -113,7 +113,7 @@ func (a *App) initDB(ctx context.Context) error {
 		"validated_threshold":    defaultValidated,
 		"insufficient_threshold": defaultInsufficient,
 		"enabled_sources":        []string{"soc_connector", "rest", "webhook", "batch"},
-		"agent_version":          agentVersion,
+		"agent_version":          policyVersion,
 		"configuration_version":  1,
 	}
 	for key, value := range defaults {

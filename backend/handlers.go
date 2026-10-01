@@ -2,15 +2,11 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
-
-	"github.com/jackc/pgx/v5"
 )
 
 func (a *App) history(w http.ResponseWriter, r *http.Request) {
@@ -24,11 +20,15 @@ func (a *App) history(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := queryLimit(r, 500)
 	rows, err := a.rows(r.Context(), `SELECT r.report_id,r.submitted_at,r.reporting_institution,
-		r.destination_institution,r.reporting_system,r.transaction_ref,r.subject_customer_hash,
+		r.destination_institution,r.reporting_system,r.transaction_ref,
+		CASE WHEN $1='*' OR r.reporting_institution=$1 THEN r.subject_customer_hash ELSE '' END
+			AS subject_customer_hash,
 		r.destination_account_hash,r.destination_msisdn_hash,r.amount,r.currency,r.channel,
-		r.risk_codes,r.evidence,r.narrative,v.validated_at,v.agent_version,v.status,
+		r.risk_codes,r.evidence,r.narrative,r.lifecycle_state,r.expires_at,
+		v.validated_at,v.agent_version,v.status,
 		v.validation_score,v.reason_codes,v.corroborating_institutions,v.corroboration_count,
-		v.explanation,v.alert_id,a.state AS alert_state,a.alert_type
+		v.explanation,v.alert_id,a.state AS alert_state,a.alert_type,
+		a.outcome AS alert_outcome,a.outcome_note
 		FROM reports r
 		LEFT JOIN validations v ON v.report_id=r.report_id AND v.is_current=1
 		LEFT JOIN alerts a ON a.alert_id=v.alert_id
@@ -110,12 +110,14 @@ func (a *App) stats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	counts := map[string]string{
 		"reports": "SELECT COUNT(*) FROM reports", "validations": "SELECT COUNT(*) FROM validations",
-		"validated_fraud": "SELECT COUNT(*) FROM validations WHERE status='VALIDATED_FRAUD'",
-		"insufficient":    "SELECT COUNT(*) FROM validations WHERE status='INSUFFICIENT_EVIDENCE'",
-		"not_fraud":       "SELECT COUNT(*) FROM validations WHERE status='NOT_FRAUD'",
+		"corroborated":    "SELECT COUNT(*) FROM validations WHERE is_current=1 AND status='CORROBORATED_SIGNAL'",
+		"awaiting":        "SELECT COUNT(*) FROM validations WHERE is_current=1 AND status='AWAITING_CORROBORATION'",
+		"below_policy":    "SELECT COUNT(*) FROM validations WHERE is_current=1 AND status='BELOW_ALERT_THRESHOLD'",
+		"quarantined":     "SELECT COUNT(*) FROM reports WHERE lifecycle_state='quarantined'",
+		"retracted":       "SELECT COUNT(*) FROM reports WHERE lifecycle_state='retracted'",
 		"alerts":          "SELECT COUNT(*) FROM alerts",
-		"kb_known_bad":    "SELECT COUNT(*) FROM knowledge_base WHERE list_name='known_bad'",
-		"kb_known_good":   "SELECT COUNT(*) FROM knowledge_base WHERE list_name='known_good'",
+		"alerts_actioned": "SELECT COUNT(*) FROM alerts WHERE state='actioned'",
+		"alerts_disputed": "SELECT COUNT(*) FROM alerts WHERE state='disputed'",
 	}
 	out := map[string]any{}
 	for key, query := range counts {
@@ -127,7 +129,9 @@ func (a *App) stats(w http.ResponseWriter, r *http.Request) {
 		out[key] = count
 	}
 	var avg float64
-	_ = a.db.QueryRow(ctx, "SELECT COALESCE(AVG(latency_ms),0) FROM validations").Scan(&avg)
+	_ = a.db.QueryRow(ctx, `SELECT COALESCE(AVG(latency_ms),0) FROM validations
+		WHERE is_current=1 AND status IN ($1,$2,$3)`,
+		statusCorroborated, statusAwaiting, statusBelow).Scan(&avg)
 	out["avg_latency_ms"] = math.Round(avg*10) / 10
 	out["alerts_by_institution"], _ = a.groupCounts(ctx, "SELECT receiving_institution,COUNT(*) FROM alerts GROUP BY 1")
 	out["reports_by_channel"], _ = a.groupCounts(ctx, "SELECT submission_channel,COUNT(*) FROM reports GROUP BY 1")
@@ -179,6 +183,11 @@ func (a *App) config(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				if threshold, ok := numberValue(value); ok {
+					if threshold < 0.50 || threshold > 0.99 {
+						writeError(w, http.StatusUnprocessableEntity,
+							"institution thresholds must be between 0.50 and 0.99")
+						return
+					}
 					var oldThreshold float64
 					err := a.db.QueryRow(r.Context(), "SELECT threshold FROM institutions WHERE code=$1", code).Scan(&oldThreshold)
 					if err != nil {
@@ -226,6 +235,13 @@ func (a *App) knowledgeBase(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		listName := r.URL.Query().Get("list_name")
 		query := "SELECT * FROM knowledge_base"
+		if user.Role == "institution" {
+			query = `SELECT
+				CASE WHEN LENGTH(artefact_hash)>18
+					THEN LEFT(artefact_hash,11) || '…' || RIGHT(artefact_hash,4)
+					ELSE artefact_hash END AS artefact_hash,
+				list_name,label,added_by,added_at FROM knowledge_base`
+		}
 		args := []any{}
 		if listName != "" {
 			query += " WHERE list_name=$1"
@@ -273,64 +289,36 @@ func (a *App) knowledgeBase(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) revalidate(w http.ResponseWriter, r *http.Request) {
 	reportID := r.URL.Query().Get("report_id")
+	if reportID == "" {
+		writeError(w, http.StatusUnprocessableEntity, "report_id is required")
+		return
+	}
 	tx, err := a.db.Begin(r.Context())
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return
 	}
 	defer func() { _ = tx.Rollback(r.Context()) }()
-	rows, err := rowsFrom(r.Context(), tx, "SELECT * FROM reports WHERE report_id=$1", reportID)
-	if err != nil || len(rows) == 0 {
+	var exists bool
+	if err := tx.QueryRow(r.Context(), "SELECT EXISTS(SELECT 1 FROM reports WHERE report_id=$1)",
+		reportID).Scan(&exists); err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if !exists {
 		writeError(w, 404, "unknown report")
 		return
 	}
-	report, codes, err := reportFromRow(rows[0])
-	if err != nil {
-		writeError(w, 500, err.Error())
-		return
-	}
-	cfg, _ := getConfigFrom(r.Context(), tx)
-	validation, err := a.score(r.Context(), tx, report, reportID, codes, cfg, time.Now())
-	if err != nil {
-		writeError(w, 500, err.Error())
-		return
-	}
-	validation.Explanation = a.explain(report, validation, codes)
-	var previousID, previousStatus string
-	var previousScore float64
-	err = tx.QueryRow(r.Context(), `SELECT validation_id,status,validation_score
-		FROM validations WHERE report_id=$1 AND is_current=1
-		ORDER BY validated_at DESC LIMIT 1`, reportID).Scan(&previousID, &previousStatus, &previousScore)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, 500, err.Error())
-		return
-	}
-	if previousID != "" {
-		if _, err = tx.Exec(r.Context(), "UPDATE validations SET is_current=0 WHERE validation_id=$1", previousID); err != nil {
-			writeError(w, 500, err.Error())
-			return
-		}
-	}
-	reasons, _ := json.Marshal(validation.ReasonCodes)
-	corro, _ := json.Marshal(validation.CorroboratingInstitutions)
-	_, err = tx.Exec(r.Context(), `INSERT INTO validations (
-		validation_id,report_id,validated_at,agent_version,validation_score,status,
-		reason_codes,corroborating_institutions,corroboration_count,explanation,
-		latency_ms,alert_id,configuration_version,supersedes_validation_id,is_current
-	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1)`,
-		validation.ValidationID, reportID, validation.ValidatedAt, validation.AgentVersion,
-		validation.ValidationScore, validation.Status, string(reasons), string(corro),
-		validation.CorroborationCount, validation.Explanation, validation.LatencyMS, nil,
-		int(numberOr(cfg["configuration_version"], 1)), nullIfEmpty(previousID))
-	if err != nil {
-		writeError(w, 500, err.Error())
-		return
-	}
-	oldValue, _ := json.Marshal(map[string]any{"status": previousStatus, "score": previousScore})
-	newValue, _ := json.Marshal(map[string]any{"status": validation.Status, "score": validation.ValidationScore})
 	user := authUserFromContext(r.Context())
-	if err := auditRecord(r.Context(), tx, user.Email, "validation.revalidated",
-		validation.ValidationID, string(oldValue), string(newValue), "manual revalidation"); err != nil {
+	cfg, err := getConfigFrom(r.Context(), tx)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	changedAlerts, err := a.recalculateLinkedReport(
+		r.Context(), tx, reportID, cfg, user.Email, "manual revalidation",
+	)
+	if err != nil {
 		writeError(w, 500, err.Error())
 		return
 	}
@@ -338,7 +326,16 @@ func (a *App) revalidate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err.Error())
 		return
 	}
-	writeJSON(w, 200, validation)
+	for _, alert := range changedAlerts {
+		a.publishAlert(fmt.Sprint(alert["receiving_institution"]), alert)
+	}
+	rows, err := a.rows(r.Context(), `SELECT * FROM validations
+		WHERE report_id=$1 AND is_current=1 LIMIT 1`, reportID)
+	if err != nil || len(rows) == 0 {
+		writeError(w, 500, "revalidation result is unavailable")
+		return
+	}
+	writeJSON(w, 200, rows[0])
 }
 
 func (a *App) auditLog(w http.ResponseWriter, r *http.Request) {
@@ -352,10 +349,12 @@ func (a *App) auditLog(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) setAlertState(w http.ResponseWriter, r *http.Request, alertID string) {
 	state := r.URL.Query().Get("state")
+	outcome := r.URL.Query().Get("outcome")
 	comment := ""
 	if state == "" {
 		var body struct {
 			State   string `json:"state"`
+			Outcome string `json:"outcome"`
 			Comment string `json:"comment"`
 		}
 		if err := decodeJSON(r, &body); err != nil {
@@ -363,15 +362,8 @@ func (a *App) setAlertState(w http.ResponseWriter, r *http.Request, alertID stri
 			return
 		}
 		state = body.State
+		outcome = body.Outcome
 		comment = strings.TrimSpace(body.Comment)
-	}
-	if !containsString([]string{"acknowledged", "actioned", "disputed"}, state) {
-		writeError(w, 422, "invalid alert state")
-		return
-	}
-	if state == "disputed" && comment == "" {
-		writeError(w, 422, "a dispute comment is required")
-		return
 	}
 	tx, err := a.db.Begin(r.Context())
 	if err != nil {
@@ -379,63 +371,31 @@ func (a *App) setAlertState(w http.ResponseWriter, r *http.Request, alertID stri
 		return
 	}
 	defer func() { _ = tx.Rollback(r.Context()) }()
-	var oldState, reportingInstitution, receivingInstitution string
-	err = tx.QueryRow(r.Context(), `SELECT state,reporting_institution,receiving_institution
-		FROM alerts WHERE alert_id=$1 FOR UPDATE`, alertID).
-		Scan(&oldState, &reportingInstitution, &receivingInstitution)
-	if errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, 404, "unknown alert")
-		return
-	}
-	if err != nil {
-		writeError(w, 500, err.Error())
-		return
-	}
 	user := authUserFromContext(r.Context())
-	if user.Role == "institution" && user.InstitutionCode != receivingInstitution {
-		writeError(w, http.StatusForbidden, "only the receiving institution can update this alert")
+	result, changedAlerts, apiErr := a.applyAlertTransition(
+		r.Context(), tx, alertID, state, outcome, comment, user,
+	)
+	if apiErr != nil {
+		writeError(w, apiErr.status, apiErr.message)
 		return
 	}
-	validTransition := (oldState == "sent" && (state == "acknowledged" || state == "disputed")) ||
-		(oldState == "acknowledged" && (state == "actioned" || state == "disputed")) ||
-		oldState == state
-	if !validTransition {
-		writeError(w, 409, fmt.Sprintf("cannot move alert from %s to %s", oldState, state))
-		return
-	}
-	if _, err = tx.Exec(r.Context(), "UPDATE alerts SET state=$1 WHERE alert_id=$2", state, alertID); err != nil {
-		writeError(w, 500, err.Error())
-		return
-	}
-	if _, err = tx.Exec(r.Context(), `INSERT INTO alert_actions(alert_id,action,comment,actor,at)
-		VALUES ($1,$2,$3,$4,$5)`, alertID, state, nullIfEmpty(comment), user.Email, utcNow()); err != nil {
-		writeError(w, 500, err.Error())
-		return
-	}
-	if state == "disputed" {
-		payload, _ := json.Marshal(map[string]string{
-			"alert_id": alertID, "comment": comment,
-			"reporting_institution": reportingInstitution,
-			"receiving_institution": receivingInstitution,
+	if result["idempotent"] != true {
+		oldValue, _ := json.Marshal(map[string]any{
+			"state": result["previous_state"], "outcome": result["previous_outcome"],
 		})
-		if _, err = tx.Exec(r.Context(), `INSERT INTO notifications(
-			institution_code,event_type,record_id,created_at,payload
-		) VALUES ($1,'alert.disputed',$2,$3,$4)`,
-			reportingInstitution, alertID, utcNow(), string(payload)); err != nil {
+		newValue, _ := json.Marshal(map[string]any{"state": state, "outcome": outcome})
+		if err := auditRecord(r.Context(), tx, user.Email, "alert.state", alertID,
+			string(oldValue), string(newValue), comment); err != nil {
 			writeError(w, 500, err.Error())
 			return
 		}
-	}
-	if err := auditRecord(r.Context(), tx, user.Email, "alert.state", alertID,
-		oldState, state, comment); err != nil {
-		writeError(w, 500, err.Error())
-		return
 	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeError(w, 500, err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]any{
-		"alert_id": alertID, "state": state, "previous_state": oldState, "comment": comment,
-	})
+	for _, alert := range changedAlerts {
+		a.publishAlert(fmt.Sprint(alert["receiving_institution"]), alert)
+	}
+	writeJSON(w, 200, result)
 }

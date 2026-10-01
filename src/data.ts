@@ -107,15 +107,22 @@ export const initialBanks: Bank[] = kenyanBanks.map((entry, index) => {
 });
 
 export const riskCodeCatalog = [
-      { code: "IP-401", label: "Changing IP or location", text: "Login geography, IP, or network path changed abnormally before the transaction." },
-      { code: "VEL-429", label: "Velocity or volume spike", text: "Many transfers, deposits, attempts, or cash-outs happened in a short window." },
-      { code: "DEV-403", label: "Device or auth anomaly", text: "New device, degraded reputation, SIM swap, credential stuffing, or password reset signal." },
-      { code: "BEN-409", label: "Beneficiary mismatch", text: "New, disputed, high-risk, or recently changed beneficiary details." },
-      { code: "AML-451", label: "Mule or AML pattern", text: "Mule proximity, structuring, cash-out behavior, or linked-account network risk." },
-      { code: "DOC-422", label: "Invoice or vendor anomaly", text: "Business email compromise, invoice hash, vendor-bank change, or document mismatch." },
-      { code: "CRY-418", label: "Crypto or forex risk", text: "Crypto gateway, forex dealer, remittance, or high-risk offshore rail." },
-      { code: "GEN-400", label: "General fraud signal", text: "Fallback group for high-risk fraud evidence that does not match a specific category." }
-    ];
+  { code: "IP-401", label: "Shared device across unrelated customers", text: "A protected device appeared across unrelated customer activity." },
+  { code: "IP-402", label: "Recent SIM swap", text: "A SIM change occurred shortly before the reported activity." },
+  { code: "IP-403", label: "Emulator or rooted device", text: "The reporting institution observed an emulator or tampered device." },
+  { code: "IP-404", label: "Foreign or anonymising network", text: "The session used an unusual country, VPN, proxy, or Tor route." },
+  { code: "VEL-429", label: "Transaction burst", text: "Many transfers or attempts occurred within one hour." },
+  { code: "VEL-430", label: "New beneficiary used quickly", text: "A beneficiary was added and used within minutes." },
+  { code: "VEL-431", label: "Structuring below a threshold", text: "Payment amounts repeatedly stayed just below an institution limit." },
+  { code: "MUL-440", label: "New account with high fan-in", text: "A new account received funds from many unrelated senders." },
+  { code: "MUL-441", label: "Near-total flow-through", text: "Most incoming value moved out again." },
+  { code: "MUL-442", label: "Short dwell time", text: "Funds left the receiving account within ten minutes." },
+  { code: "MUL-443", label: "Reused cash-out number", text: "A protected cash-out MSISDN appeared across institutions." },
+  { code: "BEN-450", label: "High-value first beneficiary payment", text: "A new beneficiary received an unusually large first transfer." },
+  { code: "BEN-451", label: "Many senders to one destination", text: "Unrelated senders converged on one protected destination." },
+  { code: "ATO-460", label: "New device and beneficiary change", text: "A new device was followed by a new beneficiary." },
+  { code: "ATO-461", label: "Credential change in an unusual session", text: "Credentials changed during an off-hours or otherwise unusual session." },
+];
 
 export const knowledgeBase = {
       articles: [
@@ -124,8 +131,8 @@ export const knowledgeBase = {
           text: "A bank can only view fraud reports where it is the reporting bank or receiving bank. The reporting bank is always shown for audit context."
         },
         {
-          title: "Fraud score interpretation",
-          text: "Kifaru normalizes each bank's fraud definition into one centralized validation standard before alerting the receiving bank."
+          title: "Shared policy score",
+          text: "Kifaru applies one deterministic signal policy to structured evidence before routing an alert to the receiving institution."
         },
         {
           title: "Incoming transaction handling",
@@ -133,7 +140,7 @@ export const knowledgeBase = {
         },
         {
           title: "Receiving-bank alerting",
-          text: "When Kifaru validates fraud, the receiving bank gets an alert and can view the related validation history."
+          text: "When a signal meets policy and has an eligible independent match, the receiving institution gets an alert and chooses its response."
         }
       ],
       playbooks: [
@@ -160,7 +167,7 @@ export const knowledgeBase = {
           text: "SIEM alerts, transaction monitor events, auth logs, device telemetry, and case-management outcomes."
         },
         {
-          title: "AI model evidence store",
+          title: "Institution evidence store",
           text: "Risk factors, score history, linked entities, velocity features, and analyst feedback from the selected tenant."
         },
         {

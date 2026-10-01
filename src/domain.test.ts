@@ -11,7 +11,7 @@ import type { Transaction, Validation } from "./types.ts";
 const transaction: Transaction = {
   key: "case-1", id: "TX-123", sourceBank: "ncba", destinationBank: "kcb",
   customerRef: "*1234", merchant: "Transfer", country: "Kenya", amount: "KES 600,000",
-  score: 99, flagSource: "Kifaru agent", validationStatus: "validated_fraud",
+  score: 99, flagSource: "Kifaru policy engine", validationStatus: "corroborated",
   riskCode: { code: "DEV-403", label: "Device anomaly" },
   evidence: ["New device"], action: "Review",
   destinationHash: "sha256:abcd1234ef", corroboratingInstitutions: ["equity"], corroborationCount: 1,
@@ -39,14 +39,14 @@ test("report IDs and risk counts are scoped to the supplied records", () => {
   assert.equal(displayTransactionId(transaction, "KCB"), "KCB-123");
   assert.deepEqual(riskCounts([transaction, { ...transaction, key: "case-2" }]), [["DEV-403", 2]]);
   assert.deepEqual(riskCounts([]), []);
-  assert.equal(validationLabel("needs_review"), "Under review");
+  assert.equal(validationLabel("needs_review"), "Awaiting corroboration");
 });
 
 test("API mapping preserves every outcome, untrusted text and unique row identity", () => {
   const payload: Validation = {
     transaction_id: "TX-123", reporting_bank: "NCBA", receiving_bank: "KCB",
     customer_ref: "*1234", amount: "USD 100", currency: "USD", confidence: 70,
-    status: "needs_review", validated_by: "Kifaru agent", risk_codes: [],
+    status: "needs_review", validated_by: "Kifaru policy engine", risk_codes: [],
     key_signals: [], short_explanation: "<b>Missing data</b>", recommended_action: "Review",
   };
   const mapped = transactionFromValidation(payload, (name) => name.toLowerCase(), "unique-row");
@@ -57,17 +57,18 @@ test("API mapping preserves every outcome, untrusted text and unique row identit
   assert.equal(mapped.sourceBank, "ncba");
   assert.equal(mapped.destinationBank, "kcb");
   assert.equal(mapped.amount, "USD 100");
-  for (const status of ["validated_fraud", "not_fraud", "needs_review"] as const) {
+  for (const status of ["corroborated", "below_threshold", "needs_review", "quarantined", "retracted"] as const) {
     assert.equal(transactionFromValidation({ ...payload, status }, (name) => name, status).validationStatus, status);
   }
 });
 
-test("advisory alerts are not described as held transfers", () => {
+test("alert outcomes remain decisions recorded by the receiving institution", () => {
   const advisory = { ...transaction, alertType: "advisory" as const, amount: "KES 0" };
-  assert.equal(pipelineSteps(advisory).at(-1)?.detail, "Advisory sent, no money moved yet");
-  assert.equal(campaignChain(advisory, (id) => id).at(-1)?.label, "Watch the account");
-  assert.equal(pipelineSteps(transaction).at(-1)?.detail, "Alert sent, transaction held");
-  assert.equal(campaignChain(transaction, (id) => id).at(-1)?.label, "Held for review");
+  assert.equal(pipelineSteps(advisory).at(-1)?.detail, "Advisory delivered, no money moved yet");
+  assert.equal(campaignChain(advisory, (id) => id).at(-1)?.label, "Advisory delivered");
+  const held = { ...transaction, alertType: "review" as const, alertOutcome: "held" as const };
+  assert.equal(pipelineSteps(held).at(-1)?.detail, "Receiving institution recorded a review hold");
+  assert.equal(campaignChain(held, (id) => id).at(-1)?.label, "Held");
 });
 
 test("CSV parsing keeps quoted commas and round-trips", () => {
@@ -109,19 +110,21 @@ test("the demo lists every licensed bank and the two largest mobile money provid
 });
 
 test("identifier columns are hashed in the browser before upload", async () => {
-  const input = "reporting_bank,customer_ref,destination_msisdn,amount\nBank A,Jane Wanjiku,0712 345 678,5000\n";
+  const input = "reporting_bank,customer_ref,destination_msisdn,device_profile,amount\nBank A,Jane Wanjiku,0712 345 678,device-42,5000\n";
   const { csv, hashed } = await protectIdentifiers(input, "test-key");
   const [header, row] = parseCsv(csv);
-  assert.equal(hashed, 2);
-  assert.deepEqual(header, ["reporting_bank", "customer_ref", "destination_msisdn", "amount"]);
+  assert.equal(hashed, 3);
+  assert.deepEqual(header, ["reporting_bank", "customer_ref", "destination_msisdn", "device_profile", "amount"]);
   assert.equal(row[0], "Bank A");
-  assert.equal(row[3], "5000");
+  assert.equal(row[4], "5000");
   assert.match(row[1], /^sha256:[0-9a-f]{64}$/);
   assert.match(row[2], /^sha256:[0-9a-f]{64}$/);
+  assert.match(row[3], /^sha256:[0-9a-f]{64}$/);
   assert.equal(csv.includes("Jane"), false);
   assert.equal(csv.includes("0712"), false);
+  assert.equal(csv.includes("device-42"), false);
   const again = await protectIdentifiers("customer_ref\njane wanjiku\n", "test-key");
-  assert.equal(parseCsv(again.csv)[1][0], row[1], "the same person must hash to the same value");
+  assert.equal(parseCsv(again.csv)[1][0], row[1], "the same normalized identifier must hash to the same value");
   const unchanged = await protectIdentifiers(csv, "test-key");
   assert.equal(unchanged.hashed, 0, "values that are already hashed are left alone");
 });

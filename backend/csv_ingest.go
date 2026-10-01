@@ -6,16 +6,19 @@ import (
 	"math"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 )
 
 func (a *App) submitCSV(w http.ResponseWriter, r *http.Request) {
-	reader := csv.NewReader(r.Body)
+	reader := csv.NewReader(http.MaxBytesReader(w, r.Body, 2<<20))
 	reader.ReuseRecord = false
 	records, err := reader.ReadAll()
 	if err != nil || len(records) < 2 {
 		writeError(w, 400, "CSV must include headers and at least one data row")
+		return
+	}
+	if len(records)-1 > 1000 {
+		writeError(w, http.StatusRequestEntityTooLarge, "CSV uploads are limited to 1,000 data rows")
 		return
 	}
 	headers := records[0]
@@ -33,6 +36,9 @@ func (a *App) submitCSV(w http.ResponseWriter, r *http.Request) {
 			errs = append(errs, map[string]any{"index": index, "error": err.Error()})
 			continue
 		}
+		if report.TransactionRef == "" {
+			report.TransactionRef = fmt.Sprintf("uploaded-transaction-%04d", index+1)
+		}
 		if !authorizeReport(w, r, &report) {
 			return
 		}
@@ -43,7 +49,7 @@ func (a *App) submitCSV(w http.ResponseWriter, r *http.Request) {
 		}
 		validations = append(validations, dashboardValidation(result, report))
 	}
-	counts := map[string]int{"validated_fraud": 0, "not_fraud": 0, "needs_review": 0}
+	counts := map[string]int{"corroborated": 0, "below_threshold": 0, "needs_review": 0}
 	riskCounts := map[string]int{}
 	for _, validation := range validations {
 		counts[validation["status"].(string)]++
@@ -58,8 +64,8 @@ func (a *App) submitCSV(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(topCodes, func(i, j int) bool { return topCodes[i]["count"].(int) > topCodes[j]["count"].(int) })
 	writeJSON(w, 200, map[string]any{
 		"summary": map[string]any{
-			"total_rows": len(validations), "validated_fraud": counts["validated_fraud"],
-			"not_fraud": counts["not_fraud"], "needs_review": counts["needs_review"],
+			"total_rows": len(validations), "corroborated": counts["corroborated"],
+			"below_threshold": counts["below_threshold"], "needs_review": counts["needs_review"],
 			"top_risk_codes": topCodes,
 		},
 		"validations": validations, "errors": errs,
@@ -71,6 +77,7 @@ func (a *App) submitCSV(w http.ResponseWriter, r *http.Request) {
 var cleartextCSVColumns = []string{
 	"customer_ref", "customer", "customer_name", "account_number",
 	"destination_account", "destination_msisdn", "msisdn", "phone_number",
+	"device_profile", "evidence_device_profile",
 }
 
 func reportFromCSV(row map[string]string) (ReportIn, error) {
@@ -82,26 +89,52 @@ func reportFromCSV(row map[string]string) (ReportIn, error) {
 	}
 	reporting := institutionCode(first(row["reporting_institution"], row["reporting_bank"]))
 	receiving := institutionCode(first(row["destination_institution"], row["receiving_bank"]))
-	transactionRef := first(row["transaction_ref"], row["transaction_id"], "uploaded-transaction")
+	transactionRef := first(row["transaction_ref"], row["transaction_id"])
 	customer := first(row["subject_customer_hash"], row["customer_ref"], row["customer"])
 	codes := splitCodes(row["risk_codes"])
 	if len(codes) == 0 {
 		codes = deriveUploadCodes(row)
 	}
 	evidence := map[string]any{}
-	for source, destination := range map[string]string{
-		"evidence_device_profile": "device_profile", "evidence_account_age_days": "account_age_days",
-		"evidence_distinct_senders_7d": "distinct_senders_7d",
-		"evidence_flow_through_ratio":  "flow_through_ratio", "evidence_dwell_minutes": "dwell_minutes",
-		"evidence_sim_swap_age_days": "sim_swap_age_days",
+	for destination, sources := range map[string][]string{
+		"device_profile":      {"evidence_device_profile", "device_profile"},
+		"account_age_days":    {"evidence_account_age_days", "account_age_days"},
+		"distinct_senders_7d": {"evidence_distinct_senders_7d", "distinct_senders_7d"},
+		"flow_through_ratio":  {"evidence_flow_through_ratio", "flow_through_ratio"},
+		"dwell_minutes":       {"evidence_dwell_minutes", "dwell_minutes"},
+		"sim_swap_age_days":   {"evidence_sim_swap_age_days", "sim_swap_age_days"},
+		"velocity_1h":         {"evidence_velocity_1h", "transfers_1h", "transfers_5m"},
 	} {
-		if row[source] != "" {
-			evidence[destination] = row[source]
+		for _, source := range sources {
+			if row[source] != "" {
+				evidence[destination] = row[source]
+				break
+			}
 		}
 	}
-	if _, ok := row["reporting_institution"]; !ok {
-		evidence["is_new_device"] = strconv.FormatBool(strings.EqualFold(row["device_status"], "new_device") || boolValue(row["new_device"]))
-		evidence["is_new_beneficiary"] = strconv.FormatBool(floatValue(row["beneficiary_age_minutes"], 999999) <= 60)
+	for destination, sources := range map[string][]string{
+		"is_new_device":      {"evidence_is_new_device", "new_device"},
+		"is_new_beneficiary": {"evidence_is_new_beneficiary", "new_beneficiary"},
+		"is_emulator":        {"evidence_is_emulator", "is_emulator"},
+		"is_rooted":          {"evidence_is_rooted", "is_rooted"},
+		"ip_country_changed": {"evidence_ip_country_changed", "ip_country_changed"},
+		"vpn_proxy_tor":      {"evidence_vpn_proxy_tor", "vpn_proxy_tor"},
+		"credential_changed": {"evidence_credential_changed", "credential_changed", "password_reset_within_1h"},
+	} {
+		for _, source := range sources {
+			if row[source] != "" {
+				evidence[destination] = boolValue(row[source])
+				break
+			}
+		}
+	}
+	if _, exists := evidence["is_new_device"]; !exists &&
+		strings.EqualFold(row["device_status"], "new_device") {
+		evidence["is_new_device"] = true
+	}
+	if _, exists := evidence["is_new_beneficiary"]; !exists &&
+		floatValue(row["beneficiary_age_minutes"], 999999) <= 60 {
+		evidence["is_new_beneficiary"] = true
 	}
 	return ReportIn{
 		ReportingInstitution: reporting, ReportingSystem: first(row["reporting_system"], row["bank_flag_source"], "AG Screener"),
@@ -128,12 +161,12 @@ func dashboardValidation(result map[string]any, report ReportIn) map[string]any 
 		})
 	}
 	status := map[string]string{
-		"VALIDATED_FRAUD": "validated_fraud", "NOT_FRAUD": "not_fraud",
-		"INSUFFICIENT_EVIDENCE": "needs_review",
+		statusCorroborated: "corroborated", statusBelow: "below_threshold",
+		statusAwaiting: "needs_review",
 	}[validation.Status]
-	action := "No receiving-bank alert; keep result in history."
-	if validation.Status == "VALIDATED_FRAUD" {
-		action = "Send fraud alert to " + displayInstitution(report.DestinationInstitution) + "."
+	action := "No receiving-institution alert; keep the signal in history."
+	if validation.Status == statusCorroborated {
+		action = "Send a corroborated risk alert to " + displayInstitution(report.DestinationInstitution) + "."
 	}
 	customerRef := report.SubjectCustomerHash
 	if len(customerRef) > 4 {
@@ -141,7 +174,7 @@ func dashboardValidation(result map[string]any, report ReportIn) map[string]any 
 	}
 	return map[string]any{
 		"status": status, "confidence": int(math.Round(validation.ValidationScore * 100)),
-		"validated_by": "Kifaru agent", "bank_flag_source": report.ReportingSystem,
+		"validated_by": "Kifaru policy engine", "bank_flag_source": report.ReportingSystem,
 		"reporting_bank": displayInstitution(report.ReportingInstitution),
 		"receiving_bank": displayInstitution(report.DestinationInstitution),
 		"transaction_id": report.TransactionRef, "customer_ref": customerRef,
@@ -150,7 +183,7 @@ func dashboardValidation(result map[string]any, report ReportIn) map[string]any 
 		"destination_hash":           first(report.DestinationAccountHash, report.DestinationMSISDNHash),
 		"corroborating_institutions": validation.CorroboratingInstitutions,
 		"corroboration_count":        validation.CorroborationCount, "missing_fields": []string{},
-		"recommended_action": action, "human_review_required": validation.Status == "INSUFFICIENT_EVIDENCE",
+		"recommended_action": action, "human_review_required": validation.Status == statusAwaiting,
 		"short_explanation": validation.Explanation, "created_at": validation.ValidatedAt,
 	}
 }

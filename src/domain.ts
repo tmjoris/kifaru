@@ -30,14 +30,19 @@ export function displayTransactionId(transaction: Transaction, bankName: string)
 }
 
 export function validationLabel(status: string) {
-  if (status === "validated_fraud") return "Validated fraud";
-  if (status === "not_fraud") return "Marked not fraud";
-  return "Under review";
+  if (status === "corroborated") return "Corroborated signal";
+  if (status === "below_threshold") return "Below alert policy";
+  if (status === "quarantined") return "Quarantined";
+  if (status === "retracted") return "Retracted";
+  if (status === "expired") return "Expired";
+  if (status === "cleared") return "Cleared after review";
+  return "Awaiting corroboration";
 }
 
 export function statusClass(status: string) {
-  if (status === "validated_fraud") return "fraud";
-  if (status === "not_fraud") return "clear";
+  if (status === "corroborated") return "fraud";
+  if (["below_threshold", "cleared"].includes(status)) return "clear";
+  if (["quarantined", "retracted", "expired"].includes(status)) return "inactive";
   return "review";
 }
 
@@ -90,12 +95,12 @@ export interface PipelineStep {
   state: PipelineStepState;
 }
 
-/** Detect -> Fingerprint -> Share -> Match -> Act: where this record sits in the KIFARU pipeline. */
+/** Detect -> Protect -> Share -> Match -> Respond: where this signal sits in Kifaru. */
 export function pipelineSteps(transaction: Transaction, reporterName?: string): PipelineStep[] {
   const matched = transaction.corroborationCount > 0;
   const steps: PipelineStep[] = [
     { id: "detect", label: "Detect", detail: reporterName ? `Reported by ${reporterName}` : `Flagged by ${transaction.flagSource}`, state: "done" },
-    { id: "fingerprint", label: "Fingerprint", detail: `Receiving account turned into a protected code, ${maskedFingerprint(transaction.destinationHash)}`, state: "done" },
+    { id: "fingerprint", label: "Protect", detail: `Receiving account turned into a protected code, ${maskedFingerprint(transaction.destinationHash)}`, state: "done" },
     { id: "share", label: "Share", detail: "Published to the Kifaru exchange", state: "done" },
     {
       id: "match", label: "Match",
@@ -105,16 +110,25 @@ export function pipelineSteps(transaction: Transaction, reporterName?: string): 
       state: matched ? "done" : "pending",
     },
   ];
-  if (transaction.validationStatus === "validated_fraud") {
+  if (transaction.validationStatus === "corroborated") {
+    const action = transaction.alertOutcome === "held"
+      ? "Receiving institution recorded a review hold"
+      : transaction.alertOutcome === "released"
+        ? "Receiving institution released the activity"
+        : transaction.alertOutcome === "recovered"
+          ? "Receiving institution recorded recovery"
+          : "Alert delivered; receiver decision pending";
     steps.push({
-      id: "act", label: "Act",
-      detail: transaction.alertType === "advisory" ? "Advisory sent, no money moved yet" : "Alert sent, transaction held",
+      id: "act", label: "Respond",
+      detail: transaction.alertType === "advisory" ? "Advisory delivered, no money moved yet" : action,
       state: "done",
     });
-  } else if (transaction.validationStatus === "not_fraud") {
-    steps.push({ id: "act", label: "Act", detail: "Cleared, no alert routed", state: "cleared" });
+  } else if (["below_threshold", "cleared"].includes(transaction.validationStatus)) {
+    steps.push({ id: "act", label: "Respond", detail: "No active receiving-institution alert", state: "cleared" });
+  } else if (["quarantined", "retracted", "expired"].includes(transaction.validationStatus)) {
+    steps.push({ id: "act", label: "Respond", detail: "Removed from active corroboration", state: "cleared" });
   } else {
-    steps.push({ id: "act", label: "Act", detail: "Awaiting analyst decision", state: "active" });
+    steps.push({ id: "act", label: "Respond", detail: "Awaiting an independent institution match", state: "active" });
   }
   return steps;
 }
@@ -125,21 +139,26 @@ export interface ChainNode {
   detail: string;
 }
 
-/** Visualizes the cross-institution money movement a single fingerprint reveals. */
+/** Visualizes the protected signal route without implying human identity. */
 export function campaignChain(transaction: Transaction, bankName: (id: string) => string): ChainNode[] {
   const chain: ChainNode[] = [
     { label: bankName(reportingBankId(transaction)), kind: "bank", detail: "Detected the pattern" },
     { label: maskedFingerprint(transaction.destinationHash), kind: "fingerprint", detail: riskCodeInfo(transaction.riskCode.code, transaction.riskCode.label).title },
     { label: bankName(counterpartyBankId(transaction)), kind: "bank", detail: transactionDirection(transaction, counterpartyBankId(transaction)) },
   ];
-  if (transaction.validationStatus === "validated_fraud") {
+  if (transaction.validationStatus === "corroborated") {
+    const outcome = transaction.alertOutcome
+      ? `${transaction.alertOutcome[0].toUpperCase()}${transaction.alertOutcome.slice(1)}`
+      : "Receiver review";
     chain.push(transaction.alertType === "advisory"
-      ? { label: "Watch the account", kind: "outcome", detail: "Advisory: verify the customer before any transfer" }
-      : { label: "Held for review", kind: "outcome", detail: "Cash-out blocked pending investigation" });
-  } else if (transaction.validationStatus === "not_fraud") {
-    chain.push({ label: "Released", kind: "outcome", detail: "No cross-institution corroboration found" });
+      ? { label: "Advisory delivered", kind: "outcome", detail: "The receiving institution monitors the destination" }
+      : { label: outcome, kind: "outcome", detail: "Response recorded by the receiving institution" });
+  } else if (["below_threshold", "cleared"].includes(transaction.validationStatus)) {
+    chain.push({ label: "No active alert", kind: "outcome", detail: "The signal is below policy or was cleared" });
+  } else if (["quarantined", "retracted", "expired"].includes(transaction.validationStatus)) {
+    chain.push({ label: validationLabel(transaction.validationStatus), kind: "outcome", detail: "Removed from active corroboration" });
   } else {
-    chain.push({ label: "Under review", kind: "outcome", detail: "Analyst decision pending" });
+    chain.push({ label: "Awaiting match", kind: "outcome", detail: "No qualified independent match yet" });
   }
   return chain;
 }

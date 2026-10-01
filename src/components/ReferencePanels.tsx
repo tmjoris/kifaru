@@ -12,16 +12,16 @@ export function KnowledgeBase({ bank, entries, riskCodes }: {
     text: `${entry.artefactHash} - added by ${entry.addedBy || "unknown"}${entry.addedAt ? ` on ${entry.addedAt}` : ""}`,
   }));
   return <div className="grid kb-layout">
-    <Card title="Backend knowledge base" subtitle={`${bank.name} can view the known-good and known-bad artefacts used by the validation agent.`}
+    <Card title="Backend knowledge base" subtitle={`${bank.name} can view masked artefacts used by the shared policy engine.`}
       actions={<span className="pill clear">Live backend data</span>}>
       {backendItems.length
         ? <KnowledgeItems items={backendItems} />
         : <p className="muted">No knowledge-base entries are currently stored.</p>}
     </Card>
     <div className="stack">
-      <Card title="Detection playbooks" subtitle="Analyst guidance connected to model evidence."><KnowledgeItems items={knowledgeBase.playbooks} /></Card>
-      <Card title="Model reference sources" subtitle="Trusted inputs the AI agent can cite during investigation."><KnowledgeItems items={knowledgeBase.sources} /></Card>
-      <Card title="Central fraud standard" subtitle="Risk codes loaded from the backend validation standard.">
+      <Card title="Detection playbooks" subtitle="Analyst guidance connected to submitted evidence."><KnowledgeItems items={knowledgeBase.playbooks} /></Card>
+      <Card title="Reference sources" subtitle="Illustrative sources available during an institution's investigation."><KnowledgeItems items={knowledgeBase.sources} /></Card>
+      <Card title="Central risk standard" subtitle="Risk codes loaded from the backend policy standard.">
         <KnowledgeItems items={riskCodes.map((item) => ({ title: `${item.code} - ${item.label}`, text: item.text }))} />
       </Card>
     </div>
@@ -91,20 +91,20 @@ export function AdminDetails({
     </Card>
     <Card title="Tenant controls" subtitle="Threshold updates are persisted by the backend.">
       <div className="kb-list"><div className="kb-item">
-        <strong>Kifaru validation threshold</strong>
+        <strong>Kifaru signal threshold</strong>
         <div className="threshold-control">
-          <input aria-label="Kifaru validation threshold slider" type="range" min="50" max="99" value={threshold} onChange={(event) => setThreshold(Number(event.target.value))} />
-          <input className="input" aria-label="Kifaru validation threshold percentage" type="number" min="50" max="99" value={threshold} onChange={(event) => setThreshold(Number(event.target.value))} />
+          <input aria-label="Kifaru signal threshold slider" type="range" min="50" max="99" value={threshold} onChange={(event) => setThreshold(Number(event.target.value))} />
+          <input className="input" aria-label="Kifaru signal threshold percentage" type="number" min="50" max="99" value={threshold} onChange={(event) => setThreshold(Number(event.target.value))} />
           <button className="btn primary" disabled={saving || threshold === bank.threshold} onClick={() => void saveThreshold()}>
             {saving ? "Saving..." : "Save threshold"}
           </button>
-          <span className="muted">Backend threshold: {bank.threshold}% confidence</span>
+          <span className="muted">Backend threshold: {bank.threshold}% policy score</span>
         </div>
       </div></div>
       <KnowledgeItems items={[
-        { title: "Workspace structure", text: "Every institution can submit fraud signals, receive matched alerts, and investigate related history from the same workspace." },
+        { title: "Workspace structure", text: "Every institution can submit risk signals, receive corroborated alerts, and investigate related history from the same workspace." },
         { title: "Tenant data boundary", text: `${bank.name} views only related records. This client-side filter is not production authorization.` },
-        { title: "Alert routing", text: "Validated fraud appears for the receiving bank. Not-fraud outcomes stay in history." },
+        { title: "Alert routing", text: "Corroborated signals route to the receiving institution. Below-policy reports remain in history without an alert." },
       ]} />
     </Card>
   </div>;

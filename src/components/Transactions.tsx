@@ -23,7 +23,7 @@ export function TransactionTable({ records, bank, bankName, bankRef, history, ti
     event.preventDefault();
     onOpen(key);
   };
-  return <Card title={title} subtitle={`${subtitle} Click any row to see why Kifaru reached its result.`} className="card-flat"><div className="table-wrap">
+  return <Card title={title} subtitle={`${subtitle} Open a row to inspect the evidence and policy result.`} className="card-flat"><div className="table-wrap">
     <table className="transaction-table"><thead><tr>{headings.map((heading, index) => <th key={heading || index} scope="col"
       className={heading === "Customer ref" ? "table-secondary"
         : heading === "Checked by" ? "table-provenance"
@@ -40,13 +40,13 @@ export function TransactionTable({ records, bank, bankName, bankRef, history, ti
           {!history && <td data-label="Direction" className="table-direction"><span className="pill">{moneyDirection(transaction, bank.id)}</span></td>}
           <td data-label="Customer ref" className="table-secondary"><span className="mono">{transaction.customerRef}</span>{!history && <><br /><span className="muted">{transaction.country}</span></>}</td>
           <td data-label="Amount"><strong>{transaction.amount}</strong></td>
-          {!history && <td data-label="Score" title="Kifaru's validation score"><strong>{transaction.score}%</strong></td>}
+          {!history && <td data-label="Score" title="Shared policy score"><strong>{transaction.score}%</strong></td>}
           <td data-label="Main risk" className="risk-cell" title={risk.detail}>
             <span className="risk-title">{risk.title}</span>
             <span className="code-pill">{transaction.riskCode.code}</span>
           </td>
           <td data-label="Matched by">{transaction.corroborationCount > 0
-            ? <span className="pill fraud" title={`Reported independently by ${transaction.corroboratingInstitutions.map(bankName).join(", ")}`}>{matchesLabel(transaction.corroborationCount)}</span>
+            ? <span className="pill fraud" title={`Matched against qualified reports from ${transaction.corroboratingInstitutions.map(bankName).join(", ")}`}>{matchesLabel(transaction.corroborationCount)}</span>
             : <span className="muted">No one yet</span>}</td>
           <td data-label="Status"><Status status={transaction.validationStatus} /></td>
           {!history && <td data-label="Checked by" className="table-provenance"><span className="pill">{transaction.flagSource}</span></td>}
@@ -58,14 +58,22 @@ export function TransactionTable({ records, bank, bankName, bankRef, history, ti
   </div></Card>;
 }
 
-export function Investigation({ transaction, viewerBankId, bankName, bankRef, onClose, onAlertAction }: {
+export function Investigation({
+  transaction, viewerBankId, bankName, bankRef, onClose, onAlertAction, onSignalLifecycle,
+}: {
   transaction: Transaction; viewerBankId: string | null;
   bankName: (id: string) => string; bankRef: (id: string) => string;
   onClose: () => void;
   onAlertAction?: (
     alertId: string,
     state: "acknowledged" | "actioned" | "disputed",
+    outcome?: "" | "held" | "released" | "recovered",
     comment?: string,
+  ) => Promise<void>;
+  onSignalLifecycle?: (
+    reportId: string,
+    state: "retracted" | "expired",
+    comment: string,
   ) => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -90,22 +98,29 @@ export function Investigation({ transaction, viewerBankId, bankName, bankRef, on
     ["Money going to", bankName(receiver)],
     ...(viewerBankId ? [["For your institution", moneyDirection(transaction, viewerBankId) === "Incoming"
       ? "Money coming in" : moneyDirection(transaction, viewerBankId) === "Outgoing" ? "Money going out" : "Not your transaction"]] : []),
-    ["Kifaru score", `${transaction.score}%`],
+    ["Shared policy score", `${transaction.score}%`],
     ["Receiving account (protected code)", maskedFingerprint(transaction.destinationHash)],
     ["Customer (last characters of the protected code)", transaction.customerRef],
     ["Matched by", transaction.corroborationCount > 0
       ? `${matchesLabel(transaction.corroborationCount)}: ${transaction.corroboratingInstitutions.map(bankName).join(", ")}`
       : "No other institution yet"],
-    ["What Kifaru recommends", transaction.action],
+    ["What the policy engine recommends", transaction.action],
     ...(transaction.alertType ? [["Alert type", transaction.alertType === "advisory"
-      ? "Advisory: no money has moved yet" : "Hold: stop the money until it is checked"]] : []),
+      ? "Advisory: no money has moved yet" : "Review request: the receiving institution chooses the response"]] : []),
     ...(transaction.alertState ? [["Alert status", ALERT_STATE_HELP[transaction.alertState] ?? transaction.alertState]] : []),
+    ...(transaction.alertOutcome ? [["Institution outcome", transaction.alertOutcome]] : []),
+    ...(transaction.lifecycleState ? [["Signal lifecycle", transaction.lifecycleState]] : []),
     ["Checked by", transaction.flagSource],
   ];
   const canAct = transaction.alertId && onAlertAction
     && viewerBankId === receiver
-    && transaction.alertState !== "actioned"
-    && transaction.alertState !== "disputed";
+    && transaction.alertState !== "disputed"
+    && transaction.alertState !== "retracted";
+  const canRecordOutcome = canAct && (transaction.alertState === "acknowledged"
+    || (transaction.alertState === "actioned" && transaction.alertOutcome === "held"));
+  const canRetract = onSignalLifecycle
+    && transaction.lifecycleState === "active"
+    && (viewerBankId === null || viewerBankId === reporter);
   return <dialog ref={dialog} className="drawer open" aria-labelledby="drawerTitle"
     onCancel={(event) => { event.preventDefault(); onClose(); }}
     onMouseDown={(event) => { pressStartedOutside.current = event.target === event.currentTarget; }}
@@ -125,13 +140,32 @@ export function Investigation({ transaction, viewerBankId, bankName, bankRef, on
           <span>{STATUS_HELP[transaction.validationStatus]}</span></div>
         {canAct && <div className="drawer-actions">
           {transaction.alertState === "sent" && <button className="btn primary" onClick={() =>
-            void onAlertAction(transaction.alertId!, "acknowledged")}>Acknowledge</button>}
-          {transaction.alertState === "acknowledged" && <button className="btn primary" onClick={() =>
-            void onAlertAction(transaction.alertId!, "actioned")}>Mark actioned</button>}
+            void onAlertAction(transaction.alertId!, "acknowledged", "")}>Acknowledge</button>}
+          {canRecordOutcome && <>
+            {transaction.alertOutcome !== "held" && <button className="btn primary" onClick={() =>
+              void onAlertAction(transaction.alertId!, "actioned", "held",
+                "Receiving institution recorded a review hold.")}>Record held</button>}
+            {transaction.alertOutcome !== "released" && <button className="btn" onClick={() =>
+              void onAlertAction(transaction.alertId!, "actioned", "released",
+                "Receiving institution released the activity after review.")}>Record released</button>}
+            {transaction.alertOutcome !== "recovered" && <button className="btn" onClick={() =>
+              void onAlertAction(transaction.alertId!, "actioned", "recovered",
+                "Receiving institution recorded a synthetic recovery.")}>Record recovered</button>}
+          </>}
           <button className="btn" onClick={() => {
             const comment = window.prompt("Why is this alert being disputed?");
-            if (comment?.trim()) void onAlertAction(transaction.alertId!, "disputed", comment.trim());
+            if (comment?.trim()) void onAlertAction(transaction.alertId!, "disputed", "", comment.trim());
           }}>Dispute</button>
+        </div>}
+        {canRetract && <div className="drawer-actions">
+          <button className="btn" onClick={() => {
+            const comment = window.prompt("Why is this signal being retracted?");
+            if (comment?.trim()) void onSignalLifecycle(transaction.key, "retracted", comment.trim());
+          }}>Retract signal</button>
+          {viewerBankId === null && <button className="btn" onClick={() => {
+            const comment = window.prompt("Why should this signal be expired now?");
+            if (comment?.trim()) void onSignalLifecycle(transaction.key, "expired", comment.trim());
+          }}>Expire signal</button>}
         </div>}
       </header>
       <div className="drawer-body">
@@ -141,7 +175,7 @@ export function Investigation({ transaction, viewerBankId, bankName, bankRef, on
           <p>{risk.detail}</p>
         </div>
         {reasons.length > 0 && <>
-          <p className="sidebar-label">Why Kifaru reached this result</p>
+          <p className="sidebar-label">Why the policy engine reached this result</p>
           <ul className="reason-list">{reasons.map((reason) => <li key={reason.code}>
             <strong>{reason.title}</strong>{reason.detail && <span>{reason.detail}</span>}
             <span className="code-pill">{reason.code}</span>
@@ -151,9 +185,9 @@ export function Investigation({ transaction, viewerBankId, bankName, bankRef, on
           <p className="sidebar-label">What the reporting institution saw</p>
           <ul className="evidence-list">{evidence.map((line) => <li key={line}>{line}</li>)}</ul>
         </>}
-        <p className="sidebar-label">Kifaru pipeline</p>
+        <p className="sidebar-label">Signal lifecycle</p>
         <Pipeline steps={pipelineSteps(transaction, bankName(reporter))} />
-        <p className="sidebar-label">Fraud chain across institutions</p>
+        <p className="sidebar-label">Signal route across institutions</p>
         <CampaignChain nodes={campaignChain(transaction, bankName)} />
         <p className="sidebar-label">Details</p>
         <div className="detail-list">{details.map(([label, value]) =>
