@@ -145,6 +145,43 @@ credentials for any real service. Generated addresses use clean institution
 domains such as `lucynaserian@airtel.co.ke`; names are concatenated without `.`,
 `+` or `-` separators. These remain synthetic demonstration identities.
 
+### Institution user admission
+
+An authenticated institution user can request another account from the
+**Governance** tab by entering only an alias such as `janekamau`. The API takes
+the institution from the authenticated session and appends its configured demo
+domain, so the browser cannot choose a different tenant or email domain. Kifaru
+staff review the resulting queue in `/staff`.
+
+```mermaid
+sequenceDiagram
+    actor Requester as Institution user
+    actor Staff as Kifaru staff
+    participant UI as React workspace
+    participant API as Go admission API
+    participant DB as PostgreSQL
+
+    Requester->>UI: Enter alias only
+    UI->>API: POST /v1/user-requests { alias }
+    API->>DB: Resolve authenticated institution
+    API->>API: Validate alias and append institution domain
+    API->>DB: Store pending request and audit event
+    Staff->>API: GET /v1/user-requests
+    API-->>Staff: Ecosystem admission queue
+    Staff->>API: PATCH /v1/admin/user-requests/{id}
+    API->>DB: Lock pending request and recheck email uniqueness
+    API->>DB: Create tenant-bound user, approve request and audit atomically
+    API-->>Staff: Admission confirmed
+    Requester->>API: Sign in with admitted account
+```
+
+Pending duplicates are rejected. A rejected alias can be corrected and
+resubmitted, while approved requests cannot be decided or submitted again.
+Approved accounts use the shared pitch-demo password already documented in the
+ignored credential file. A production deployment should replace that shortcut
+with bank-managed SSO, an activation link, or a secure temporary-password
+delivery and reset flow.
+
 ## The visibility gap Kifaru closes
 
 One institution can identify a compromised customer while every downstream
@@ -363,6 +400,9 @@ erDiagram
     INSTITUTIONS ||--o{ NOTIFICATIONS : receives
     INSTITUTIONS ||--o{ AUTH_USERS : authorises
     AUTH_USERS ||--o{ AUTH_SESSIONS : opens
+    INSTITUTIONS ||--o{ USER_ACCESS_REQUESTS : owns
+    AUTH_USERS ||--o{ USER_ACCESS_REQUESTS : acts_on
+    USER_ACCESS_REQUESTS }o--o| AUTH_USERS : admits
     DEMO_STREAM_STATE ||--o{ DEMO_EVENTS : allocates
     DEMO_EVENTS }o--o| REPORTS : generates
 
@@ -437,6 +477,18 @@ erDiagram
         timestamp expires_at
         timestamp last_seen_at
     }
+    USER_ACCESS_REQUESTS {
+        text request_id PK
+        text institution_code FK
+        text alias
+        text email
+        text status
+        text requested_by FK
+        text reviewed_by FK
+        text admitted_user_id FK
+        timestamp requested_at
+        timestamp reviewed_at
+    }
     DEMO_STREAM_STATE {
         boolean singleton PK
         boolean enabled
@@ -491,9 +543,13 @@ paused only because they reached that former ceiling. The producer also repairs
 that exact legacy state if a retiring instance reaches the ceiling during a
 rolling deployment.
 
+The sixth migration adds durable institution user-addition requests, their
+pending/approved/rejected lifecycle, tenant and status indexes, reviewer
+metadata and the optional admitted-user link.
+
 Audit entries are written for validations, automatic and manual revalidation,
-alert decisions, configuration updates, threshold changes and knowledge-base
-changes.
+alert decisions, configuration updates, threshold changes, knowledge-base
+changes, user requests and staff admission decisions.
 
 ## Synthetic Microsoft Sentinel event stream
 
@@ -608,6 +664,8 @@ POST   /v1/alerts/{alert_id}/state
 POST   /v1/auth/login
 GET    /v1/auth/session
 POST   /v1/auth/logout
+GET    /v1/user-requests
+POST   /v1/user-requests
 
 GET    /v1/institutions
 GET    /v1/standard
@@ -624,6 +682,7 @@ GET    /v1/admin/demo-stream
 POST   /v1/admin/demo-stream/state
 POST   /v1/admin/demo-stream/emit
 POST   /v1/admin/demo-stream/reset
+PATCH  /v1/admin/user-requests/{request_id}
 ```
 
 ## Requirements coverage
@@ -638,6 +697,8 @@ The implementation is based on:
 - Server-verified demo authentication with bcrypt passwords
 - PostgreSQL-backed expiring sessions and account lockout
 - Staff and institution roles with server-side institution boundaries
+- Alias-only institution user requests with server-derived email domains
+- Staff approval or rejection with atomic tenant-bound account creation
 - Receiving-institution authorization for alert actions
 - CSRF protection and authenticated event streaming
 - Four ingestion paths
@@ -674,10 +735,12 @@ The implementation is based on:
 
 ### Prototype limitations
 
-- Accounts are seeded pitch identities, not accounts provisioned by a bank
-  identity provider.
+- Accounts are seeded pitch identities or staff-approved demo additions, not
+  accounts provisioned by a bank identity provider.
 - MFA, password recovery, identity lifecycle management and external service
   credentials are not implemented.
+- Approved additions use the shared demo password; production needs SSO or a
+  secure account-activation and credential-delivery flow.
 - Browser bearer-token storage is suitable for this controlled synthetic-data
   demo, but a production deployment should use bank-managed SSO and stronger
   browser isolation.
@@ -704,6 +767,7 @@ The implementation is based on:
 │   ├── data/                     # Fraud standard and synthetic datasets
 │   ├── migrations/               # Ordered PostgreSQL migrations
 │   ├── auth.go                   # Password, session and authorization controls
+│   ├── user_access.go            # Institution requests and staff admission
 │   ├── database.go               # PostgreSQL startup and migrations
 │   ├── router.go                 # HTTP routing and CORS
 │   ├── pipeline.go               # Fraud validation transaction
@@ -773,6 +837,10 @@ The backend tests cover:
 - Unauthenticated request rejection
 - Institution mismatch and cross-tenant access rejection
 - Staff-only administration and authenticated logout
+- Alias validation and automatic institution-domain derivation
+- User-request tenant isolation, duplicate handling, approval and rejection
+- Transactional account admission and one-decision-only enforcement
+- Authentication by a newly admitted institution account
 - Clear identifier rejection
 - Cleartext identifier rejection in CSV uploads
 - Behavioural risk-code derivation

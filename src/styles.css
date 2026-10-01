@@ -1018,6 +1018,258 @@
       accent-color: var(--cp-accent);
     }
 
+    .access-gateway {
+      overflow: hidden;
+    }
+
+    .access-gateway-grid {
+      display: grid;
+      grid-template-columns: minmax(18rem, 0.8fr) minmax(0, 1.2fr);
+      min-height: 20rem;
+    }
+
+    .alias-request-form {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 1.4rem;
+      border-right: 1px solid var(--cp-border);
+      background:
+        linear-gradient(145deg, var(--cp-accent-soft), transparent 58%),
+        var(--cp-panel-strong);
+    }
+
+    .alias-request-form > label {
+      color: var(--cp-text);
+      font-size: 0.86rem;
+      font-weight: 600;
+    }
+
+    .alias-builder {
+      display: flex;
+      align-items: stretch;
+      width: 100%;
+      min-width: 0;
+      border: 1px solid var(--cp-border);
+      border-radius: 14px;
+      background: var(--cp-surface);
+      overflow: hidden;
+    }
+
+    .alias-builder .input {
+      flex: 1 1 11rem;
+      min-width: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+    }
+
+    .alias-builder .input:focus {
+      box-shadow: none;
+    }
+
+    .alias-builder:focus-within {
+      border-color: var(--cp-accent);
+      box-shadow: 0 0 0 3px var(--cp-accent-soft);
+    }
+
+    .domain-lock {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0 0.9rem;
+      border-left: 1px solid var(--cp-border);
+      background: var(--cp-surface-soft);
+      color: var(--cp-text-muted);
+      font-size: 0.82rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .domain-lock .material-symbols-outlined {
+      color: var(--cp-accent);
+      font-size: 1rem;
+    }
+
+    .field-help {
+      max-width: 34rem;
+      margin: -0.15rem 0 0;
+      color: var(--cp-text-muted);
+      font-size: 0.8rem;
+      line-height: 1.45;
+    }
+
+    .admission-preview {
+      display: grid;
+      gap: 0.3rem;
+      width: 100%;
+      padding: 0.85rem 1rem;
+      border: 1px dashed var(--cp-border-strong);
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--cp-panel-strong) 82%, transparent);
+    }
+
+    .admission-preview span {
+      color: var(--cp-text-muted);
+      font-size: 0.74rem;
+    }
+
+    .admission-preview strong {
+      overflow-wrap: anywhere;
+      font-size: 0.94rem;
+    }
+
+    .request-ledger {
+      min-width: 0;
+      padding: 1.4rem;
+    }
+
+    .request-ledger-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .request-ledger h4,
+    .decision-strip h4 {
+      margin: 0;
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .request-ledger-heading p {
+      margin: 0.3rem 0 0;
+      color: var(--cp-text-muted);
+      font-size: 0.82rem;
+    }
+
+    .request-ledger-heading > span {
+      color: var(--cp-text-muted);
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+
+    .request-state {
+      margin: 0;
+      padding: 1rem 1.25rem;
+      color: var(--cp-text-muted);
+      font-size: 0.86rem;
+    }
+
+    .request-state.error {
+      color: var(--cp-danger);
+    }
+
+    .request-list {
+      display: grid;
+      gap: 0.65rem;
+    }
+
+    .request-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.85rem 0;
+      border-bottom: 1px solid var(--cp-border);
+    }
+
+    .request-row:last-child {
+      border-bottom: 0;
+    }
+
+    .request-row strong {
+      overflow-wrap: anywhere;
+      font-size: 0.88rem;
+    }
+
+    .request-row p {
+      margin: 0.25rem 0 0;
+      color: var(--cp-text-muted);
+      font-size: 0.76rem;
+      line-height: 1.4;
+    }
+
+    .admission-desk {
+      overflow: hidden;
+      border-color: color-mix(in srgb, var(--cp-accent) 28%, transparent);
+    }
+
+    .admission-queue {
+      display: grid;
+    }
+
+    .admission-ticket {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--cp-border);
+    }
+
+    .admission-ticket-mark {
+      display: grid;
+      place-items: center;
+      width: 2.6rem;
+      height: 2.6rem;
+      border-radius: 12px;
+      background: var(--cp-accent-soft);
+      color: var(--cp-accent);
+    }
+
+    .admission-ticket-copy {
+      min-width: 0;
+    }
+
+    .admission-ticket-copy strong {
+      overflow-wrap: anywhere;
+    }
+
+    .admission-ticket-copy p,
+    .admission-ticket-copy span {
+      margin: 0.25rem 0 0;
+      color: var(--cp-text-muted);
+      font-size: 0.8rem;
+    }
+
+    .admission-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .decision-strip {
+      padding: 1rem 1.25rem 1.2rem;
+      background: var(--cp-surface-soft);
+    }
+
+    .decision-list {
+      display: grid;
+      gap: 0.55rem;
+      margin-top: 0.75rem;
+    }
+
+    .decision-list > div {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 0.65rem;
+      font-size: 0.8rem;
+    }
+
+    .decision-list strong {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .decision-list > div > span:last-child {
+      color: var(--cp-text-muted);
+      text-align: right;
+    }
+
     .drawer {
       position: fixed;
       inset: 0 0 0 auto;
@@ -1257,7 +1509,8 @@
       #appShell.sidebar-collapsed,
       .content,
       .kb-layout,
-      .admin-grid {
+      .admin-grid,
+      .access-gateway-grid {
         grid-template-columns: 1fr;
       }
 
@@ -1285,6 +1538,11 @@
 
       #appShell.sidebar-collapsed .sidebar {
         display: block;
+      }
+
+      .alias-request-form {
+        border-right: 0;
+        border-bottom: 1px solid var(--cp-border);
       }
 
       .bank-list {
@@ -1479,6 +1737,44 @@
       .control-row .select {
         width: 100%;
         min-width: 0;
+      }
+
+      .alias-builder {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .alias-builder .input {
+        flex: none;
+        width: 100%;
+        min-height: 2.5rem;
+      }
+
+      .domain-lock {
+        min-height: 2.5rem;
+        border-top: 1px solid var(--cp-border);
+        border-left: 0;
+      }
+
+      .admission-ticket {
+        grid-template-columns: auto minmax(0, 1fr);
+      }
+
+      .admission-actions {
+        grid-column: 1 / -1;
+      }
+
+      .admission-actions .btn {
+        flex: 1;
+      }
+
+      .decision-list > div {
+        grid-template-columns: auto minmax(0, 1fr);
+      }
+
+      .decision-list > div > span:last-child {
+        grid-column: 2;
+        text-align: left;
       }
     }
 

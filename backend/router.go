@@ -76,6 +76,8 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, a.standardRaw)
 	case r.Method == http.MethodGet && path == "/v1/institutions":
 		a.queryRows(w, r, "SELECT * FROM institutions ORDER BY name")
+	case path == "/v1/user-requests":
+		a.userAccessRequests(w, r)
 	case r.Method == http.MethodGet && path == "/v1/stats":
 		if !requireRole(w, user, "staff") {
 			return
@@ -141,6 +143,13 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.resetDemoStream(w, r)
+	case r.Method == http.MethodPatch && strings.HasPrefix(path, "/v1/admin/user-requests/"):
+		requestID := strings.TrimPrefix(path, "/v1/admin/user-requests/")
+		if requestID == "" {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		a.reviewUserAccessRequest(w, r, requestID)
 	case r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/alerts/") && strings.HasSuffix(path, "/state"):
 		id := strings.TrimSuffix(strings.TrimPrefix(path, "/v1/alerts/"), "/state")
 		a.setAlertState(w, r, id)

@@ -47,6 +47,18 @@ configuration threshold and related validations. Only the receiving institution
 can change an alert's state. Staff sessions can access ecosystem statistics,
 audit history, global controls, manual revalidation and the synthetic stream.
 
+Institution users can also request a new tenant account by sending only a
+lowercase alphanumeric alias. The server derives the `.co.ke` email domain from
+the authenticated institution; it never accepts a client-selected institution
+or domain. Staff can approve or reject pending requests. Approval locks and
+rechecks the request, creates the institution-bound `auth_users` row, records
+the decision and writes the audit event in one transaction. Rejected aliases
+can be resubmitted; approved requests are immutable.
+
+Approved accounts use the shared demo password hash. This is intentionally
+limited to the pitch environment. Production provisioning should use
+bank-managed SSO or a secure activation and credential-reset flow.
+
 Failed passwords increment an account counter. Five failures lock the account
 for five minutes. Standard sessions expire after eight hours; **Keep me signed
 in** sessions expire after seven days.
@@ -57,6 +69,8 @@ in** sessions expire after seven days.
 POST  /v1/auth/login
 GET   /v1/auth/session
 POST  /v1/auth/logout
+GET   /v1/user-requests
+POST  /v1/user-requests
 
 POST  /v1/reports
 POST  /v1/reports/batch
@@ -85,6 +99,7 @@ GET   /v1/admin/demo-stream
 POST  /v1/admin/demo-stream/state
 POST  /v1/admin/demo-stream/emit
 POST  /v1/admin/demo-stream/reset
+PATCH /v1/admin/user-requests/{request_id}
 ```
 
 The demo-stream endpoints control a durable PostgreSQL-backed
@@ -108,6 +123,8 @@ exists.
 `005_rolling_demo_stream.sql` resumes streams stopped by the former event cap;
 the Go producer then maintains rolling retention and repairs the same exact
 legacy state if a retiring instance recreates it during a rolling deployment.
+`006_user_access_requests.sql` stores tenant-bound alias requests, their review
+lifecycle, reviewer metadata and the admitted account link.
 
 ## Go package layout
 
@@ -117,6 +134,7 @@ All files use package `main`, separated by responsibility:
 - `models.go` — shared models and constants
 - `database.go` — schema, migrations and institution seed data
 - `auth.go` — password verification, sessions and authorization helpers
+- `user_access.go` — alias requests and transactional staff admission
 - `router.go` — CORS and HTTP routing
 - `pipeline.go` — atomic validation and revalidation
 - `handlers.go` — dashboard and administrative endpoints

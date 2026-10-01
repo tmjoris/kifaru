@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  emitDemoStreamEvent, loadDashboardData, loadDemoStream, login,
+  createUserAccessRequest, decideUserAccessRequest, emitDemoStreamEvent,
+  loadDashboardData, loadDemoStream, loadUserAccessRequests, login,
   logout as logoutSession, resetDemoStream, restoreSession, setDemoStreamState,
   subscribeToAlerts, updateAlertState, updateInstitutionThreshold, validateCsv,
 } from "./api";
@@ -14,7 +15,7 @@ import {
 import type {
   AuthSession, Bank, DashboardData, DemoStreamStatus, KnowledgeBaseEntry, RiskCodeReference,
   Session, Tab,
-  Transaction, UploadSummary,
+  Transaction, UploadSummary, UserAccessRequest,
 } from "./types";
 import { BrandDots, Icon, Logo } from "./components/Shared";
 import { Investigation, TransactionTable } from "./components/Transactions";
@@ -23,6 +24,7 @@ import { Exchange } from "./components/Exchange";
 import { AdminDetails, KnowledgeBase } from "./components/ReferencePanels";
 import { PortalLogin } from "./components/PortalLogin";
 import { DemoStream } from "./components/DemoStream";
+import { StaffUserAdmissions } from "./components/UserAccess";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -46,8 +48,13 @@ export default function App() {
   const [dataError, setDataError] = useState("");
   const [demoStream, setDemoStream] = useState<DemoStreamStatus | null>(null);
   const [demoBusy, setDemoBusy] = useState(false);
+  const [userAccessRequests, setUserAccessRequests] = useState<UserAccessRequest[]>([]);
+  const [userRequestDomain, setUserRequestDomain] = useState("");
+  const [userRequestsLoading, setUserRequestsLoading] = useState(false);
+  const [userRequestsError, setUserRequestsError] = useState("");
   const uploadController = useRef<AbortController | null>(null);
   const dataController = useRef<AbortController | null>(null);
+  const userRequestController = useRef<AbortController | null>(null);
   const pointerOnList = useRef(false);
   const heldUpdate = useRef<DashboardData | null>(null);
   const [updateWaiting, setUpdateWaiting] = useState(false);
@@ -107,6 +114,11 @@ export default function App() {
     setRiskCodes(riskCodeCatalog);
     setKnowledgeBaseEntries([]);
     setDemoStream(null);
+    userRequestController.current?.abort();
+    setUserAccessRequests([]);
+    setUserRequestDomain("");
+    setUserRequestsLoading(false);
+    setUserRequestsError("");
     pointerOnList.current = false;
     heldUpdate.current = null;
     setUpdateWaiting(false);
@@ -209,6 +221,30 @@ export default function App() {
     return state;
   }, []);
 
+  const refreshUserAccessRequests = useCallback(async (showLoading = true) => {
+    if (!activeSession) return;
+    const controller = new AbortController();
+    userRequestController.current?.abort();
+    userRequestController.current = controller;
+    if (showLoading) setUserRequestsLoading(true);
+    setUserRequestsError("");
+    try {
+      const payload = await loadUserAccessRequests(controller.signal);
+      setUserAccessRequests(payload.requests);
+      setUserRequestDomain(payload.emailDomain);
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setUserRequestsError(error instanceof Error ? error.message : "Unable to load user requests.");
+      }
+      throw error;
+    } finally {
+      if (userRequestController.current === controller) {
+        setUserRequestsLoading(false);
+        userRequestController.current = null;
+      }
+    }
+  }, [activeSession]);
+
   useEffect(() => {
     if (!activeSession) {
       setLoadingData(false);
@@ -218,8 +254,14 @@ export default function App() {
     return () => {
       uploadController.current?.abort();
       dataController.current?.abort();
+      userRequestController.current?.abort();
     };
   }, [activeSession, refreshData]);
+
+  useEffect(() => {
+    if (!activeSession) return;
+    void refreshUserAccessRequests().catch(() => undefined);
+  }, [activeSession, refreshUserAccessRequests]);
 
   useEffect(() => {
     if (!activeSession || !isExchange) return;
@@ -341,6 +383,19 @@ export default function App() {
     }
   }
 
+  async function requestInstitutionUser(alias: string) {
+    await createUserAccessRequest(alias);
+    await refreshUserAccessRequests(false).catch(() => undefined);
+  }
+
+  async function reviewInstitutionUser(
+    requestId: string,
+    decision: "approved" | "rejected",
+  ) {
+    await decideUserAccessRequest(requestId, decision);
+    await refreshUserAccessRequests(false).catch(() => undefined);
+  }
+
   const tabs: { id: Tab; label: string }[] = [
     { id: "outgoing", label: "Flags submitted" },
     { id: "incoming", label: "Alerts received" }, { id: "history", label: "Related history" },
@@ -449,12 +504,16 @@ export default function App() {
             document.documentElement.dataset.theme = next;
             window.localStorage.setItem("kifaru-theme", next);
           }}><Icon name="contrast" className="btn-icon" />Toggle theme</button>
-          <button className="btn primary" disabled={loadingData} onClick={() => void refreshData().then(() => {
+          <button className="btn primary" disabled={loadingData || userRequestsLoading} onClick={() => void Promise.all([
+            refreshData(), refreshUserAccessRequests(false),
+          ]).then(() => {
             setToast("Data refreshed.");
-          }).catch(() => undefined)}><Icon name="refresh" className="btn-icon" />{loadingData ? "Loading..." : "Refresh data"}</button>
+          }).catch(() => undefined)}><Icon name="refresh" className="btn-icon" />{loadingData || userRequestsLoading ? "Loading..." : "Refresh data"}</button>
         </div></section>
         {isExchange
           ? <div className="stack">
+            <StaffUserAdmissions requests={userAccessRequests} loading={userRequestsLoading}
+              error={userRequestsError} onDecision={reviewInstitutionUser} notify={setToast} />
             <DemoStream stream={demoStream} busy={demoBusy}
               onToggle={controlDemoStream} onEmit={emitDemoEvent} onReset={clearDemoStream} />
             {updateWaiting && <p className="update-waiting" role="status">New activity has arrived. The cards update when you move the pointer off them.</p>}
@@ -494,6 +553,9 @@ export default function App() {
             {tab === "reports" && <Reports records={records} bank={bank} view={reportView} onView={setReportView} />}
             {tab === "knowledge" && <KnowledgeBase bank={bank} entries={knowledgeBaseEntries} riskCodes={riskCodes} />}
             {tab === "governance" && <AdminDetails bank={bank} notify={setToast}
+              userRequests={userAccessRequests} userRequestDomain={userRequestDomain}
+              userRequestsLoading={userRequestsLoading} userRequestsError={userRequestsError}
+              onUserRequest={requestInstitutionUser}
               onThresholdChange={async (threshold) => {
                 await updateInstitutionThreshold(bank.backendCode, threshold);
                 await refreshData(false);
