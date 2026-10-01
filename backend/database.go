@@ -17,6 +17,21 @@ var schema string
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
+//go:embed data/kenyan_banks.json
+var kenyanBanksJSON []byte
+
+var kenyanBanks = loadKenyanBanks()
+
+func loadKenyanBanks() []Institution {
+	var directory struct {
+		Institutions []Institution `json:"institutions"`
+	}
+	if err := json.Unmarshal(kenyanBanksJSON, &directory); err != nil {
+		panic(fmt.Sprintf("parse data/kenyan_banks.json: %v", err))
+	}
+	return directory.Institutions
+}
+
 func loadStandard() (map[string]any, Standard, error) {
 	path := filepath.Join("data", "kifaru_risk_codes.json")
 	body, err := os.ReadFile(path)
@@ -46,51 +61,17 @@ func (a *App) initDB(ctx context.Context) error {
 	if err := a.runMigrations(ctx); err != nil {
 		return err
 	}
-	institutions := [][]any{
-		{"external", "External financial network", "external", 0.50},
-		{"bank_a", "NCBA Bank Kenya PLC", "bank", 0.45},
-		{"bank_b", "KCB Bank Kenya Limited", "bank", 0.50},
-		{"psp_c", "Equity Bank Kenya Limited", "bank", 0.40},
-		{"sacco_d", "I&M Bank Limited", "bank", 0.60},
-		{"ke:absa-bank-kenya", "Absa Bank Kenya PLC", "bank", 0.50},
-		{"ke:access-bank-kenya", "Access Bank (Kenya) PLC", "bank", 0.50},
-		{"ke:bank-of-africa-kenya", "Bank of Africa Kenya Limited", "bank", 0.50},
-		{"ke:bank-of-baroda-kenya", "Bank of Baroda (Kenya) Limited", "bank", 0.50},
-		{"ke:bank-of-india-kenya", "Bank of India (Kenya)", "bank", 0.50},
-		{"ke:citibank-n-a-kenya", "Citibank N.A. Kenya", "bank", 0.50},
-		{"ke:commercial-international-bank-kenya-cib", "Commercial International Bank Kenya Limited", "bank", 0.50},
-		{"ke:consolidated-bank-of-kenya", "Consolidated Bank of Kenya Limited", "bank", 0.50},
-		{"ke:co-operative-bank-of-kenya", "Co-operative Bank of Kenya Limited", "bank", 0.50},
-		{"ke:credit-bank", "Credit Bank PLC", "bank", 0.50},
-		{"ke:development-bank-of-kenya", "Development Bank of Kenya Limited", "bank", 0.50},
-		{"ke:diamond-trust-bank-dtb", "Diamond Trust Bank Kenya Limited", "bank", 0.50},
-		{"ke:dib-bank-kenya", "DIB Bank Kenya Limited", "bank", 0.50},
-		{"ke:ecobank-kenya", "Ecobank Kenya Limited", "bank", 0.50},
-		{"ke:family-bank", "Family Bank Limited", "bank", 0.50},
-		{"ke:first-community-bank", "First Community Bank Limited", "bank", 0.50},
-		{"ke:guaranty-trust-bank-kenya-gtbank", "Guaranty Trust Bank (Kenya) Limited", "bank", 0.50},
-		{"ke:guardian-bank", "Guardian Bank Limited", "bank", 0.50},
-		{"ke:gulf-african-bank", "Gulf African Bank Limited", "bank", 0.50},
-		{"ke:habib-bank-ag-zurich", "Habib Bank AG Zurich", "bank", 0.50},
-		{"ke:hfc-limited-housing-finance", "Housing Finance Company of Kenya Limited", "bank", 0.50},
-		{"ke:kingdom-bank", "Kingdom Bank Limited", "bank", 0.50},
-		{"ke:middle-east-bank-kenya", "Middle East Bank (Kenya) Limited", "bank", 0.50},
-		{"ke:m-oriental-bank", "M Oriental Bank Limited", "bank", 0.50},
-		{"ke:national-bank-of-kenya", "National Bank of Kenya Limited", "bank", 0.50},
-		{"ke:paramount-bank", "Paramount Bank Limited", "bank", 0.50},
-		{"ke:prime-bank", "Prime Bank Limited", "bank", 0.50},
-		{"ke:sbm-bank-kenya", "SBM Bank Kenya Limited", "bank", 0.50},
-		{"ke:sidian-bank", "Sidian Bank Limited", "bank", 0.50},
-		{"ke:stanbic-bank-kenya", "Stanbic Bank Kenya Limited", "bank", 0.50},
-		{"ke:standard-chartered-bank-kenya", "Standard Chartered Bank Kenya Limited", "bank", 0.50},
-		{"ke:uba-kenya", "United Bank for Africa Kenya Limited", "bank", 0.50},
-		{"ke:victoria-commercial-bank", "Victoria Commercial Bank PLC", "bank", 0.50},
-		{"ke:abc-bank-african-banking-corporation", "African Banking Corporation Limited", "bank", 0.50},
-	}
-	for _, values := range institutions {
+	institutions := append([]Institution{{
+		Code: "external", LegalName: "External financial network", Type: "external", Threshold: 0.50,
+	}}, kenyanBanks...)
+	for _, institution := range institutions {
+		// Directory names and types follow the committed source on every start;
+		// administrator-adjusted thresholds remain unchanged.
 		if _, err := a.db.Exec(ctx, `
-			INSERT INTO institutions(code,name,type,threshold) VALUES ($1,$2,$3,$4)
-			ON CONFLICT (code) DO NOTHING`, values...); err != nil {
+			INSERT INTO institutions(code,name,type,threshold,active) VALUES ($1,$2,$3,$4,1)
+			ON CONFLICT (code) DO UPDATE SET name=EXCLUDED.name,type=EXCLUDED.type,active=1`,
+			institution.Code, valueOr(institution.LegalName, institution.Name), institution.Type,
+			institution.Threshold); err != nil {
 			return err
 		}
 	}

@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import { statusClass, validationLabel } from "../domain";
+import { STATUS_HELP } from "../explain";
 import type { ChainNode, PipelineStep } from "../domain";
 
 export function Logo() {
@@ -38,7 +39,7 @@ export function Card({ title, subtitle, children, actions, className = "" }: {
 }
 
 export function Status({ status }: { status: string }) {
-  return <span className={`pill ${statusClass(status)}`}>{validationLabel(status)}</span>;
+  return <span className={`pill ${statusClass(status)}`} title={STATUS_HELP[status]}>{validationLabel(status)}</span>;
 }
 
 export function KnowledgeItems({ items }: { items: { title: string; text: string }[] }) {

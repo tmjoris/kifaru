@@ -1,7 +1,7 @@
 export type PortalScope = "institution" | "exchange";
 export type Tab = "outgoing" | "incoming" | "history" | "reports" | "knowledge" | "governance";
 export type Outcome = "validated_fraud" | "not_fraud" | "needs_review";
-export type InstitutionKind = "bank" | "sacco" | "psp";
+export type InstitutionKind = "bank" | "mortgage" | "sacco" | "psp";
 export interface Session {
   scope: PortalScope;
   bankId: string | null;
@@ -38,8 +38,6 @@ export interface Bank {
   soc: string;
   /** Institution category, used to group and label choices on the portal sign-in screen. */
   kind?: InstitutionKind;
-  /** True for institutions with no live synthetic backend feed wired up yet (directory-only entries). */
-  pending?: boolean;
   connector: { endpoint: string; systems: string; latency: string; lastSync: string };
   inputSources: Source[];
 }
@@ -57,6 +55,10 @@ export interface Transaction {
   validationStatus: Outcome;
   riskCode: { code: string; label: string };
   evidence: string[];
+  /** Validator reason codes such as CODE:ATO-460 or CORRO:destination. */
+  reasonCodes?: string[];
+  /** Evidence fields the reporting institution attached to the report. */
+  evidenceFields?: Record<string, unknown>;
   action: string;
   /** Protected destination fingerprint (hashed account or MSISDN). Never a raw identifier. */
   destinationHash: string;

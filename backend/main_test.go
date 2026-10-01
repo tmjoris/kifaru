@@ -58,6 +58,145 @@ func TestAlertType(t *testing.T) {
 	}
 }
 
+func TestNormalizeDerivesDeviceAndNetworkCodes(t *testing.T) {
+	_, standard, err := loadStandard()
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &App{standard: standard}
+	cases := []struct {
+		evidence map[string]any
+		expected string
+	}{
+		{map[string]any{"ip_country_changed": true}, "IP-404"},
+		{map[string]any{"vpn_proxy_tor": "true"}, "IP-404"},
+		{map[string]any{"is_emulator": true}, "IP-403"},
+		{map[string]any{"is_rooted": 1}, "IP-403"},
+	}
+	for _, item := range cases {
+		codes, err := app.normalize(ReportIn{Evidence: item.evidence})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !containsString(codes, item.expected) {
+			t.Fatalf("expected %s from %v, got %v", item.expected, item.evidence, codes)
+		}
+	}
+	if _, err := app.normalize(ReportIn{Evidence: map[string]any{"vpn_proxy_tor": false}}); err == nil {
+		t.Fatal("a false network flag must not produce a risk code")
+	}
+}
+
+func TestReportFromCSVRejectsCleartextIdentifiers(t *testing.T) {
+	if _, err := reportFromCSV(map[string]string{
+		"reporting_bank": "NCBA", "receiving_bank": "KCB", "customer_ref": "Jane Wanjiku",
+	}); err == nil || !strings.Contains(err.Error(), "customer_ref") {
+		t.Fatalf("expected cleartext customer_ref rejection, got %v", err)
+	}
+	hash := "sha256:" + strings.Repeat("c", 64)
+	report, err := reportFromCSV(map[string]string{
+		"reporting_bank": "NCBA", "receiving_bank": "KCB", "transaction_id": "TX-9",
+		"subject_customer_hash": hash, "destination_account_hash": hash, "amount": "1200",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.ReportingInstitution != "bank_a" || report.DestinationInstitution != "bank_b" {
+		t.Fatalf("unexpected institutions %s -> %s", report.ReportingInstitution, report.DestinationInstitution)
+	}
+	if report.SubjectCustomerHash != hash || report.SubjectAccountHash != hash || report.DestinationAccountHash != hash {
+		t.Fatal("hashed identifiers must pass through unchanged")
+	}
+}
+
+func TestKenyanBanksDirectoryIsComplete(t *testing.T) {
+	if len(kenyanBanks) != 40 {
+		t.Fatalf("expected 37 commercial banks, 1 mortgage finance institution and 2 mobile money providers, got %d", len(kenyanBanks))
+	}
+	counts := map[string]int{}
+	seen := map[string]bool{}
+	for _, bank := range kenyanBanks {
+		counts[bank.Type]++
+		for _, key := range []string{"code:" + bank.Code, "id:" + bank.ID, "name:" + bank.Name, "ref:" + bank.Ref} {
+			if seen[key] {
+				t.Fatalf("duplicate %s", key)
+			}
+			seen[key] = true
+		}
+		if bank.LegalName == "" || bank.Threshold <= 0 {
+			t.Fatalf("incomplete entry %+v", bank)
+		}
+	}
+	if counts["bank"] != 37 || counts["mortgage"] != 1 || counts["psp"] != 2 {
+		t.Fatalf("unexpected institution types %v", counts)
+	}
+	for code, name := range map[string]string{"bank_a": "NCBA", "bank_b": "KCB", "psp_c": "Equity Bank", "sacco_d": "I&M Bank"} {
+		if got := displayInstitution(code); got != name {
+			t.Fatalf("existing data for %s must keep %s, got %s", code, name, got)
+		}
+	}
+}
+
+func TestInstitutionCodeMatchesAnyName(t *testing.T) {
+	cases := map[string]string{
+		"KCB": "bank_b", "NCBA Bank Kenya PLC": "bank_a", "i&m bank": "sacco_d", " Equity Bank ": "psp_c",
+		"COOP": "ke:co-operative-bank-of-kenya", "Premier Bank Limited": "ke:premier-bank",
+		"ke:uba-kenya": "ke:uba-kenya", "Unknown Bank": "Unknown Bank",
+	}
+	for input, expected := range cases {
+		if got := institutionCode(input); got != expected {
+			t.Fatalf("institutionCode(%q) = %q, want %q", input, got, expected)
+		}
+	}
+}
+
+func TestDemoCampaignsRotateThroughEveryBank(t *testing.T) {
+	reported := map[string]bool{}
+	received := map[string]bool{}
+	for campaign := int64(0); campaign < int64(len(kenyanBanks)); campaign++ {
+		reporters, destination := demoInstitutions(campaign)
+		if reporters[0] == reporters[1] || destination == reporters[0] || destination == reporters[1] {
+			t.Fatalf("campaign %d reuses a bank: %v -> %s", campaign, reporters, destination)
+		}
+		reported[reporters[0]], reported[reporters[1]], received[destination] = true, true, true
+	}
+	if len(reported) != len(kenyanBanks) || len(received) != len(kenyanBanks) {
+		t.Fatalf("every bank should report and receive: reported=%d received=%d of %d",
+			len(reported), len(received), len(kenyanBanks))
+	}
+}
+
+func demoOffsets(t *testing.T, eventType string) (int64, int64) {
+	t.Helper()
+	for offset := int64(1); offset < 100; offset += 2 {
+		if _, _, metadata := demoReport(offset); metadata["event_type"] == eventType {
+			return offset, offset + 1
+		}
+	}
+	t.Fatalf("no demo campaign for %s", eventType)
+	return 0, 0
+}
+
+func TestDemoDeviceSwitchCampaignChangesDeviceAndNetwork(t *testing.T) {
+	firstOffset, secondOffset := demoOffsets(t, "device_network_switch")
+	first, _, _ := demoReport(firstOffset)
+	second, _, _ := demoReport(secondOffset)
+	if first.DestinationAccountHash != second.DestinationAccountHash {
+		t.Fatal("both institutions should see the same cash-out destination")
+	}
+	if first.Evidence["device_profile"] == second.Evidence["device_profile"] {
+		t.Fatal("the fraudster should appear on a different device at each institution")
+	}
+	if first.Evidence["ip_country_changed"] != true || second.Evidence["vpn_proxy_tor"] != true {
+		t.Fatal("each institution should see a network change")
+	}
+	simSwap, _, _ := demoReport(1)
+	simSwapPartner, _, _ := demoReport(2)
+	if simSwap.Evidence["device_profile"] != simSwapPartner.Evidence["device_profile"] {
+		t.Fatal("other campaigns keep one device for both institutions")
+	}
+}
+
 func TestDemoReportUsesSentinelShapeAndCampaignPairs(t *testing.T) {
 	first, firstPayload, firstMeta := demoReport(1)
 	second, secondPayload, secondMeta := demoReport(2)
@@ -106,6 +245,13 @@ func TestPostgresPipeline(t *testing.T) {
 	}
 	if err := app.initDB(ctx); err != nil {
 		t.Fatal(err)
+	}
+	var institutionCount int
+	if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM institutions WHERE active=1").Scan(&institutionCount); err != nil {
+		t.Fatal(err)
+	}
+	if institutionCount != len(kenyanBanks)+1 {
+		t.Fatalf("expected every bank plus the external network, got %d", institutionCount)
 	}
 
 	var demoUserCount int
@@ -226,6 +372,14 @@ func TestPostgresPipeline(t *testing.T) {
 	if crossInstitutionRecorder.Code != http.StatusForbidden {
 		t.Fatalf("cross-institution history should fail, got %d", crossInstitutionRecorder.Code)
 	}
+	institutionWildcard := httptest.NewRequest(http.MethodGet, "/v1/history?institution=*", nil)
+	institutionWildcard.Header.Set("Authorization", "Bearer "+equityToken)
+	institutionWildcardRecorder := httptest.NewRecorder()
+	app.serveHTTP(institutionWildcardRecorder, institutionWildcard)
+	if institutionWildcardRecorder.Code != http.StatusForbidden {
+		t.Fatalf("institution user should not access ecosystem history, got %d",
+			institutionWildcardRecorder.Code)
+	}
 	institutionAdmin := httptest.NewRequest(http.MethodGet, "/v1/admin/demo-stream", nil)
 	institutionAdmin.Header.Set("Authorization", "Bearer "+equityToken)
 	institutionAdminRecorder := httptest.NewRecorder()
@@ -251,6 +405,14 @@ func TestPostgresPipeline(t *testing.T) {
 	app.serveHTTP(staffStatsRecorder, staffStats)
 	if staffStatsRecorder.Code != http.StatusOK {
 		t.Fatalf("staff stats failed: %d %s", staffStatsRecorder.Code, staffStatsRecorder.Body.String())
+	}
+	staffHistory := httptest.NewRequest(http.MethodGet, "/v1/history?institution=*&limit=2000", nil)
+	staffHistory.Header.Set("Authorization", "Bearer "+staffToken)
+	staffHistoryRecorder := httptest.NewRecorder()
+	app.serveHTTP(staffHistoryRecorder, staffHistory)
+	if staffHistoryRecorder.Code != http.StatusOK {
+		t.Fatalf("staff ecosystem history failed: %d %s",
+			staffHistoryRecorder.Code, staffHistoryRecorder.Body.String())
 	}
 	logoutRequest := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
 	logoutRequest.Header.Set("Authorization", "Bearer "+staffToken)
@@ -417,6 +579,20 @@ func TestPostgresPipeline(t *testing.T) {
 		t.Fatal("expected validation and alert audit records")
 	}
 
+	for query, expected := range map[string]int{"institution=*": 3, "institution=bank_a": 3, "institution=ke:uba-kenya": 0} {
+		recorder = httptest.NewRecorder()
+		app.history(recorder, httptest.NewRequest(http.MethodGet, "/v1/history?"+query, nil))
+		var payload struct {
+			History []map[string]any `json:"history"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil || recorder.Code != http.StatusOK {
+			t.Fatalf("history %s failed: %d %s", query, recorder.Code, recorder.Body.String())
+		}
+		if len(payload.History) != expected {
+			t.Fatalf("history %s returned %d rows, want %d", query, len(payload.History), expected)
+		}
+	}
+
 	firstDemo, emitted, err := app.produceDemoEvent(ctx, true)
 	if err != nil || !emitted {
 		t.Fatalf("first demo event failed: emitted=%v result=%#v err=%v", emitted, firstDemo, err)
@@ -480,5 +656,60 @@ func TestPostgresPipeline(t *testing.T) {
 	}
 	if demoEventCount != 0 || demoReportCount != 0 {
 		t.Fatalf("reset left synthetic data behind: events=%d reports=%d", demoEventCount, demoReportCount)
+	}
+
+	advisoryFirst, advisorySecond := demoOffsets(t, "credential_change_advisory")
+	for index, offset := range []int64{advisoryFirst, advisorySecond} {
+		report, _, _ := demoReport(offset)
+		result, apiErr := app.process(ctx, report, "soc_connector")
+		if apiErr != nil {
+			t.Fatal(apiErr.message)
+		}
+		status := result["validation"].(Validation).Status
+		if index == 0 && status != "INSUFFICIENT_EVIDENCE" {
+			t.Fatalf("the first credential-reset report should await corroboration, got %s", status)
+		}
+		if index == 1 && status != "VALIDATED_FRAUD" {
+			t.Fatalf("the corroborated credential-reset report should validate, got %s", status)
+		}
+	}
+	var advisoryCount int
+	if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM alerts WHERE alert_type='advisory'").Scan(&advisoryCount); err != nil {
+		t.Fatal(err)
+	}
+	if advisoryCount == 0 {
+		t.Fatal("the credential-reset campaign should produce an advisory alert")
+	}
+
+	switchFirst, switchSecond := demoOffsets(t, "device_network_switch")
+	firstSwitch, _, _ := demoReport(switchFirst)
+	firstSwitchResult, apiErr := app.process(ctx, firstSwitch, "soc_connector")
+	if apiErr != nil {
+		t.Fatal(apiErr.message)
+	}
+	if status := firstSwitchResult["validation"].(Validation).Status; status != "INSUFFICIENT_EVIDENCE" {
+		t.Fatalf("the first device-switch report should await corroboration, got %s", status)
+	}
+	secondSwitch, _, _ := demoReport(switchSecond)
+	secondSwitchResult, apiErr := app.process(ctx, secondSwitch, "soc_connector")
+	if apiErr != nil {
+		t.Fatal(apiErr.message)
+	}
+	secondValidation := secondSwitchResult["validation"].(Validation)
+	if secondValidation.Status != "VALIDATED_FRAUD" || !containsString(secondValidation.ReasonCodes, "LINK:device_switch") {
+		t.Fatalf("a device switch should still validate and be flagged: %s %v",
+			secondValidation.Status, secondValidation.ReasonCodes)
+	}
+	if !strings.Contains(secondValidation.Explanation, "different device") {
+		t.Fatalf("the explanation should mention the device switch: %s", secondValidation.Explanation)
+	}
+	var revalidatedStatus, revalidatedReasons string
+	if err := db.QueryRow(ctx, `SELECT status,reason_codes FROM validations
+		WHERE report_id=$1 AND is_current=1`, firstSwitchResult["report_id"]).
+		Scan(&revalidatedStatus, &revalidatedReasons); err != nil {
+		t.Fatal(err)
+	}
+	if revalidatedStatus != "VALIDATED_FRAUD" || !strings.Contains(revalidatedReasons, "LINK:device_switch") {
+		t.Fatalf("the first device-switch report should be revalidated: %s %s", revalidatedStatus, revalidatedReasons)
 	}
 }

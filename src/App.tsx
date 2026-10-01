@@ -4,13 +4,16 @@ import {
   logout as logoutSession, resetDemoStream, restoreSession, setDemoStreamState,
   subscribeToAlerts, updateAlertState, updateInstitutionThreshold, validateCsv,
 } from "./api";
-import { directoryBanks, initialBanks, riskCodeCatalog } from "./data";
+import { initialBanks, riskCodeCatalog } from "./data";
+import { protectIdentifiers } from "./identifiers";
+import { riskCodeInfo } from "./explain";
 import {
   counterpartyBankId, displayTransactionId, isVisible, moneyDirection, reportingBankId,
   transactionDirection,
 } from "./domain";
 import type {
-  AuthSession, Bank, DemoStreamStatus, KnowledgeBaseEntry, RiskCodeReference, Session, Tab,
+  AuthSession, Bank, DashboardData, DemoStreamStatus, KnowledgeBaseEntry, RiskCodeReference,
+  Session, Tab,
   Transaction, UploadSummary,
 } from "./types";
 import { BrandDots, Icon, Logo } from "./components/Shared";
@@ -21,13 +24,12 @@ import { AdminDetails, KnowledgeBase } from "./components/ReferencePanels";
 import { PortalLogin } from "./components/PortalLogin";
 import { DemoStream } from "./components/DemoStream";
 
+const DEMO_LOGIN_CODES = new Set(["bank_a", "bank_b", "psp_c", "sacco_d"]);
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
-  const bankTemplates = useMemo<Bank[]>(() => [
-    ...initialBanks,
-    ...directoryBanks,
-  ], []);
+  const bankTemplates = useMemo<Bank[]>(() => initialBanks, []);
   const [banks, setBanks] = useState<Bank[]>(bankTemplates);
   const [tab, setTab] = useState<Tab>("outgoing");
   const [collapsed, setCollapsed] = useState(false);
@@ -48,6 +50,9 @@ export default function App() {
   const [demoBusy, setDemoBusy] = useState(false);
   const uploadController = useRef<AbortController | null>(null);
   const dataController = useRef<AbortController | null>(null);
+  const pointerOnList = useRef(false);
+  const heldUpdate = useRef<DashboardData | null>(null);
+  const [updateWaiting, setUpdateWaiting] = useState(false);
 
   const staffRoute = window.location.pathname === "/staff";
   const activeSession = session
@@ -59,13 +64,15 @@ export default function App() {
   const bankId = activeSession?.bankId ?? "";
   const bank = banks.find((item) => item.id === bankId) ?? banks[0];
   const bankName = (id: string) => id === "external" ? "External network" : banks.find((item) => item.id === id)?.name ?? id;
+  const bankRef = (id: string) => id === "external" ? "EXT" : banks.find((item) => item.id === id)?.shortName ?? id;
   const records = transactions.filter((item) => isVisible(item, bankId));
   const selected = transactions.find((item) => item.key === selectedKey);
   const submitted = records.filter((item) => reportingBankId(item) === bankId).length;
   const received = records.filter((item) => counterpartyBankId(item) === bankId && item.validationStatus === "validated_fraud").length;
   const visible = records.filter((item) => filter === "all" || item.validationStatus === filter).filter((item) => {
-    const text = [item.customerRef, item.merchant, item.country, item.id, displayTransactionId(item, bank.name),
-      transactionDirection(item, bankId), moneyDirection(item, bankId), bankName(reportingBankId(item))].join(" ").toLowerCase();
+    const text = [item.customerRef, item.merchant, item.country, item.id, displayTransactionId(item, bankRef(reportingBankId(item))),
+      transactionDirection(item, bankId), moneyDirection(item, bankId), bankName(reportingBankId(item)),
+      riskCodeInfo(item.riskCode.code, item.riskCode.label).title, item.riskCode.code].join(" ").toLowerCase();
     return text.includes(query.trim().toLowerCase());
   });
 
@@ -102,6 +109,9 @@ export default function App() {
     setRiskCodes(riskCodeCatalog);
     setKnowledgeBaseEntries([]);
     setDemoStream(null);
+    pointerOnList.current = false;
+    heldUpdate.current = null;
+    setUpdateWaiting(false);
     setDataError("");
     setLoadingData(false);
   }, [bankTemplates]);
@@ -145,7 +155,24 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
-  const refreshData = useCallback(async (showLoading = true) => {
+  const applyData = useCallback((data: DashboardData) => {
+    setBanks(data.banks);
+    setTransactions(data.transactions);
+    setRiskCodes(data.riskCodes);
+    setKnowledgeBaseEntries(data.knowledgeBaseEntries);
+  }, []);
+
+  // Live updates wait while the pointer is over a list, so rows do not move under the cursor.
+  const pointerOverList = useCallback((over: boolean) => {
+    pointerOnList.current = over;
+    if (!over && heldUpdate.current) {
+      applyData(heldUpdate.current);
+      heldUpdate.current = null;
+      setUpdateWaiting(false);
+    }
+  }, [applyData]);
+
+  const refreshData = useCallback(async (showLoading = true, live = false) => {
     if (!activeSession) return;
     const controller = new AbortController();
     dataController.current?.abort();
@@ -157,10 +184,14 @@ export default function App() {
         scope: activeSession.scope,
         institutionCode: activeSession.institutionCode,
       }, controller.signal);
-      setBanks(data.banks);
-      setTransactions(data.transactions);
-      setRiskCodes(data.riskCodes);
-      setKnowledgeBaseEntries(data.knowledgeBaseEntries);
+      if (live && pointerOnList.current) {
+        heldUpdate.current = data;
+        setUpdateWaiting(true);
+      } else {
+        heldUpdate.current = null;
+        setUpdateWaiting(false);
+        applyData(data);
+      }
     } catch (error) {
       if (!controller.signal.aborted) {
         setDataError(error instanceof Error ? error.message : "Unable to load backend data.");
@@ -172,7 +203,7 @@ export default function App() {
         dataController.current = null;
       }
     }
-  }, [activeSession, bankTemplates]);
+  }, [activeSession, applyData, bankTemplates]);
 
   const refreshDemoStream = useCallback(async () => {
     const state = await loadDemoStream();
@@ -202,10 +233,10 @@ export default function App() {
     const institution = isExchange ? "*" : bank.backendCode;
     return subscribeToAlerts(institution, {
       alert: () => {
-        void refreshData(false).catch(() => undefined);
+        void refreshData(false, true).catch(() => undefined);
       },
       demoEvent: () => {
-        void Promise.all([refreshData(false), refreshDemoStream()]).catch(() => undefined);
+        void Promise.all([refreshData(false, true), refreshDemoStream()]).catch(() => undefined);
       },
     });
   }, [activeSession, bank.backendCode, isExchange, refreshData, refreshDemoStream]);
@@ -243,10 +274,11 @@ export default function App() {
     setUploadError("");
     setUploadSummary(null);
     try {
-      const payload = await validateCsv(await file.text(), controller.signal);
+      const { csv, hashed } = await protectIdentifiers(await file.text());
+      const payload = await validateCsv(csv, controller.signal);
       await refreshData(false);
       setUploadSummary(payload.summary);
-      setToast(`${payload.summary.total_rows} rows validated.`);
+      setToast(`${payload.summary.total_rows} rows validated. ${hashed} identifiers hashed in this browser before upload.`);
     } catch (error) {
       if (!controller.signal.aborted) {
         setUploadError(error instanceof Error ? error.message : "CSV upload failed.");
@@ -337,7 +369,7 @@ export default function App() {
   }
 
   if (!activeSession) {
-    return <PortalLogin banks={banks.filter((item) => !item.pending)} staff={staffRoute}
+    return <PortalLogin banks={banks.filter((item) => DEMO_LOGIN_CODES.has(item.backendCode))} staff={staffRoute}
       onEnterKifaru={(email, password, keepSignedIn) =>
         authenticate(email, password, null, keepSignedIn)}
       onEnterBank={(email, password, nextBankId, keepSignedIn) =>
@@ -377,7 +409,7 @@ export default function App() {
         </>}
         {!isExchange && <div className="side-panel">
           <label className="pill" htmlFor="csvUpload">CSV log upload</label>
-          <p className="muted">Upload a fraud log to test detection.</p>
+          <p className="muted">Upload a fraud log to test detection. Identifier columns are hashed in this browser first.</p>
           <input className="file-input" id="csvUpload" type="file" accept=".csv,text/csv" disabled={uploading}
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -406,7 +438,7 @@ export default function App() {
       </aside>
       <main className="main">
         <section className="topbar"><div>
-          <p className="eyebrow">{isExchange ? "Ecosystem operations" : "Institution workspace"}</p>
+          <p className="eyebrow">{isExchange ? "Ecosystem operations" : "Institution workspace"} · Synthetic demo data</p>
           <h2>{workspaceMeta.label} <BrandDots /></h2>
           <p className="muted">{isExchange
             ? "Every institution's shared fingerprints, matched across the ecosystem."
@@ -427,7 +459,10 @@ export default function App() {
           ? <div className="stack">
             <DemoStream stream={demoStream} busy={demoBusy}
               onToggle={controlDemoStream} onEmit={emitDemoEvent} onReset={clearDemoStream} />
-            <Exchange transactions={transactions} bankName={bankName} onOpen={setSelectedKey} />
+            {updateWaiting && <p className="update-waiting" role="status">New activity has arrived. The cards update when you move the pointer off them.</p>}
+            <div onPointerEnter={() => pointerOverList(true)} onPointerLeave={() => pointerOverList(false)}>
+              <Exchange transactions={transactions} bankName={bankName} onOpen={setSelectedKey} />
+            </div>
           </div>
           : <>
             <section className="grid metrics">{metrics.map((metric) =>
@@ -443,7 +478,7 @@ export default function App() {
                 <div className="control-row">
                   <div className="search-field">
                     <Icon name="search" />
-                    <input className="input" aria-label="Search transactions" placeholder="Search customer, bank, country" value={query} onChange={(event) => setQuery(event.target.value)} />
+                    <input className="input" aria-label="Search transactions" placeholder="Search by institution, risk or report ID" value={query} onChange={(event) => setQuery(event.target.value)} />
                   </div>
                   <select className="select" aria-label="Filter by risk" value={filter} onChange={(event) => setFilter(event.target.value)}>
                     <option value="all">All outcomes</option><option value="validated_fraud">Validated fraud</option>
@@ -451,9 +486,12 @@ export default function App() {
                   </select>
                 </div>
               </div>
-              <TransactionTable {...transactionTabs[tab]} records={visible.filter((item) => tab === "history"
-                || (tab === "outgoing" ? reportingBankId(item) === bankId : counterpartyBankId(item) === bankId && item.validationStatus === "validated_fraud"))}
-                bank={bank} bankName={bankName} history={tab === "history"} onOpen={setSelectedKey} />
+              {updateWaiting && <p className="update-waiting" role="status">New activity has arrived. The list updates when you move the pointer off it.</p>}
+              <div onPointerEnter={() => pointerOverList(true)} onPointerLeave={() => pointerOverList(false)}>
+                <TransactionTable {...transactionTabs[tab]} records={visible.filter((item) => tab === "history"
+                  || (tab === "outgoing" ? reportingBankId(item) === bankId : counterpartyBankId(item) === bankId && item.validationStatus === "validated_fraud"))}
+                  bank={bank} bankName={bankName} bankRef={bankRef} history={tab === "history"} onOpen={setSelectedKey} />
+              </div>
             </>}
             {tab === "reports" && <Reports records={records} bank={bank} view={reportView} onView={setReportView} />}
             {tab === "knowledge" && <KnowledgeBase bank={bank} entries={knowledgeBaseEntries} riskCodes={riskCodes} />}
@@ -465,7 +503,8 @@ export default function App() {
           </>}
       </main>
     </div>
-    {selected && <Investigation transaction={selected} bank={bank} bankName={bankName}
+    {selected && <Investigation transaction={selected} viewerBankId={isExchange ? null : bank.id}
+      bankName={bankName} bankRef={bankRef}
       onClose={() => setSelectedKey(null)} onAlertAction={isExchange ? undefined : actOnAlert} />}
     <div className={`toast ${toast ? "show" : ""}`} role="status" aria-live="polite">{toast}</div>
   </>;

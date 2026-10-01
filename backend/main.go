@@ -13,7 +13,7 @@ import (
 func main() {
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		log.Fatal("DATABASE_URL is required and must point to Neon PostgreSQL")
+		log.Fatal("DATABASE_URL is required and must point to PostgreSQL")
 	}
 	ctx := context.Background()
 	db, err := pgxpool.New(ctx, databaseURL)
@@ -29,7 +29,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	app := &App{db: db, standardRaw: raw, standard: standard, streams: map[string]map[chan []byte]struct{}{}}
+	app := &App{
+		db: db, standardRaw: raw, standard: standard,
+		streams: map[string]map[chan []byte]struct{}{},
+	}
 	if err := app.initDB(ctx); err != nil {
 		log.Fatal(err)
 	}

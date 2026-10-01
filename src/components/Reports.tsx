@@ -1,5 +1,5 @@
 import { counterpartyBankId, moneyDirection, reportingBankId, riskCounts } from "../domain";
-import { riskCodeCatalog } from "../data";
+import { riskCodeInfo } from "../explain";
 import type { Bank, Transaction } from "../types";
 import { Card } from "./Shared";
 
@@ -29,8 +29,8 @@ export function Reports({ records, bank, view, onView }: {
   ];
   if (view === "validated_fraud" || view === "not_fraud") {
     title = view === "validated_fraud" ? "Fraud blocked" : "False positives";
-    subtitle = `${title} grouped by risk code.`;
-    metrics = riskCounts(view === "validated_fraud" ? fraud : notFraud).map(([code, count]) => [code, count, title]);
+    subtitle = `${title} grouped by main risk.`;
+    metrics = riskCounts(view === "validated_fraud" ? fraud : notFraud).map(([code, count]) => [code, count, riskCodeInfo(code).title]);
   } else if (view === "submitted") {
     title = "Submitted flags";
     subtitle = "Aggregate numbers for reports sent by this bank's fraud system.";
@@ -42,12 +42,12 @@ export function Reports({ records, bank, view, onView }: {
     ];
   } else if (view.startsWith("code:")) {
     const code = view.slice(5);
-    const catalog = riskCodeCatalog.find((item) => item.code === code);
+    const info = riskCodeInfo(code);
     const matching = records.filter((item) => item.riskCode.code === code);
-    title = `${code} reports`;
-    subtitle = catalog?.text ?? "Risk-code aggregate validation numbers.";
+    title = `${code}: ${info.title}`;
+    subtitle = info.detail;
     metrics = [
-      [code, matching.length, catalog?.label ?? "Risk-code total"],
+      [code, matching.length, info.title],
       ["Validated fraud", matching.filter((item) => item.validationStatus === "validated_fraud").length, "Confirmed fraud for this risk code"],
       ["False positives", matching.filter((item) => item.validationStatus === "not_fraud").length, "Marked not fraud for this risk code"],
       ["Submitted flags", matching.filter((item) => reportingBankId(item) === bank.id).length, "Submitted by this bank with this risk code"],
@@ -64,7 +64,7 @@ export function Reports({ records, bank, view, onView }: {
     </Card>
     <Card title={title} subtitle={subtitle} actions={<div className="control-row">
       {riskCounts(records).slice(0, 3).map(([code, count]) =>
-        <button className="mini-btn" key={code} onClick={() => onView(`code:${code}`)} aria-pressed={view === `code:${code}`}>{code} - {count}</button>,
+        <button className="mini-btn" key={code} title={riskCodeInfo(code).title} onClick={() => onView(`code:${code}`)} aria-pressed={view === `code:${code}`}>{code} - {count}</button>,
       )}
     </div>}>
       <div className="table-wrap"><table>

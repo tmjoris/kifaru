@@ -20,8 +20,13 @@ deployed separately.
 `institutions` stores neutral institution identity and category. Reporting and
 receiving are per-record relationships through `reports.reporting_institution`,
 `reports.destination_institution`, and the corresponding alert fields. A bank is
-never permanently assigned one of those roles. Startup seeds the licensed Kenyan
-commercial bank directory and installs institution foreign keys for new records.
+never permanently assigned one of those roles. Startup upserts every licensed
+Kenyan bank from `data/kenyan_banks.json` (37 commercial banks and HFC) and the
+two largest mobile money providers (M-Pesa and Airtel Money), keeping
+any threshold an administrator has changed, and installs institution foreign
+keys for new records. The codes `bank_a`, `bank_b`, `psp_c` and `sacco_d` are
+kept for NCBA, KCB, Equity Bank and I&M Bank so that existing records still
+resolve.
 
 ## Authentication and authorization
 
@@ -91,8 +96,9 @@ The service embeds ordered SQL files from `migrations/`. Startup applies each
 unseen migration in a PostgreSQL transaction and records the filename in
 `schema_migrations`.
 
-`003_authentication.sql` adds demo users and expiring sessions. Startup seeds
-the pitch accounts only after the institution directory exists.
+`003_synthetic_institutions.sql` retires obsolete directory placeholders.
+`004_authentication.sql` adds demo users and expiring sessions. Startup seeds
+the pitch accounts only after the current institution directory exists.
 
 ## Go package layout
 

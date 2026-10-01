@@ -1,4 +1,5 @@
 import type { Transaction, Validation } from "./types.ts";
+import { riskCodeInfo } from "./explain.ts";
 
 export function reportingBankId(transaction: Transaction) {
   return transaction.sourceBank === "external" ? transaction.destinationBank : transaction.sourceBank;
@@ -25,7 +26,7 @@ export function transactionDirection(transaction: Transaction, bankId: string) {
 }
 
 export function displayTransactionId(transaction: Transaction, bankName: string) {
-  return `${bankName}-${transaction.id.split("-").at(-1)}`;
+  return `${bankName.replace(/\s+/g, "")}-${transaction.id.split("-").at(-1)}`;
 }
 
 export function validationLabel(status: string) {
@@ -90,11 +91,11 @@ export interface PipelineStep {
 }
 
 /** Detect -> Fingerprint -> Share -> Match -> Act: where this record sits in the KIFARU pipeline. */
-export function pipelineSteps(transaction: Transaction): PipelineStep[] {
+export function pipelineSteps(transaction: Transaction, reporterName?: string): PipelineStep[] {
   const matched = transaction.corroborationCount > 0;
   const steps: PipelineStep[] = [
-    { id: "detect", label: "Detect", detail: `Flagged by ${transaction.flagSource}`, state: "done" },
-    { id: "fingerprint", label: "Fingerprint", detail: maskedFingerprint(transaction.destinationHash), state: "done" },
+    { id: "detect", label: "Detect", detail: reporterName ? `Reported by ${reporterName}` : `Flagged by ${transaction.flagSource}`, state: "done" },
+    { id: "fingerprint", label: "Fingerprint", detail: `Receiving account turned into a protected code, ${maskedFingerprint(transaction.destinationHash)}`, state: "done" },
     { id: "share", label: "Share", detail: "Published to the Kifaru exchange", state: "done" },
     {
       id: "match", label: "Match",
@@ -105,7 +106,11 @@ export function pipelineSteps(transaction: Transaction): PipelineStep[] {
     },
   ];
   if (transaction.validationStatus === "validated_fraud") {
-    steps.push({ id: "act", label: "Act", detail: "Alert sent, transaction held", state: "done" });
+    steps.push({
+      id: "act", label: "Act",
+      detail: transaction.alertType === "advisory" ? "Advisory sent, no money moved yet" : "Alert sent, transaction held",
+      state: "done",
+    });
   } else if (transaction.validationStatus === "not_fraud") {
     steps.push({ id: "act", label: "Act", detail: "Cleared, no alert routed", state: "cleared" });
   } else {
@@ -124,11 +129,13 @@ export interface ChainNode {
 export function campaignChain(transaction: Transaction, bankName: (id: string) => string): ChainNode[] {
   const chain: ChainNode[] = [
     { label: bankName(reportingBankId(transaction)), kind: "bank", detail: "Detected the pattern" },
-    { label: maskedFingerprint(transaction.destinationHash), kind: "fingerprint", detail: transaction.riskCode.label },
+    { label: maskedFingerprint(transaction.destinationHash), kind: "fingerprint", detail: riskCodeInfo(transaction.riskCode.code, transaction.riskCode.label).title },
     { label: bankName(counterpartyBankId(transaction)), kind: "bank", detail: transactionDirection(transaction, counterpartyBankId(transaction)) },
   ];
   if (transaction.validationStatus === "validated_fraud") {
-    chain.push({ label: "Held for review", kind: "outcome", detail: "Cash-out blocked pending investigation" });
+    chain.push(transaction.alertType === "advisory"
+      ? { label: "Watch the account", kind: "outcome", detail: "Advisory: verify the customer before any transfer" }
+      : { label: "Held for review", kind: "outcome", detail: "Cash-out blocked pending investigation" });
   } else if (transaction.validationStatus === "not_fraud") {
     chain.push({ label: "Released", kind: "outcome", detail: "No cross-institution corroboration found" });
   } else {
