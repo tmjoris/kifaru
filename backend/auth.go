@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -48,20 +49,54 @@ type authSessionPayload struct {
 	AccessToken     string `json:"access_token,omitempty"`
 }
 
+func demoInstitutionEmail(institution Institution) string {
+	if institution.DemoEmail != "" {
+		return institution.DemoEmail
+	}
+	localPart := strings.ToLower(strings.ReplaceAll(institution.DemoName, " ", "."))
+	return localPart + "+" + institution.ID + "@kifaru.co.ke"
+}
+
+func demoLoginInstitutions() []Institution {
+	return append([]Institution(nil), kenyanBanks...)
+}
+
 func (a *App) seedDemoUsers(ctx context.Context) error {
-	users := []struct {
+	type seedUser struct {
 		id          string
 		email       string
 		displayName string
 		role        string
 		institution any
-	}{
-		{"demo-ncba-anthony-jordan", "anthonyjordan@ncba.co.ke", "Anthony Jordan", "institution", "bank_a"},
-		{"demo-kcb-anthony-jordan", "anthonyjordan@kcb.co.ke", "Anthony Jordan", "institution", "bank_b"},
-		{"demo-equity-anthony-jordan", "anthonyjordan@equitybank.co.ke", "Anthony Jordan", "institution", "psp_c"},
-		{"demo-im-anthony-jordan", "anthonyjordan@imbank.co.ke", "Anthony Jordan", "institution", "sacco_d"},
-		{"demo-kifaru-anthony-jordan", "anthonyjordan@kifaru.co.ke", "Anthony Jordan", "staff", nil},
 	}
+	institutions := demoLoginInstitutions()
+	users := make([]seedUser, 0, len(institutions)+1)
+	seenEmails := make(map[string]string, len(institutions))
+	for _, institution := range institutions {
+		if strings.TrimSpace(institution.DemoName) == "" {
+			return fmt.Errorf("demo identity name is missing for %s", institution.Code)
+		}
+		email := demoInstitutionEmail(institution)
+		if existing := seenEmails[email]; existing != "" {
+			return fmt.Errorf("demo identity email %s is shared by %s and %s",
+				email, existing, institution.Code)
+		}
+		seenEmails[email] = institution.Code
+		users = append(users, seedUser{
+			id:          "demo-" + institution.ID + "-institution-user",
+			email:       email,
+			displayName: institution.DemoName,
+			role:        "institution",
+			institution: institution.Code,
+		})
+	}
+	users = append(users, seedUser{
+		id:          "demo-kifaru-anthony-jordan",
+		email:       "anthonyjordan@kifaru.co.ke",
+		displayName: "Anthony Jordan",
+		role:        "staff",
+		institution: nil,
+	})
 	for _, user := range users {
 		if _, err := a.db.Exec(ctx, `INSERT INTO auth_users(
 			user_id,email,display_name,password_hash,role,institution_code
