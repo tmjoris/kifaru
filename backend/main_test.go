@@ -259,7 +259,8 @@ func TestPostgresPipeline(t *testing.T) {
 	airtel := demoLoginInstitutions()[len(demoLoginInstitutions())-1]
 	var airtelUserID string
 	if err := db.QueryRow(ctx, `SELECT user_id FROM auth_users
-		WHERE institution_code=$1`, airtel.Code).Scan(&airtelUserID); err != nil {
+		WHERE institution_code=$1 AND display_name=$2`,
+		airtel.Code, airtel.DemoName).Scan(&airtelUserID); err != nil {
 		t.Fatal(err)
 	}
 	const retiredAirtelEmail = "lucynaserian@legacy.co.ke"
@@ -284,25 +285,45 @@ func TestPostgresPipeline(t *testing.T) {
 	if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM auth_users").Scan(&demoUserCount); err != nil {
 		t.Fatal(err)
 	}
-	if demoUserCount != len(demoLoginInstitutions())+1 {
+	expectedDemoUsers := len(demoLoginInstitutions())*(len(repeatingDemoIdentities)+1) + 1
+	if demoUserCount != expectedDemoUsers {
 		t.Fatalf("expected %d seeded demo users, got %d",
-			len(demoLoginInstitutions())+1, demoUserCount)
+			expectedDemoUsers, demoUserCount)
 	}
 	for _, institution := range demoLoginInstitutions() {
-		email := demoInstitutionEmail(institution)
-		localPart, _, ok := strings.Cut(email, "@")
-		if !ok || strings.ContainsAny(localPart, "+-.") {
-			t.Fatalf("demo email contains a name separator: %s", email)
+		var institutionUserCount int
+		if err := db.QueryRow(ctx, `SELECT COUNT(*) FROM auth_users
+			WHERE role='institution' AND institution_code=$1`, institution.Code).
+			Scan(&institutionUserCount); err != nil {
+			t.Fatal(err)
 		}
-		var displayName, institutionCode string
-		if err := db.QueryRow(ctx, `SELECT display_name,institution_code
-			FROM auth_users WHERE email=$1`, email).
-			Scan(&displayName, &institutionCode); err != nil {
-			t.Fatalf("missing demo user for %s: %v", institution.Name, err)
+		if institutionUserCount != len(repeatingDemoIdentities)+1 {
+			t.Fatalf("%s has %d demo users, want %d", institution.Name,
+				institutionUserCount, len(repeatingDemoIdentities)+1)
 		}
-		if displayName != institution.DemoName || institutionCode != institution.Code {
-			t.Fatalf("incorrect demo user for %s: name=%q institution=%q",
-				institution.Name, displayName, institutionCode)
+
+		identities := append([]demoIdentity{{Key: "primary", Name: institution.DemoName}},
+			repeatingDemoIdentities...)
+		for _, identity := range identities {
+			email := demoEmailForName(identity.Name, institution)
+			if identity.Key == "primary" {
+				email = demoInstitutionEmail(institution)
+			}
+			localPart, _, ok := strings.Cut(email, "@")
+			if !ok || strings.ContainsAny(localPart, "+-.") {
+				t.Fatalf("demo email contains a name separator: %s", email)
+			}
+			var displayName, institutionCode string
+			if err := db.QueryRow(ctx, `SELECT display_name,institution_code
+				FROM auth_users WHERE email=$1`, email).
+				Scan(&displayName, &institutionCode); err != nil {
+				t.Fatalf("missing demo user %s for %s: %v",
+					identity.Name, institution.Name, err)
+			}
+			if displayName != identity.Name || institutionCode != institution.Code {
+				t.Fatalf("incorrect demo user for %s: name=%q institution=%q",
+					institution.Name, displayName, institutionCode)
+			}
 		}
 	}
 
@@ -352,7 +373,8 @@ func TestPostgresPipeline(t *testing.T) {
 		t.Fatalf("unexpected final demo institution %q", mobileMoney.Code)
 	}
 	mobileCookie, _, mobileToken, status := login(
-		demoInstitutionEmail(mobileMoney), testPassword, mobileMoney.Code)
+		demoEmailForName(repeatingDemoIdentities[0].Name, mobileMoney),
+		testPassword, mobileMoney.Code)
 	if status != http.StatusOK || mobileCookie == nil || mobileToken == "" {
 		t.Fatalf("mobile-money login failed: status=%d cookie=%v token=%q",
 			status, mobileCookie, mobileToken)

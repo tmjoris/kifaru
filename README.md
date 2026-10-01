@@ -86,9 +86,9 @@ has supplied, reviewed or endorsed any of it, and the sign-in screen and every
 workspace header say so.
 
 The authenticated institution selector covers all 38 licensed banks, M-Pesa and
-Airtel Money. Every directory participant has a working named demonstration
-account listed in the local ignored `demo-credentials.txt`; the identities are
-synthetic and include a broader set of Kenyan names.
+Airtel Money. Every directory participant has six working demonstration
+accounts: one institution-specific identity and the same five reusable Kenyan
+demo identities. All are listed in the local ignored `demo-credentials.txt`.
 Dense transaction tables prioritise decision fields on briefing-sized desktop
 screens and switch to labelled record cards on mobile. Full provenance and
 customer-reference details remain available in each investigation drawer.
@@ -138,7 +138,7 @@ Authentication controls include:
 - Authenticated live-event streaming with automatic reconnection
 - Login and logout entries in the append-only audit history
 
-The 40 institution accounts and the Kifaru staff account all use the same local
+The 240 institution accounts and the Kifaru staff account all use the same local
 demonstration password. Their complete details are kept in
 `demo-credentials.txt`, which is deliberately ignored by Git. Do not reuse those
 credentials for any real service. Generated addresses use clean institution
