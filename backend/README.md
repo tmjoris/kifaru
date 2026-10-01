@@ -1,8 +1,9 @@
 # KIFARU Go API
 
 KIFARU's backend is a Go `net/http` service backed exclusively by PostgreSQL.
-The production database is hosted on Neon. The retired SQLite demo is retained
-only as the source accepted by the one-time import utility.
+The production database is hosted on Neon. The retired FastAPI, SQLite and
+Python utility layer has been removed; Go owns authentication, routing,
+validation, migrations, streaming and administration.
 
 ## Run locally
 
@@ -13,15 +14,41 @@ go run .
 
 The service listens on `$PORT`, defaulting to `8000`.
 
+Set `FRONTEND_ORIGIN` to the exact browser origin when the frontend and API are
+deployed separately.
+
 `institutions` stores neutral institution identity and category. Reporting and
 receiving are per-record relationships through `reports.reporting_institution`,
 `reports.destination_institution`, and the corresponding alert fields. A bank is
 never permanently assigned one of those roles. Startup seeds the licensed Kenyan
 commercial bank directory and installs institution foreign keys for new records.
 
+## Authentication and authorization
+
+Startup seeds four institution demo accounts and one Kifaru staff account.
+Passwords are stored only as bcrypt hashes. Successful sign-in creates a random
+opaque token; PostgreSQL stores its SHA-256 digest, CSRF token, user, timestamps
+and expiry.
+
+The plaintext pitch credentials are maintained only in the repository root's
+git-ignored `demo-credentials.txt`.
+
+Institution sessions can access only their own history, reports, alerts,
+configuration threshold and related validations. Only the receiving institution
+can change an alert's state. Staff sessions can access ecosystem statistics,
+audit history, global controls, manual revalidation and the synthetic stream.
+
+Failed passwords increment an account counter. Five failures lock the account
+for five minutes. Standard sessions expire after eight hours; **Keep me signed
+in** sessions expire after seven days.
+
 ## API
 
 ```text
+POST  /v1/auth/login
+GET   /v1/auth/session
+POST  /v1/auth/logout
+
 POST  /v1/reports
 POST  /v1/reports/batch
 POST  /v1/reports/csv
@@ -64,15 +91,23 @@ The service embeds ordered SQL files from `migrations/`. Startup applies each
 unseen migration in a PostgreSQL transaction and records the filename in
 `schema_migrations`.
 
-## Legacy data import
+`003_authentication.sql` adds demo users and expiring sessions. Startup seeds
+the pitch accounts only after the institution directory exists.
 
-The optional import tool copies the retired SQLite demo into PostgreSQL:
+## Go package layout
 
-```bash
-python -m pip install -r requirements.txt
-export DATABASE_URL='postgresql://...'
-python scripts/migrate_sqlite_to_postgres.py --reset
-```
+All files use package `main`, separated by responsibility:
+
+- `main.go` — process startup
+- `models.go` — shared models and constants
+- `database.go` — schema, migrations and institution seed data
+- `auth.go` — password verification, sessions and authorization helpers
+- `router.go` — CORS and HTTP routing
+- `pipeline.go` — atomic validation and revalidation
+- `handlers.go` — dashboard and administrative endpoints
+- `events.go` — live events and synthetic Sentinel producer
+- `csv_ingest.go` — CSV adapter
+- `support.go` — shared database, JSON and parsing helpers
 
 ## Render
 
@@ -81,7 +116,8 @@ The repository-level `render.yaml` deploys:
 - `kifaru-api`: this Go service
 - `kifarulive`: the Vite static frontend
 
-Set the API service's `DATABASE_URL` to the Neon pooled connection string.
+Set the API service's `DATABASE_URL` to the Neon pooled connection string and
+`FRONTEND_ORIGIN` to the deployed frontend URL.
 
 See the repository-level `README.md` for the complete processing, revalidation,
 alert, audit, test and deployment documentation.

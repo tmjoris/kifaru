@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestValidateReportRejectsCleartextIdentifiers(t *testing.T) {
@@ -89,8 +90,9 @@ func TestPostgresPipeline(t *testing.T) {
 	}
 	defer db.Close()
 	_, err = db.Exec(ctx, `DROP TABLE IF EXISTS
-		notifications,alert_actions,audit_log,config,knowledge_base,alerts,
-		artefacts,validations,reports,institutions,schema_migrations CASCADE`)
+		auth_sessions,auth_users,demo_events,demo_stream_state,notifications,
+		alert_actions,audit_log,config,knowledge_base,alerts,artefacts,
+		validations,reports,institutions,schema_migrations CASCADE`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,6 +106,166 @@ func TestPostgresPipeline(t *testing.T) {
 	}
 	if err := app.initDB(ctx); err != nil {
 		t.Fatal(err)
+	}
+
+	var demoUserCount int
+	if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM auth_users").Scan(&demoUserCount); err != nil {
+		t.Fatal(err)
+	}
+	if demoUserCount != 5 {
+		t.Fatalf("expected five seeded demo users, got %d", demoUserCount)
+	}
+
+	unauthenticated := httptest.NewRequest(http.MethodGet, "/v1/history?institution=psp_c", nil)
+	unauthenticatedRecorder := httptest.NewRecorder()
+	app.serveHTTP(unauthenticatedRecorder, unauthenticated)
+	if unauthenticatedRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("history without a session should fail, got %d", unauthenticatedRecorder.Code)
+	}
+
+	testPassword := "test-" + randomHex(12)
+	testHash, err := bcrypt.GenerateFromPassword([]byte(testPassword), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(ctx, `UPDATE auth_users SET password_hash=$1
+		WHERE email IN (
+			'anthonyjordan@ncba.co.ke',
+			'anthonyjordan@equitybank.co.ke',
+			'anthonyjordan@kifaru.co.ke'
+		)`,
+		string(testHash)); err != nil {
+		t.Fatal(err)
+	}
+	login := func(email, password, institution string) (*http.Cookie, string, string, int) {
+		t.Helper()
+		body, _ := json.Marshal(map[string]any{
+			"email": email, "password": password, "institution_code": institution,
+		})
+		request := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(body))
+		recorder := httptest.NewRecorder()
+		app.serveHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			return nil, "", "", recorder.Code
+		}
+		var payload struct {
+			CSRFToken   string `json:"csrf_token"`
+			AccessToken string `json:"access_token"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		var sessionCookie *http.Cookie
+		for _, cookie := range recorder.Result().Cookies() {
+			if cookie.Name == authCookieName {
+				sessionCookie = cookie
+			}
+		}
+		return sessionCookie, payload.CSRFToken, payload.AccessToken, recorder.Code
+	}
+	if _, _, _, status := login("anthonyjordan@equitybank.co.ke", "wrong-password", "psp_c"); status != http.StatusUnauthorized {
+		t.Fatalf("invalid credentials should fail, got %d", status)
+	}
+	for attempt := 0; attempt < 5; attempt++ {
+		if _, _, _, status := login("anthonyjordan@ncba.co.ke", "wrong-password", "bank_a"); status != http.StatusUnauthorized {
+			t.Fatalf("failed sign-in %d should be rejected, got %d", attempt+1, status)
+		}
+	}
+	if _, _, _, status := login("anthonyjordan@ncba.co.ke", testPassword, "bank_a"); status != http.StatusTooManyRequests {
+		t.Fatalf("locked account should reject the correct password, got %d", status)
+	}
+	if _, _, _, status := login("anthonyjordan@equitybank.co.ke", testPassword, ""); status != http.StatusForbidden {
+		t.Fatalf("institution account on staff sign-in should fail, got %d", status)
+	}
+	if _, _, _, status := login("anthonyjordan@equitybank.co.ke", testPassword, "bank_b"); status != http.StatusForbidden {
+		t.Fatalf("institution mismatch should fail, got %d", status)
+	}
+	if _, _, _, status := login("anthonyjordan@kifaru.co.ke", testPassword, "psp_c"); status != http.StatusForbidden {
+		t.Fatalf("staff account on institution sign-in should fail, got %d", status)
+	}
+	equityCookie, equityCSRF, equityToken, status := login("anthonyjordan@equitybank.co.ke", testPassword, "psp_c")
+	if status != http.StatusOK || equityCookie == nil || equityCSRF == "" || equityToken == "" {
+		t.Fatalf("institution login failed: status=%d cookie=%v csrf=%q token=%q",
+			status, equityCookie, equityCSRF, equityToken)
+	}
+	authorizedHistory := httptest.NewRequest(http.MethodGet, "/v1/history?institution=psp_c", nil)
+	authorizedHistory.Header.Set("Authorization", "Bearer "+equityToken)
+	authorizedHistoryRecorder := httptest.NewRecorder()
+	app.serveHTTP(authorizedHistoryRecorder, authorizedHistory)
+	if authorizedHistoryRecorder.Code != http.StatusOK {
+		t.Fatalf("assigned institution history failed: %d %s",
+			authorizedHistoryRecorder.Code, authorizedHistoryRecorder.Body.String())
+	}
+	cookieSession := httptest.NewRequest(http.MethodGet, "/v1/auth/session", nil)
+	cookieSession.AddCookie(equityCookie)
+	cookieSessionRecorder := httptest.NewRecorder()
+	app.serveHTTP(cookieSessionRecorder, cookieSession)
+	if cookieSessionRecorder.Code != http.StatusOK {
+		t.Fatalf("cookie session restore failed: %d %s",
+			cookieSessionRecorder.Code, cookieSessionRecorder.Body.String())
+	}
+	var rawTokenCount int
+	if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM auth_sessions WHERE token_hash=$1",
+		equityToken).Scan(&rawTokenCount); err != nil {
+		t.Fatal(err)
+	}
+	if rawTokenCount != 0 {
+		t.Fatal("raw bearer token was stored in PostgreSQL")
+	}
+	missingCSRF := httptest.NewRequest(http.MethodPost, "/v1/reports", bytes.NewReader([]byte(`{}`)))
+	missingCSRF.Header.Set("Authorization", "Bearer "+equityToken)
+	missingCSRFRecorder := httptest.NewRecorder()
+	app.serveHTTP(missingCSRFRecorder, missingCSRF)
+	if missingCSRFRecorder.Code != http.StatusForbidden {
+		t.Fatalf("mutation without CSRF should fail, got %d", missingCSRFRecorder.Code)
+	}
+	crossInstitution := httptest.NewRequest(http.MethodGet, "/v1/history?institution=bank_b", nil)
+	crossInstitution.Header.Set("Authorization", "Bearer "+equityToken)
+	crossInstitutionRecorder := httptest.NewRecorder()
+	app.serveHTTP(crossInstitutionRecorder, crossInstitution)
+	if crossInstitutionRecorder.Code != http.StatusForbidden {
+		t.Fatalf("cross-institution history should fail, got %d", crossInstitutionRecorder.Code)
+	}
+	institutionAdmin := httptest.NewRequest(http.MethodGet, "/v1/admin/demo-stream", nil)
+	institutionAdmin.Header.Set("Authorization", "Bearer "+equityToken)
+	institutionAdminRecorder := httptest.NewRecorder()
+	app.serveHTTP(institutionAdminRecorder, institutionAdmin)
+	if institutionAdminRecorder.Code != http.StatusForbidden {
+		t.Fatalf("institution user should not control the stream, got %d", institutionAdminRecorder.Code)
+	}
+	institutionStats := httptest.NewRequest(http.MethodGet, "/v1/stats", nil)
+	institutionStats.Header.Set("Authorization", "Bearer "+equityToken)
+	institutionStatsRecorder := httptest.NewRecorder()
+	app.serveHTTP(institutionStatsRecorder, institutionStats)
+	if institutionStatsRecorder.Code != http.StatusForbidden {
+		t.Fatalf("institution user should not access ecosystem statistics, got %d", institutionStatsRecorder.Code)
+	}
+	staffCookie, staffCSRF, staffToken, status := login("anthonyjordan@kifaru.co.ke", testPassword, "")
+	if status != http.StatusOK || staffCookie == nil || staffCSRF == "" || staffToken == "" {
+		t.Fatalf("staff login failed: status=%d cookie=%v csrf=%q token=%q",
+			status, staffCookie, staffCSRF, staffToken)
+	}
+	staffStats := httptest.NewRequest(http.MethodGet, "/v1/stats", nil)
+	staffStats.Header.Set("Authorization", "Bearer "+staffToken)
+	staffStatsRecorder := httptest.NewRecorder()
+	app.serveHTTP(staffStatsRecorder, staffStats)
+	if staffStatsRecorder.Code != http.StatusOK {
+		t.Fatalf("staff stats failed: %d %s", staffStatsRecorder.Code, staffStatsRecorder.Body.String())
+	}
+	logoutRequest := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
+	logoutRequest.Header.Set("Authorization", "Bearer "+staffToken)
+	logoutRequest.Header.Set("X-Kifaru-CSRF", staffCSRF)
+	logoutRecorder := httptest.NewRecorder()
+	app.serveHTTP(logoutRecorder, logoutRequest)
+	if logoutRecorder.Code != http.StatusOK {
+		t.Fatalf("staff logout failed: %d %s", logoutRecorder.Code, logoutRecorder.Body.String())
+	}
+	loggedOutSession := httptest.NewRequest(http.MethodGet, "/v1/auth/session", nil)
+	loggedOutSession.Header.Set("Authorization", "Bearer "+staffToken)
+	loggedOutSessionRecorder := httptest.NewRecorder()
+	app.serveHTTP(loggedOutSessionRecorder, loggedOutSession)
+	if loggedOutSessionRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("logged-out bearer token should be invalid, got %d", loggedOutSessionRecorder.Code)
 	}
 
 	hash := "sha256:" + strings.Repeat("a", 64)
@@ -196,13 +358,29 @@ func TestPostgresPipeline(t *testing.T) {
 	}
 	body, _ := json.Marshal(map[string]string{"state": "disputed"})
 	request := httptest.NewRequest(http.MethodPost, "/v1/alerts/"+alertID+"/state", bytes.NewReader(body))
+	request = request.WithContext(context.WithValue(request.Context(), authContextKey{}, AuthUser{
+		Email: "analyst@kcb.co.ke", Role: "institution", InstitutionCode: "bank_b",
+	}))
 	recorder := httptest.NewRecorder()
 	app.setAlertState(recorder, request, alertID)
 	if recorder.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("dispute without comment should fail, got %d", recorder.Code)
 	}
+	body, _ = json.Marshal(map[string]string{"state": "acknowledged"})
+	request = httptest.NewRequest(http.MethodPost, "/v1/alerts/"+alertID+"/state", bytes.NewReader(body))
+	request = request.WithContext(context.WithValue(request.Context(), authContextKey{}, AuthUser{
+		Email: "analyst@equitybank.co.ke", Role: "institution", InstitutionCode: "psp_c",
+	}))
+	recorder = httptest.NewRecorder()
+	app.setAlertState(recorder, request, alertID)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("non-receiving institution should not update an alert, got %d", recorder.Code)
+	}
 	body, _ = json.Marshal(map[string]string{"state": "disputed", "comment": "Known customer payment"})
 	request = httptest.NewRequest(http.MethodPost, "/v1/alerts/"+alertID+"/state", bytes.NewReader(body))
+	request = request.WithContext(context.WithValue(request.Context(), authContextKey{}, AuthUser{
+		Email: "analyst@kcb.co.ke", Role: "institution", InstitutionCode: "bank_b",
+	}))
 	recorder = httptest.NewRecorder()
 	app.setAlertState(recorder, request, alertID)
 	if recorder.Code != http.StatusOK {
@@ -285,6 +463,9 @@ func TestPostgresPipeline(t *testing.T) {
 	}
 
 	request = httptest.NewRequest(http.MethodPost, "/v1/admin/demo-stream/reset", nil)
+	request = request.WithContext(context.WithValue(request.Context(), authContextKey{}, AuthUser{
+		Email: "staff@kifaru.co.ke", Role: "staff",
+	}))
 	recorder = httptest.NewRecorder()
 	app.resetDemoStream(recorder, request)
 	if recorder.Code != http.StatusOK {

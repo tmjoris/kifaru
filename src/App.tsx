@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  alertStreamUrl, emitDemoStreamEvent, loadDashboardData, loadDemoStream, resetDemoStream,
-  setDemoStreamState, updateAlertState, updateInstitutionThreshold, validateCsv,
+  emitDemoStreamEvent, loadDashboardData, loadDemoStream, login,
+  logout as logoutSession, resetDemoStream, restoreSession, setDemoStreamState,
+  subscribeToAlerts, updateAlertState, updateInstitutionThreshold, validateCsv,
 } from "./api";
 import { directoryBanks, initialBanks, riskCodeCatalog } from "./data";
 import {
@@ -9,7 +10,7 @@ import {
   transactionDirection,
 } from "./domain";
 import type {
-  Bank, DemoStreamStatus, KnowledgeBaseEntry, PortalScope, RiskCodeReference, Session, Tab,
+  AuthSession, Bank, DemoStreamStatus, KnowledgeBaseEntry, RiskCodeReference, Session, Tab,
   Transaction, UploadSummary,
 } from "./types";
 import { BrandDots, Icon, Logo } from "./components/Shared";
@@ -20,26 +21,9 @@ import { AdminDetails, KnowledgeBase } from "./components/ReferencePanels";
 import { PortalLogin } from "./components/PortalLogin";
 import { DemoStream } from "./components/DemoStream";
 
-const SESSION_KEY = "kifaru-session";
-
-function readJson<T>(key: string): T | null {
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? JSON.parse(raw) as T : null;
-  } catch {
-    return null;
-  }
-}
-
-function readSession(): Session | null {
-  const saved = readJson<Session & { stage?: string }>(SESSION_KEY);
-  if (!saved) return null;
-  if (saved.scope === "institution" || saved.scope === "exchange") return saved;
-  return { scope: saved.stage === "kifaru" ? "exchange" : "institution", bankId: saved.bankId };
-}
-
 export default function App() {
-  const [session, setSession] = useState<Session | null>(readSession);
+  const [session, setSession] = useState<Session | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
   const bankTemplates = useMemo<Bank[]>(() => [
     ...initialBanks,
     ...directoryBanks,
@@ -65,11 +49,6 @@ export default function App() {
   const uploadController = useRef<AbortController | null>(null);
   const dataController = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    if (session) window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    else window.localStorage.removeItem(SESSION_KEY);
-  }, [session]);
-
   const staffRoute = window.location.pathname === "/staff";
   const activeSession = session
     && ((staffRoute && session.scope === "exchange") || (!staffRoute && session.scope === "institution"))
@@ -90,6 +69,76 @@ export default function App() {
     return text.includes(query.trim().toLowerCase());
   });
 
+  const sessionFromAuth = useCallback((auth: AuthSession): Session | null => {
+    if (auth.role === "staff") {
+      if (!staffRoute) return null;
+      return {
+        scope: "exchange", bankId: null, email: auth.email, displayName: auth.displayName,
+        institutionCode: "", institutionName: "", expiresAt: auth.expiresAt,
+      };
+    }
+    if (staffRoute) return null;
+    const assignedBank = bankTemplates.find((item) => item.backendCode === auth.institutionCode);
+    if (!assignedBank) return null;
+    return {
+      scope: "institution", bankId: assignedBank.id, email: auth.email,
+      displayName: auth.displayName, institutionCode: auth.institutionCode,
+      institutionName: auth.institutionName, expiresAt: auth.expiresAt,
+    };
+  }, [bankTemplates, staffRoute]);
+
+  const clearProtectedData = useCallback(() => {
+    uploadController.current?.abort();
+    dataController.current?.abort();
+    setBanks(bankTemplates);
+    setTransactions([]);
+    setSelectedKey(null);
+    setQuery("");
+    setFilter("all");
+    setReportView("all");
+    setTab("outgoing");
+    setUploadError("");
+    setUploadSummary(null);
+    setRiskCodes(riskCodeCatalog);
+    setKnowledgeBaseEntries([]);
+    setDemoStream(null);
+    setDataError("");
+    setLoadingData(false);
+  }, [bankTemplates]);
+
+  useEffect(() => {
+    let active = true;
+    void restoreSession()
+      .then(async (auth) => {
+        if (!active || !auth) return;
+        const restored = sessionFromAuth(auth);
+        if (restored) {
+          setSession(restored);
+        } else {
+          await logoutSession();
+        }
+      })
+      .catch((error) => {
+        if (active) setDataError(error instanceof Error ? error.message : "Unable to restore the secure session.");
+      })
+      .finally(() => {
+        if (active) setSessionReady(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [sessionFromAuth]);
+
+  useEffect(() => {
+    const expire = () => {
+      setSession(null);
+      clearProtectedData();
+      setToast("Your session expired. Sign in again.");
+    };
+    window.addEventListener("kifaru-auth-expired", expire);
+    return () => window.removeEventListener("kifaru-auth-expired", expire);
+  }, [clearProtectedData]);
+
   useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => setToast(""), 3000);
@@ -97,13 +146,17 @@ export default function App() {
   }, [toast]);
 
   const refreshData = useCallback(async (showLoading = true) => {
+    if (!activeSession) return;
     const controller = new AbortController();
     dataController.current?.abort();
     dataController.current = controller;
     if (showLoading) setLoadingData(true);
     setDataError("");
     try {
-      const data = await loadDashboardData(bankTemplates, controller.signal);
+      const data = await loadDashboardData(bankTemplates, {
+        scope: activeSession.scope,
+        institutionCode: activeSession.institutionCode,
+      }, controller.signal);
       setBanks(data.banks);
       setTransactions(data.transactions);
       setRiskCodes(data.riskCodes);
@@ -119,7 +172,7 @@ export default function App() {
         dataController.current = null;
       }
     }
-  }, [bankTemplates]);
+  }, [activeSession, bankTemplates]);
 
   const refreshDemoStream = useCallback(async () => {
     const state = await loadDemoStream();
@@ -128,12 +181,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!activeSession) {
+      setLoadingData(false);
+      return;
+    }
     void refreshData().catch(() => undefined);
     return () => {
       uploadController.current?.abort();
       dataController.current?.abort();
     };
-  }, [refreshData]);
+  }, [activeSession, refreshData]);
 
   useEffect(() => {
     if (!activeSession || !isExchange) return;
@@ -143,27 +200,39 @@ export default function App() {
   useEffect(() => {
     if (!activeSession) return;
     const institution = isExchange ? "*" : bank.backendCode;
-    const stream = new EventSource(alertStreamUrl(institution));
-    stream.addEventListener("alert", () => {
-      void refreshData(false).catch(() => undefined);
+    return subscribeToAlerts(institution, {
+      alert: () => {
+        void refreshData(false).catch(() => undefined);
+      },
+      demoEvent: () => {
+        void Promise.all([refreshData(false), refreshDemoStream()]).catch(() => undefined);
+      },
     });
-    stream.addEventListener("demo-event", () => {
-      void Promise.all([refreshData(false), refreshDemoStream()]).catch(() => undefined);
-    });
-    return () => stream.close();
   }, [activeSession, bank.backendCode, isExchange, refreshData, refreshDemoStream]);
 
-  function enterPortal(next: PortalScope, nextBankId: string | null) {
-    setSession({ scope: next, bankId: nextBankId });
-    setSelectedKey(null);
-    setQuery("");
-    setFilter("all");
-    setReportView("all");
-    setTab("outgoing");
+  async function authenticate(email: string, password: string, nextBankId: string | null, keepSignedIn: boolean) {
+    const selectedBank = nextBankId ? bankTemplates.find((item) => item.id === nextBankId) : null;
+    const auth = await login(email, password, selectedBank?.backendCode ?? "", keepSignedIn);
+    const nextSession = sessionFromAuth(auth);
+    if (!nextSession) {
+      await logoutSession();
+      throw new Error(staffRoute
+        ? "Use a Kifaru staff account on this sign-in page."
+        : "Use an institution account on this sign-in page.");
+    }
+    clearProtectedData();
+    setSession(nextSession);
   }
 
-  function switchPortal() {
-    setSession(null);
+  async function switchPortal() {
+    try {
+      await logoutSession();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Sign-out failed.");
+    } finally {
+      setSession(null);
+      clearProtectedData();
+    }
   }
 
   async function upload(file: File) {
@@ -263,10 +332,16 @@ export default function App() {
     ? { label: "Kifaru exchange", blurb: "Cross-institution fraud signals and ecosystem matches.", icon: "hub", railLabel: "Exchange" }
     : { label: bank.name, blurb: "Report, receive, and investigate shared fraud signals.", icon: "account_balance", railLabel: "Workspace" };
 
+  if (!sessionReady) {
+    return <main className="portal-auth-loading"><Logo /><p>Checking secure session...</p></main>;
+  }
+
   if (!activeSession) {
-    return <PortalLogin banks={banks} staff={staffRoute}
-      onEnterKifaru={() => enterPortal("exchange", null)}
-      onEnterBank={(nextBankId) => enterPortal("institution", nextBankId)} />;
+    return <PortalLogin banks={banks.filter((item) => !item.pending)} staff={staffRoute}
+      onEnterKifaru={(email, password, keepSignedIn) =>
+        authenticate(email, password, null, keepSignedIn)}
+      onEnterBank={(email, password, nextBankId, keepSignedIn) =>
+        authenticate(email, password, nextBankId, keepSignedIn)} />;
   }
 
   return <>
@@ -277,9 +352,10 @@ export default function App() {
           <span className="rail-icon"><Icon name={workspaceMeta.icon} /></span>
           <span className="rail-text">{workspaceMeta.railLabel}</span>
         </div>
-        <button className="rail-item rail-signout" aria-label="Switch portal" title="Switch portal" onClick={switchPortal}>
+        <button className="rail-item rail-signout" aria-label="Sign out" title="Sign out"
+          onClick={() => void switchPortal()}>
           <span className="rail-icon"><Icon name="logout" /></span>
-          <span className="rail-text">Switch</span>
+          <span className="rail-text">Sign out</span>
         </button>
         <button className="rail-item rail-toggle" aria-label={collapsed ? "Expand panel" : "Collapse panel"} aria-expanded={!collapsed} onClick={() => setCollapsed(!collapsed)}>
           <span className="rail-icon"><Icon name={collapsed ? "chevron_right" : "chevron_left"} /></span>
@@ -289,6 +365,7 @@ export default function App() {
         <div className="sidebar-top">
           <div className="brand"><h1>{workspaceMeta.label}</h1><p>{workspaceMeta.blurb}</p></div>
         </div>
+        <p className="signed-in-user"><strong>{activeSession.displayName}</strong><span>{activeSession.email}</span></p>
         {!isExchange && <>
           <p className="sidebar-label">Institution</p>
           <div className="bank-list">
@@ -336,7 +413,7 @@ export default function App() {
             : "Submit suspicious activity, receive matched alerts, and investigate related records."}</p>
           {dataError && <p className="muted" role="alert">Backend unavailable: {dataError}</p>}
         </div><div className="actions">
-          <button className="btn" onClick={switchPortal}><Icon name="logout" className="btn-icon" />Switch portal</button>
+          <button className="btn" onClick={() => void switchPortal()}><Icon name="logout" className="btn-icon" />Sign out</button>
           <button className="btn" onClick={() => {
             const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
             document.documentElement.dataset.theme = next;
