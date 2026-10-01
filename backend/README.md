@@ -36,7 +36,8 @@ as bcrypt hashes. Successful sign-in creates a random opaque token; PostgreSQL
 stores its SHA-256 digest, CSRF token, user, timestamps and expiry.
 
 The plaintext pitch credentials are maintained only in the repository root's
-git-ignored `demo-credentials.txt`.
+git-ignored `demo-credentials.txt`. Generated addresses use each institution's
+short reference as a demo subdomain and contain no `+` or `-` alias separator.
 
 Institution sessions can access only their own history, reports, alerts,
 configuration threshold and related validations. Only the receiving institution

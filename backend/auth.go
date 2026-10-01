@@ -54,7 +54,7 @@ func demoInstitutionEmail(institution Institution) string {
 		return institution.DemoEmail
 	}
 	localPart := strings.ToLower(strings.ReplaceAll(institution.DemoName, " ", "."))
-	return localPart + "+" + institution.ID + "@kifaru.co.ke"
+	return localPart + "@" + strings.ToLower(institution.Ref) + ".kifaru.co.ke"
 }
 
 func demoLoginInstitutions() []Institution {
@@ -62,15 +62,7 @@ func demoLoginInstitutions() []Institution {
 }
 
 func (a *App) seedDemoUsers(ctx context.Context) error {
-	type seedUser struct {
-		id          string
-		email       string
-		displayName string
-		role        string
-		institution any
-	}
 	institutions := demoLoginInstitutions()
-	users := make([]seedUser, 0, len(institutions)+1)
 	seenEmails := make(map[string]string, len(institutions))
 	for _, institution := range institutions {
 		if strings.TrimSpace(institution.DemoName) == "" {
@@ -82,37 +74,46 @@ func (a *App) seedDemoUsers(ctx context.Context) error {
 				email, existing, institution.Code)
 		}
 		seenEmails[email] = institution.Code
-		users = append(users, seedUser{
-			id:          "demo-" + institution.ID + "-institution-user",
-			email:       email,
-			displayName: institution.DemoName,
-			role:        "institution",
-			institution: institution.Code,
-		})
-	}
-	users = append(users, seedUser{
-		id:          "demo-kifaru-anthony-jordan",
-		email:       "anthonyjordan@kifaru.co.ke",
-		displayName: "Anthony Jordan",
-		role:        "staff",
-		institution: nil,
-	})
-	for _, user := range users {
+		result, err := a.db.Exec(ctx, `UPDATE auth_users SET
+			email=$1,
+			display_name=$2,
+			password_hash=$3,
+			role='institution',
+			institution_code=$4,
+			active=TRUE,
+			updated_at=NOW()
+			WHERE role='institution' AND institution_code=$4`,
+			email, institution.DemoName, demoPasswordHash, institution.Code)
+		if err != nil {
+			return err
+		}
+		if result.RowsAffected() > 1 {
+			return fmt.Errorf("multiple demo users are assigned to %s", institution.Code)
+		}
+		if result.RowsAffected() == 1 {
+			continue
+		}
 		if _, err := a.db.Exec(ctx, `INSERT INTO auth_users(
 			user_id,email,display_name,password_hash,role,institution_code
-		) VALUES ($1,$2,$3,$4,$5,$6)
-		ON CONFLICT (email) DO UPDATE SET
-			display_name=excluded.display_name,
-			password_hash=excluded.password_hash,
-			role=excluded.role,
-			institution_code=excluded.institution_code,
-			active=TRUE,
-			updated_at=NOW()`,
-			user.id, user.email, user.displayName, demoPasswordHash, user.role, user.institution); err != nil {
+		) VALUES ($1,$2,$3,$4,'institution',$5)`,
+			"demo-"+institution.ID+"-institution-user", email, institution.DemoName,
+			demoPasswordHash, institution.Code); err != nil {
 			return err
 		}
 	}
-	return nil
+	_, err := a.db.Exec(ctx, `INSERT INTO auth_users(
+		user_id,email,display_name,password_hash,role,institution_code
+	) VALUES ('demo-kifaru-anthony-jordan','anthonyjordan@kifaru.co.ke',
+		'Anthony Jordan',$1,'staff',NULL)
+	ON CONFLICT (user_id) DO UPDATE SET
+		email=excluded.email,
+		display_name=excluded.display_name,
+		password_hash=excluded.password_hash,
+		role=excluded.role,
+		institution_code=excluded.institution_code,
+		active=TRUE,
+		updated_at=NOW()`, demoPasswordHash)
+	return err
 }
 
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
