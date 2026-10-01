@@ -262,7 +262,7 @@ func TestPostgresPipeline(t *testing.T) {
 		WHERE institution_code=$1`, airtel.Code).Scan(&airtelUserID); err != nil {
 		t.Fatal(err)
 	}
-	const retiredAirtelEmail = "lucy.naserian@legacy.kifaru.co.ke"
+	const retiredAirtelEmail = "lucynaserian@legacy.co.ke"
 	if _, err := db.Exec(ctx, `UPDATE auth_users SET email=$1 WHERE user_id=$2`,
 		retiredAirtelEmail, airtelUserID); err != nil {
 		t.Fatal(err)
@@ -290,8 +290,9 @@ func TestPostgresPipeline(t *testing.T) {
 	}
 	for _, institution := range demoLoginInstitutions() {
 		email := demoInstitutionEmail(institution)
-		if strings.ContainsAny(email, "+-") {
-			t.Fatalf("demo email contains an alias separator: %s", email)
+		localPart, _, ok := strings.Cut(email, "@")
+		if !ok || strings.ContainsAny(localPart, "+-.") {
+			t.Fatalf("demo email contains a name separator: %s", email)
 		}
 		var displayName, institutionCode string
 		if err := db.QueryRow(ctx, `SELECT display_name,institution_code

@@ -142,7 +142,8 @@ The 40 institution accounts and the Kifaru staff account all use the same local
 demonstration password. Their complete details are kept in
 `demo-credentials.txt`, which is deliberately ignored by Git. Do not reuse those
 credentials for any real service. Generated addresses use clean institution
-subdomains such as `name@airtel.kifaru.co.ke`, without `+` or `-` aliases.
+domains such as `lucynaserian@airtel.co.ke`; names are concatenated without `.`,
+`+` or `-` separators. These remain synthetic demonstration identities.
 
 ## The visibility gap Kifaru closes
 
