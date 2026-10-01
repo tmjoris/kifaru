@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -656,6 +658,67 @@ func TestPostgresPipeline(t *testing.T) {
 	}
 	if demoEventCount != 0 || demoReportCount != 0 {
 		t.Fatalf("reset left synthetic data behind: events=%d reports=%d", demoEventCount, demoReportCount)
+	}
+
+	if _, err := db.Exec(ctx, `INSERT INTO demo_events(
+		event_offset,topic,partition_key,event_type,source,payload,status,created_at,processed_at
+	)
+	SELECT generated_offset,'sentinel.security-alert','retention-test','retention-test',
+		'unit-test','{}'::jsonb,'processed',NOW(),NOW()
+	FROM generate_series(1,$1) AS offsets(generated_offset)`, demoStreamRetention); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(ctx, `UPDATE demo_stream_state
+		SET enabled=FALSE,next_offset=$1,emitted_since_reset=$2,last_emitted_at=NOW()
+		WHERE singleton=TRUE`, demoStreamRetention+1, demoStreamRetention); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(ctx,
+		"DELETE FROM schema_migrations WHERE version='005_rolling_demo_stream.sql'"); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.runMigrations(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var resumed bool
+	if err := db.QueryRow(ctx, "SELECT enabled FROM demo_stream_state WHERE singleton=TRUE").
+		Scan(&resumed); err != nil {
+		t.Fatal(err)
+	}
+	if !resumed {
+		t.Fatal("rolling-stream migration did not resume a stream stopped at the former cap")
+	}
+	rollingEvent, emitted, err := app.produceDemoEvent(ctx, true)
+	if err != nil || !emitted {
+		t.Fatalf("rolling demo event failed: emitted=%v result=%#v err=%v",
+			emitted, rollingEvent, err)
+	}
+	var oldestOffset, newestOffset int64
+	if err := db.QueryRow(ctx, `SELECT COUNT(*),MIN(event_offset),MAX(event_offset)
+		FROM demo_events`).Scan(&demoEventCount, &oldestOffset, &newestOffset); err != nil {
+		t.Fatal(err)
+	}
+	if demoEventCount != demoStreamRetention || oldestOffset != 2 ||
+		newestOffset != demoStreamRetention+1 {
+		t.Fatalf("rolling retention produced count=%d oldest=%d newest=%d",
+			demoEventCount, oldestOffset, newestOffset)
+	}
+	streamSnapshot, err := app.demoStreamSnapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(streamSnapshot["retained_events"]) != strconv.Itoa(demoStreamRetention) {
+		t.Fatalf("stream snapshot retained count=%v", streamSnapshot["retained_events"])
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/v1/admin/demo-stream/reset", nil)
+	request = request.WithContext(context.WithValue(request.Context(), authContextKey{}, AuthUser{
+		Email: "staff@kifaru.co.ke", Role: "staff",
+	}))
+	recorder = httptest.NewRecorder()
+	app.resetDemoStream(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("rolling demo reset failed: %d %s", recorder.Code, recorder.Body.String())
 	}
 
 	advisoryFirst, advisorySecond := demoOffsets(t, "credential_change_advisory")

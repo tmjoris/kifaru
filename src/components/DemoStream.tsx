@@ -27,7 +27,7 @@ export function DemoStream({ stream, busy, onToggle, onEmit, onReset }: {
         <div><dt>Topic</dt><dd className="mono">{stream?.topic || "sentinel.security-alert"}</dd></div>
         <div><dt>Next offset</dt><dd>{stream?.nextOffset ?? 1}</dd></div>
         <div><dt>Cadence</dt><dd>{stream?.cadenceSeconds ?? 30}s</dd></div>
-        <div><dt>Retained</dt><dd>{stream?.emittedSinceReset ?? 0} / {stream?.maxEvents ?? 500}</dd></div>
+        <div><dt>Retained</dt><dd>{stream?.retainedEvents ?? 0} / {stream?.maxEvents ?? 500}</dd></div>
       </dl>
       <div className="stream-actions">
         <button className={`btn ${stream?.enabled ? "" : "primary"}`} disabled={busy}

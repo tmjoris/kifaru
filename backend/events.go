@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func (a *App) streamAlerts(w http.ResponseWriter, r *http.Request) {
@@ -108,30 +110,21 @@ func (a *App) produceDemoEvent(ctx context.Context, force bool) (map[string]any,
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var enabled bool
-	var cadence, emitted int
+	var cadence int
 	var offset int64
 	var lastEmitted time.Time
-	err = tx.QueryRow(ctx, `SELECT enabled,cadence_seconds,next_offset,emitted_since_reset,
+	err = tx.QueryRow(ctx, `SELECT enabled,cadence_seconds,next_offset,
 		COALESCE(last_emitted_at,TO_TIMESTAMP(0))
 		FROM demo_stream_state WHERE singleton=TRUE FOR UPDATE`).
-		Scan(&enabled, &cadence, &offset, &emitted, &lastEmitted)
+		Scan(&enabled, &cadence, &offset, &lastEmitted)
 	if err != nil {
 		return nil, false, err
 	}
-	if emitted >= demoStreamMaxEvents {
-		if enabled {
-			if _, err := tx.Exec(ctx, `UPDATE demo_stream_state
-				SET enabled=FALSE,updated_at=NOW() WHERE singleton=TRUE`); err != nil {
-				return nil, false, err
-			}
-			if err := tx.Commit(ctx); err != nil {
-				return nil, false, err
-			}
-		}
-		return nil, false, nil
-	}
 	if !force && (!enabled || time.Since(lastEmitted) < time.Duration(cadence)*time.Second) {
 		return nil, false, nil
+	}
+	if _, err := pruneDemoStreamRetention(ctx, tx, demoStreamRetention-1); err != nil {
+		return nil, false, err
 	}
 
 	report, payload, metadata := demoReport(offset)
@@ -194,6 +187,55 @@ func (a *App) produceDemoEvent(ctx context.Context, force bool) (map[string]any,
 	}
 	a.publishStreamEvent([]string{"*"}, "demo-event", strconv.FormatInt(offset, 10), event)
 	return event, true, nil
+}
+
+func pruneDemoStreamRetention(ctx context.Context, tx pgx.Tx, keep int) (int64, error) {
+	expiredReports := `SELECT report_id FROM demo_events
+		WHERE status <> 'pending'
+		ORDER BY event_offset DESC OFFSET $1`
+	queries := []string{
+		`WITH expired AS (` + expiredReports + `)
+			DELETE FROM notifications WHERE record_id IN (
+				SELECT alert_id FROM alerts WHERE report_id IN (
+					SELECT report_id FROM expired WHERE report_id IS NOT NULL))`,
+		`WITH expired AS (` + expiredReports + `)
+			DELETE FROM alert_actions WHERE alert_id IN (
+				SELECT alert_id FROM alerts WHERE report_id IN (
+					SELECT report_id FROM expired WHERE report_id IS NOT NULL))`,
+		`WITH expired AS (` + expiredReports + `)
+			DELETE FROM alerts WHERE report_id IN (
+				SELECT report_id FROM expired WHERE report_id IS NOT NULL)`,
+		`WITH expired AS (` + expiredReports + `)
+			DELETE FROM knowledge_base kb USING reports r
+			WHERE r.report_id IN (
+				SELECT report_id FROM expired WHERE report_id IS NOT NULL)
+				AND kb.label LIKE '%' || r.report_id`,
+		`WITH expired AS (` + expiredReports + `)
+			DELETE FROM validations WHERE report_id IN (
+				SELECT report_id FROM expired WHERE report_id IS NOT NULL)`,
+		`WITH expired AS (` + expiredReports + `)
+			DELETE FROM artefacts WHERE report_id IN (
+				SELECT report_id FROM expired WHERE report_id IS NOT NULL)`,
+		`WITH expired AS (` + expiredReports + `)
+			DELETE FROM reports WHERE report_id IN (
+				SELECT report_id FROM expired WHERE report_id IS NOT NULL)`,
+	}
+	for _, query := range queries {
+		if _, err := tx.Exec(ctx, query, keep); err != nil {
+			return 0, err
+		}
+	}
+	result, err := tx.Exec(ctx, `WITH expired AS (
+		SELECT event_offset FROM demo_events
+		WHERE status <> 'pending'
+		ORDER BY event_offset DESC OFFSET $1
+	)
+	DELETE FROM demo_events d USING expired
+	WHERE d.event_offset=expired.event_offset`, keep)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 func demoReport(offset int64) (ReportIn, map[string]any, map[string]string) {
@@ -332,7 +374,8 @@ func demoHash(value string) string {
 
 func (a *App) demoStreamSnapshot(ctx context.Context) (map[string]any, error) {
 	stateRows, err := rowsFrom(ctx, a.db, `SELECT enabled,cadence_seconds,next_offset,
-		emitted_since_reset,last_emitted_at,updated_at
+		emitted_since_reset,last_emitted_at,updated_at,
+		(SELECT COUNT(*) FROM demo_events) AS retained_events
 		FROM demo_stream_state WHERE singleton=TRUE`)
 	if err != nil {
 		return nil, err
@@ -349,7 +392,7 @@ func (a *App) demoStreamSnapshot(ctx context.Context) (map[string]any, error) {
 		return nil, err
 	}
 	state := stateRows[0]
-	state["max_events"] = demoStreamMaxEvents
+	state["max_events"] = demoStreamRetention
 	state["events"] = events
 	state["topic"] = "sentinel.security-alert"
 	state["dataset_basis"] = "Microsoft Sentinel public schemas and PaySim-informed synthetic transactions"
@@ -435,7 +478,7 @@ func (a *App) emitDemoStreamEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !emitted {
-		writeError(w, 409, "demo stream reached its 500-event cap; reset it before producing more")
+		writeError(w, 409, "demo event was not emitted")
 		return
 	}
 	writeJSON(w, 200, event)
