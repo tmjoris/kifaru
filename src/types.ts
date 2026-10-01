@@ -5,6 +5,19 @@ export type InstitutionKind = "bank" | "sacco" | "psp";
 export interface Session {
   scope: PortalScope;
   bankId: string | null;
+  email: string;
+  displayName: string;
+  institutionCode: string;
+  institutionName: string;
+  expiresAt: string;
+}
+export interface AuthSession {
+  email: string;
+  displayName: string;
+  role: "institution" | "staff";
+  institutionCode: string;
+  institutionName: string;
+  expiresAt: string;
 }
 export interface Source {
   name: string;

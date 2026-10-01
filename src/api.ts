@@ -1,5 +1,5 @@
 import type {
-  Bank, DashboardData, DemoStreamEvent, DemoStreamStatus, KnowledgeBaseEntry, RiskCodeReference,
+  AuthSession, Bank, DashboardData, DemoStreamEvent, DemoStreamStatus, KnowledgeBaseEntry, PortalScope, RiskCodeReference,
   Transaction, UploadSummary, Validation,
 } from "./types";
 
@@ -7,14 +7,14 @@ const configuredApiUrl = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "")
 const API_BASE_URL = configuredApiUrl && !configuredApiUrl.startsWith("http")
   ? `https://${configuredApiUrl}`
   : configuredApiUrl;
+const ACCESS_TOKEN_KEY = "kifaru-access-token";
+let accessToken = window.sessionStorage.getItem(ACCESS_TOKEN_KEY)
+  || window.localStorage.getItem(ACCESS_TOKEN_KEY) || "";
+let csrfToken = "";
 
 function apiUrl(path: string) {
   const resolvedPath = API_BASE_URL ? path.replace(/^\/api(?=\/|$)/, "") : path;
   return `${API_BASE_URL}${resolvedPath}`;
-}
-
-export function alertStreamUrl(institution: string) {
-  return apiUrl(`/api/v1/stream?institution=${encodeURIComponent(institution)}`);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -41,15 +41,155 @@ function isSummary(value: unknown): value is UploadSummary {
     && value.top_risk_codes.every((item) => isRecord(item) && typeof item.code === "string" && typeof item.count === "number");
 }
 
+async function apiFetch(path: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  if (csrfToken && ["POST", "PATCH", "DELETE"].includes((init.method || "GET").toUpperCase())) {
+    headers.set("X-Kifaru-CSRF", csrfToken);
+  }
+  return fetch(apiUrl(path), { ...init, headers, credentials: "include" });
+}
+
 async function fetchJson(path: string, init?: RequestInit): Promise<unknown> {
-  const response = await fetch(apiUrl(path), init);
+  const response = await apiFetch(path, init);
   const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
+    if (response.status === 401 && !path.includes("/v1/auth/")) {
+      clearAuthState();
+      window.dispatchEvent(new Event("kifaru-auth-expired"));
+    }
     const detail = isRecord(payload) && typeof payload.detail === "string"
       ? payload.detail : `Backend request failed (HTTP ${response.status}).`;
     throw new Error(detail);
   }
   return payload;
+}
+
+function storeAccessToken(token: string, persistent: boolean) {
+  window.sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+  window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+  accessToken = token;
+  if (token) {
+    (persistent ? window.localStorage : window.sessionStorage).setItem(ACCESS_TOKEN_KEY, token);
+  }
+}
+
+function clearAuthState() {
+  storeAccessToken("", false);
+  csrfToken = "";
+}
+
+function parseAuthSession(payload: unknown): AuthSession {
+  if (!isRecord(payload) || !["institution", "staff"].includes(String(payload.role))) {
+    throw new Error("The authentication service returned an invalid session.");
+  }
+  const nextCSRFToken = requiredString(payload, "csrf_token");
+  if (!nextCSRFToken) throw new Error("The authenticated session is missing its CSRF token.");
+  csrfToken = nextCSRFToken;
+  return {
+    email: requiredString(payload, "email"),
+    displayName: requiredString(payload, "display_name"),
+    role: payload.role as AuthSession["role"],
+    institutionCode: requiredString(payload, "institution_code"),
+    institutionName: requiredString(payload, "institution_name"),
+    expiresAt: requiredString(payload, "expires_at"),
+  };
+}
+
+export async function login(
+  email: string,
+  password: string,
+  institutionCode: string,
+  keepSignedIn: boolean,
+) {
+  const payload = await fetchJson("/api/v1/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email,
+      password,
+      institution_code: institutionCode,
+      keep_signed_in: keepSignedIn,
+    }),
+  });
+  if (!isRecord(payload) || typeof payload.access_token !== "string" || !payload.access_token) {
+    throw new Error("The authentication service did not issue a session token.");
+  }
+  storeAccessToken(payload.access_token, keepSignedIn);
+  return parseAuthSession(payload);
+}
+
+export async function restoreSession(): Promise<AuthSession | null> {
+  const response = await apiFetch("/api/v1/auth/session");
+  if (response.status === 401) {
+    clearAuthState();
+    return null;
+  }
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = isRecord(payload) && typeof payload.detail === "string"
+      ? payload.detail : `Session restore failed (HTTP ${response.status}).`;
+    throw new Error(detail);
+  }
+  return parseAuthSession(payload);
+}
+
+export async function logout() {
+  try {
+    await fetchJson("/api/v1/auth/logout", { method: "POST" });
+  } finally {
+    clearAuthState();
+  }
+}
+
+export function subscribeToAlerts(
+  institution: string,
+  handlers: { alert: () => void; demoEvent: () => void },
+) {
+  const controller = new AbortController();
+  const decoder = new TextDecoder();
+
+  async function connect() {
+    while (!controller.signal.aborted) {
+      try {
+        const response = await apiFetch(`/api/v1/stream?institution=${encodeURIComponent(institution)}`, {
+          signal: controller.signal,
+          headers: { Accept: "text/event-stream" },
+        });
+        if (response.status === 401) {
+          clearAuthState();
+          window.dispatchEvent(new Event("kifaru-auth-expired"));
+          return;
+        }
+        if (!response.ok || !response.body) {
+          throw new Error(`Live stream failed (HTTP ${response.status}).`);
+        }
+        const reader = response.body.getReader();
+        let buffer = "";
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true }).replaceAll("\r\n", "\n");
+          let boundary = buffer.indexOf("\n\n");
+          while (boundary >= 0) {
+            const block = buffer.slice(0, boundary);
+            buffer = buffer.slice(boundary + 2);
+            const eventName = block.split("\n")
+              .find((line) => line.startsWith("event:"))?.slice(6).trim();
+            if (eventName === "alert") handlers.alert();
+            if (eventName === "demo-event") handlers.demoEvent();
+            boundary = buffer.indexOf("\n\n");
+          }
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+      }
+    }
+  }
+
+  void connect();
+  return () => controller.abort();
 }
 
 function parseStringArray(value: unknown): string[] {
@@ -175,7 +315,11 @@ function transactionFromHistory(
   };
 }
 
-export async function loadDashboardData(bankTemplates: Bank[], signal?: AbortSignal): Promise<DashboardData> {
+export async function loadDashboardData(
+  bankTemplates: Bank[],
+  access: { scope: PortalScope; institutionCode: string },
+  signal?: AbortSignal,
+): Promise<DashboardData> {
   const [institutionsPayload, standardPayload, knowledgePayload] = await Promise.all([
     fetchJson("/api/v1/institutions", { signal }),
     fetchJson("/api/v1/standard", { signal }),
@@ -197,8 +341,14 @@ export async function loadDashboardData(bankTemplates: Bank[], signal?: AbortSig
   });
   // Keep requests sequential so the initial ecosystem load does not create a
   // burst of one history query per participating institution.
+  const accessibleBanks = access.scope === "exchange"
+    ? banks.filter((item) => !item.pending)
+    : banks.filter((item) => item.backendCode === access.institutionCode);
+  if (!accessibleBanks.length) {
+    throw new Error("The authenticated institution is not available in this workspace.");
+  }
   const histories: unknown[] = [];
-  for (const bank of banks.filter((item) => !item.pending)) {
+  for (const bank of accessibleBanks) {
     histories.push(await fetchJson(`/api/v1/history?institution=${encodeURIComponent(bank.backendCode)}`, { signal }));
   }
   const rows = new Map<string, Record<string, unknown>>();
@@ -316,14 +466,14 @@ export async function resetDemoStream(signal?: AbortSignal) {
 }
 
 export async function validateCsv(csv: string, signal?: AbortSignal) {
-  const response = await fetch(apiUrl("/api/validate-csv"), {
+  const response = await apiFetch("/api/validate-csv", {
     method: "POST",
     headers: { "Content-Type": "text/csv" },
     body: csv,
     signal,
   });
   if (!response.headers.get("content-type")?.includes("application/json")) {
-    throw new Error("The validation API is unavailable. Install backend/requirements.txt and run npm run server.");
+    throw new Error("The Go validation API is unavailable. Run npm run server.");
   }
   const payload: unknown = await response.json();
   if (!response.ok) {

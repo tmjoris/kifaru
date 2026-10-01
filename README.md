@@ -23,9 +23,11 @@ data. The core validation flow, PostgreSQL persistence, institution dashboards,
 cross-institution matching, automatic revalidation, alert lifecycle and
 continuous integration are implemented.
 
-The sign-in forms are demonstration gates. They do not provide production
-authentication or tenant authorization. Microsoft Entra ID is deliberately
-outside this prototype's scope.
+Demo sign-in is enforced by the Go API. Passwords are verified with bcrypt,
+sessions are stored in PostgreSQL, and every protected route checks the user's
+role and assigned institution. This is real authentication for the pitch
+environment, but it is not a replacement for a production identity provider,
+MFA or bank-managed access governance.
 
 ## What the system does
 
@@ -61,8 +63,10 @@ Every institution workspace therefore contains:
 - Knowledge-base information
 - Institution governance and threshold settings
 
-The institution selector contains the current Kenyan commercial-bank directory,
-along with the prototype's existing SACCO and payment-provider entries.
+The authenticated selector contains the four institutions connected to the
+guided demo. The wider Kenyan commercial-bank, SACCO and payment-provider
+directory remains visible as ecosystem reference data until each institution
+has an account and connector.
 Dense transaction tables prioritise decision fields on briefing-sized desktop
 screens and switch to labelled record cards on mobile. Full provenance and
 customer-reference details remain available in each investigation drawer.
@@ -72,6 +76,49 @@ customer-reference details remain available in each investigation drawer.
 Kifaru staff use `/staff`. This route does not ask for an institution. It opens
 the ecosystem view of shared fingerprints, cross-institution matches and
 participating institutions.
+
+## Demo authentication
+
+The browser never decides which institution a person may view. A successful
+login creates an opaque random session token, stores only its SHA-256 digest in
+PostgreSQL and binds it to a user with either an institution or staff role.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as React sign-in
+    participant API as Go authentication API
+    participant DB as PostgreSQL
+
+    User->>UI: Enter work email and password
+    UI->>API: POST /v1/auth/login
+    API->>DB: Load account and bcrypt password hash
+    API->>API: Verify password and institution assignment
+    API->>DB: Store hashed random session token and expiry
+    API-->>UI: Session token, CSRF token and authorised role
+    UI->>API: Authenticated API and event-stream requests
+    API->>DB: Resolve session and enforce role or institution
+    API-->>UI: Only authorised records
+```
+
+Authentication controls include:
+
+- Bcrypt password verification; plaintext passwords are never stored in the
+  repository or database
+- Five-minute account lockout after five failed password attempts
+- Eight-hour browser sessions, or seven days when **Keep me signed in** is used
+- Opaque bearer sessions whose stored database value is a one-way digest
+- CSRF tokens on state-changing browser requests
+- Institution users restricted to their assigned institution
+- Alert actions restricted to the receiving institution
+- Staff-only access to global statistics, audit history, knowledge-base writes,
+  manual revalidation and synthetic-stream controls
+- Authenticated live-event streaming with automatic reconnection
+- Login and logout entries in the append-only audit history
+
+The memorable pitch accounts all use the same local demonstration password.
+Their complete details are kept in `demo-credentials.txt`, which is deliberately
+ignored by Git. Do not reuse those credentials for any real service.
 
 ## The visibility gap Kifaru closes
 
@@ -143,7 +190,7 @@ flowchart TB
     GitHub -->|"Auto-deploy main"| API
     GitHub --> Actions
     Browser --> Static
-    Browser -->|"HTTPS JSON + SSE"| API
+    Browser -->|"Authenticated HTTPS JSON + event stream"| API
     API -->|"Pooled PostgreSQL connection"| Neon
 ```
 
@@ -269,6 +316,8 @@ erDiagram
     VALIDATIONS ||--o| ALERTS : may_create
     ALERTS ||--o{ ALERT_ACTIONS : records
     INSTITUTIONS ||--o{ NOTIFICATIONS : receives
+    INSTITUTIONS ||--o{ AUTH_USERS : authorises
+    AUTH_USERS ||--o{ AUTH_SESSIONS : opens
     DEMO_STREAM_STATE ||--o{ DEMO_EVENTS : allocates
     DEMO_EVENTS }o--o| REPORTS : generates
 
@@ -326,6 +375,22 @@ erDiagram
         text event_type
         text record_id
         text payload
+    }
+    AUTH_USERS {
+        text user_id PK
+        text email
+        text password_hash
+        text role
+        text institution_code FK
+        integer failed_attempts
+        timestamp locked_until
+    }
+    AUTH_SESSIONS {
+        text token_hash PK
+        text user_id FK
+        text csrf_token
+        timestamp expires_at
+        timestamp last_seen_at
     }
     DEMO_STREAM_STATE {
         boolean singleton PK
@@ -473,6 +538,10 @@ GET    /v1/validations/{report_id}
 GET    /v1/stream?institution=
 POST   /v1/alerts/{alert_id}/state
 
+POST   /v1/auth/login
+GET    /v1/auth/session
+POST   /v1/auth/logout
+
 GET    /v1/institutions
 GET    /v1/standard
 GET    /v1/stats
@@ -499,6 +568,11 @@ The implementation is based on:
 
 ### Implemented
 
+- Server-verified demo authentication with bcrypt passwords
+- PostgreSQL-backed expiring sessions and account lockout
+- Staff and institution roles with server-side institution boundaries
+- Receiving-institution authorization for alert actions
+- CSRF protection and authenticated event streaming
 - Four ingestion paths
 - Contract validation and protected-identifier gate
 - Unique report IDs and recorded submission channel/time
@@ -529,9 +603,13 @@ The implementation is based on:
 
 ### Prototype limitations
 
-- Sign-in is demo gating, not production authentication.
-- Institution filtering is not yet a server-side authorization boundary.
-- Microsoft Entra ID is not planned for this school prototype.
+- Accounts are seeded pitch identities, not accounts provisioned by a bank
+  identity provider.
+- MFA, password recovery, identity lifecycle management and external service
+  credentials are not implemented.
+- Browser bearer-token storage is suitable for this controlled synthetic-data
+  demo, but a production deployment should use bank-managed SSO and stronger
+  browser isolation.
 - Synthetic identifiers use the historical prototype formats; the API rejects
   missing hash prefixes but does not yet require a full 64-character digest for
   every legacy evidence field.
@@ -545,8 +623,6 @@ The implementation is based on:
 - Accuracy and latency figures still need a final measured report from the
   complete synthetic replay.
 - The frontend and API are separate Render services rather than one origin.
-- Azure OpenAI remains optional and disabled; explanations use deterministic
-  templates.
 
 ## Repository layout
 
@@ -556,8 +632,16 @@ The implementation is based on:
 ├── backend/
 │   ├── data/                     # Fraud standard and synthetic datasets
 │   ├── migrations/               # Ordered PostgreSQL migrations
-│   ├── scripts/                  # Generation, replay and migration utilities
-│   ├── main.go                   # Go HTTP API and validation pipeline
+│   ├── auth.go                   # Password, session and authorization controls
+│   ├── database.go               # PostgreSQL startup and migrations
+│   ├── router.go                 # HTTP routing and CORS
+│   ├── pipeline.go               # Fraud validation transaction
+│   ├── handlers.go               # Dashboard and administration handlers
+│   ├── events.go                 # SSE and synthetic Sentinel broker
+│   ├── csv_ingest.go             # CSV ingestion adapter
+│   ├── support.go                # Shared persistence and parsing helpers
+│   ├── models.go                 # Shared Go models and constants
+│   ├── main.go                   # Process startup
 │   ├── main_test.go              # Unit and PostgreSQL integration tests
 │   └── schema.sql                # Baseline PostgreSQL schema
 ├── public/                       # Static frontend assets
@@ -592,6 +676,7 @@ npm run dev
 
 Open `http://127.0.0.1:5173`. Vite proxies `/api` to the local Go API.
 The Kifaru staff route is `http://127.0.0.1:5173/staff`.
+Use the accounts in the local, git-ignored `demo-credentials.txt`.
 
 ## Tests
 
@@ -613,6 +698,10 @@ go test ./...
 
 The backend tests cover:
 
+- Password verification and seeded demo accounts
+- Unauthenticated request rejection
+- Institution mismatch and cross-tenant access rejection
+- Staff-only administration and authenticated logout
 - Clear identifier rejection
 - Behavioural risk-code derivation
 - Advisory versus hold alert classification

@@ -1937,12 +1937,14 @@
   accent-color: var(--cp-accent);
 }
 
-.portal-form-meta button {
-  border: 0;
-  background: transparent;
-  color: var(--cp-accent);
-  font: inherit;
-  font-weight: 500;
+.portal-auth-error {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  border-left: 0.25rem solid var(--cp-danger);
+  background: color-mix(in srgb, var(--cp-danger) 9%, transparent);
+  color: var(--cp-danger);
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .portal-submit {
@@ -1991,6 +1993,44 @@
 
 .portal-route-link:hover {
   text-decoration: underline;
+}
+
+.portal-auth-loading {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  min-height: 100vh;
+  gap: 1rem;
+  background: var(--cp-bg);
+  color: var(--cp-text-muted);
+}
+
+.portal-auth-loading .logo {
+  width: 3rem;
+  height: 3rem;
+}
+
+.signed-in-user {
+  margin: 0.25rem 0 1.25rem;
+  padding: 0.8rem 0;
+  border-top: 1px solid var(--cp-border);
+  border-bottom: 1px solid var(--cp-border);
+  overflow-wrap: anywhere;
+}
+
+.signed-in-user strong,
+.signed-in-user span {
+  display: block;
+}
+
+.signed-in-user strong {
+  font-size: 0.84rem;
+}
+
+.signed-in-user span {
+  margin-top: 0.2rem;
+  color: var(--cp-text-muted);
+  font-size: 0.72rem;
 }
 
 .portal-signal {

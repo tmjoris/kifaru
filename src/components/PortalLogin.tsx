@@ -5,13 +5,16 @@ import { Icon, Logo } from "./Shared";
 export function PortalLogin({ banks, staff, onEnterBank, onEnterKifaru }: {
   banks: Bank[];
   staff: boolean;
-  onEnterBank: (bankId: string) => void;
-  onEnterKifaru: () => void;
+  onEnterBank: (email: string, password: string, bankId: string, keepSignedIn: boolean) => Promise<void>;
+  onEnterKifaru: (email: string, password: string, keepSignedIn: boolean) => Promise<void>;
 }) {
   const [bankId, setBankId] = useState(banks[0]?.id ?? "");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+  const [error, setError] = useState("");
   const [theme, setTheme] = useState(() =>
     document.documentElement.dataset.theme === "dark" ? "dark" : "light");
 
@@ -22,9 +25,17 @@ export function PortalLogin({ banks, staff, onEnterBank, onEnterKifaru }: {
     window.localStorage.setItem("kifaru-theme", next);
   }
 
-  function signIn() {
-    if (staff) onEnterKifaru();
-    else if (bankId) onEnterBank(bankId);
+  async function signIn() {
+    setSigningIn(true);
+    setError("");
+    try {
+      if (staff) await onEnterKifaru(email.trim(), password, keepSignedIn);
+      else if (bankId) await onEnterBank(email.trim(), password, bankId, keepSignedIn);
+    } catch (signInError) {
+      setError(signInError instanceof Error ? signInError.message : "Sign-in failed.");
+    } finally {
+      setSigningIn(false);
+    }
   }
 
   return <main className="portal-screen">
@@ -84,13 +95,15 @@ export function PortalLogin({ banks, staff, onEnterBank, onEnterKifaru }: {
           </div>}
 
           <div className="portal-form-meta">
-            <label><input type="checkbox" /> Keep me signed in</label>
-            <button type="button">Forgot password?</button>
+            <label><input type="checkbox" checked={keepSignedIn}
+              onChange={(event) => setKeepSignedIn(event.target.checked)} /> Keep me signed in</label>
+            <span>Demo accounts only</span>
           </div>
 
+          {error && <p className="portal-auth-error" role="alert">{error}</p>}
           <button type="submit" className="portal-submit"
-            disabled={!email.trim() || !password || (!staff && !bankId)}>
-            Open workspace
+            disabled={signingIn || !email.trim() || !password || (!staff && !bankId)}>
+            {signingIn ? "Signing in..." : "Open workspace"}
           </button>
         </form>
 

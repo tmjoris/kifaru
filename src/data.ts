@@ -2,8 +2,8 @@ import type { Bank, InstitutionKind } from "./types";
 
 /**
  * Builds a directory-only institution entry: real name, no live synthetic SOC feed wired up yet.
- * Used for the long tail of Kenyan banks, SACCOs and PSPs that staff can sign into to preview
- * the Kifaru workflow, plus any institution a user adds themselves at the sign-in screen.
+ * Used for the long tail of Kenyan banks, SACCOs and PSPs shown in the ecosystem directory.
+ * These entries remain reference-only until an authenticated connector and demo account exist.
  */
 export function directoryBank(id: string, name: string, region: string, kind: InstitutionKind): Bank {
   const shortName = (name.match(/[A-Za-z]/g) ?? []).slice(0, 2).join("").toUpperCase() || "IN";
@@ -135,8 +135,8 @@ export const initialBanks: Bank[] = [
 /**
  * The wider directory of CBK-licensed commercial banks, mobile-money PSPs and SASRA-licensed
  * deposit-taking SACCOs in Kenya. These do not have a live synthetic SOC feed wired up (only
- * the four institutions above do, for the guided demo), but staff can still sign in to any of
- * them from the portal screen to preview the Kifaru workflow.
+ * the four institutions above do, for the guided demo), so they are not offered on the
+ * authenticated institution sign-in screen.
  */
 function withKind(kind: InstitutionKind, names: string[]): [string, string, InstitutionKind][] {
   return names.map((name) => [name, "Kenya", kind]);
