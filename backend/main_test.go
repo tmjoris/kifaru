@@ -256,6 +256,30 @@ func TestPostgresPipeline(t *testing.T) {
 		t.Fatalf("expected every bank plus the external network, got %d", institutionCount)
 	}
 
+	airtel := demoLoginInstitutions()[len(demoLoginInstitutions())-1]
+	var airtelUserID string
+	if err := db.QueryRow(ctx, `SELECT user_id FROM auth_users
+		WHERE institution_code=$1`, airtel.Code).Scan(&airtelUserID); err != nil {
+		t.Fatal(err)
+	}
+	const retiredAirtelEmail = "lucy.naserian@legacy.kifaru.co.ke"
+	if _, err := db.Exec(ctx, `UPDATE auth_users SET email=$1 WHERE user_id=$2`,
+		retiredAirtelEmail, airtelUserID); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.seedDemoUsers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var migratedAirtelUserID string
+	if err := db.QueryRow(ctx, `SELECT user_id FROM auth_users WHERE email=$1`,
+		demoInstitutionEmail(airtel)).Scan(&migratedAirtelUserID); err != nil {
+		t.Fatal(err)
+	}
+	if migratedAirtelUserID != airtelUserID {
+		t.Fatalf("email migration changed the Airtel user ID from %q to %q",
+			airtelUserID, migratedAirtelUserID)
+	}
+
 	var demoUserCount int
 	if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM auth_users").Scan(&demoUserCount); err != nil {
 		t.Fatal(err)
@@ -265,9 +289,13 @@ func TestPostgresPipeline(t *testing.T) {
 			len(demoLoginInstitutions())+1, demoUserCount)
 	}
 	for _, institution := range demoLoginInstitutions() {
+		email := demoInstitutionEmail(institution)
+		if strings.ContainsAny(email, "+-") {
+			t.Fatalf("demo email contains an alias separator: %s", email)
+		}
 		var displayName, institutionCode string
 		if err := db.QueryRow(ctx, `SELECT display_name,institution_code
-			FROM auth_users WHERE email=$1`, demoInstitutionEmail(institution)).
+			FROM auth_users WHERE email=$1`, email).
 			Scan(&displayName, &institutionCode); err != nil {
 			t.Fatalf("missing demo user for %s: %v", institution.Name, err)
 		}
