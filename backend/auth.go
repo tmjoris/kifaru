@@ -53,8 +53,8 @@ func demoInstitutionEmail(institution Institution) string {
 	if institution.DemoEmail != "" {
 		return institution.DemoEmail
 	}
-	localPart := strings.ToLower(strings.ReplaceAll(institution.DemoName, " ", "."))
-	return localPart + "@" + strings.ToLower(institution.Ref) + ".kifaru.co.ke"
+	localPart := strings.ToLower(strings.ReplaceAll(institution.DemoName, " ", ""))
+	return localPart + "@" + strings.ToLower(institution.Ref) + ".co.ke"
 }
 
 func demoLoginInstitutions() []Institution {
