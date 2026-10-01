@@ -49,12 +49,29 @@ type authSessionPayload struct {
 	AccessToken     string `json:"access_token,omitempty"`
 }
 
+type demoIdentity struct {
+	Key  string
+	Name string
+}
+
+var repeatingDemoIdentities = []demoIdentity{
+	{Key: "john-kamau", Name: "John Kamau"},
+	{Key: "mary-wanjiru", Name: "Mary Wanjiru"},
+	{Key: "daniel-ouma", Name: "Daniel Ouma"},
+	{Key: "sarah-wekesa", Name: "Sarah Wekesa"},
+	{Key: "josephine-naliaka", Name: "Josephine Naliaka"},
+}
+
+func demoEmailForName(name string, institution Institution) string {
+	localPart := strings.ToLower(strings.ReplaceAll(name, " ", ""))
+	return localPart + "@" + strings.ToLower(institution.Ref) + ".co.ke"
+}
+
 func demoInstitutionEmail(institution Institution) string {
 	if institution.DemoEmail != "" {
 		return institution.DemoEmail
 	}
-	localPart := strings.ToLower(strings.ReplaceAll(institution.DemoName, " ", ""))
-	return localPart + "@" + strings.ToLower(institution.Ref) + ".co.ke"
+	return demoEmailForName(institution.DemoName, institution)
 }
 
 func demoLoginInstitutions() []Institution {
@@ -63,17 +80,16 @@ func demoLoginInstitutions() []Institution {
 
 func (a *App) seedDemoUsers(ctx context.Context) error {
 	institutions := demoLoginInstitutions()
-	seenEmails := make(map[string]string, len(institutions))
+	accountsPerInstitution := len(repeatingDemoIdentities) + 1
+	seenEmails := make(map[string]string, len(institutions)*accountsPerInstitution)
 	for _, institution := range institutions {
 		if strings.TrimSpace(institution.DemoName) == "" {
 			return fmt.Errorf("demo identity name is missing for %s", institution.Code)
 		}
-		email := demoInstitutionEmail(institution)
-		if existing := seenEmails[email]; existing != "" {
-			return fmt.Errorf("demo identity email %s is shared by %s and %s",
-				email, existing, institution.Code)
+		primaryEmail := demoInstitutionEmail(institution)
+		if err := reserveDemoEmail(seenEmails, primaryEmail, institution.Code); err != nil {
+			return err
 		}
-		seenEmails[email] = institution.Code
 		result, err := a.db.Exec(ctx, `UPDATE auth_users SET
 			email=$1,
 			display_name=$2,
@@ -82,23 +98,32 @@ func (a *App) seedDemoUsers(ctx context.Context) error {
 			institution_code=$4,
 			active=TRUE,
 			updated_at=NOW()
-			WHERE role='institution' AND institution_code=$4`,
-			email, institution.DemoName, demoPasswordHash, institution.Code)
+			WHERE role='institution' AND institution_code=$4 AND display_name=$2`,
+			primaryEmail, institution.DemoName, demoPasswordHash, institution.Code)
 		if err != nil {
 			return err
 		}
 		if result.RowsAffected() > 1 {
-			return fmt.Errorf("multiple demo users are assigned to %s", institution.Code)
+			return fmt.Errorf("multiple primary demo users are assigned to %s", institution.Code)
 		}
-		if result.RowsAffected() == 1 {
-			continue
+		if result.RowsAffected() == 0 {
+			if err := a.upsertDemoInstitutionUser(ctx,
+				"demo-"+institution.ID+"-institution-user",
+				primaryEmail, institution.DemoName, institution.Code); err != nil {
+				return err
+			}
 		}
-		if _, err := a.db.Exec(ctx, `INSERT INTO auth_users(
-			user_id,email,display_name,password_hash,role,institution_code
-		) VALUES ($1,$2,$3,$4,'institution',$5)`,
-			"demo-"+institution.ID+"-institution-user", email, institution.DemoName,
-			demoPasswordHash, institution.Code); err != nil {
-			return err
+
+		for _, identity := range repeatingDemoIdentities {
+			email := demoEmailForName(identity.Name, institution)
+			if err := reserveDemoEmail(seenEmails, email, institution.Code); err != nil {
+				return err
+			}
+			if err := a.upsertDemoInstitutionUser(ctx,
+				"demo-"+institution.ID+"-"+identity.Key,
+				email, identity.Name, institution.Code); err != nil {
+				return err
+			}
 		}
 	}
 	_, err := a.db.Exec(ctx, `INSERT INTO auth_users(
@@ -113,6 +138,34 @@ func (a *App) seedDemoUsers(ctx context.Context) error {
 		institution_code=excluded.institution_code,
 		active=TRUE,
 		updated_at=NOW()`, demoPasswordHash)
+	return err
+}
+
+func reserveDemoEmail(seen map[string]string, email, institutionCode string) error {
+	if existing := seen[email]; existing != "" {
+		return fmt.Errorf("demo identity email %s is shared by %s and %s",
+			email, existing, institutionCode)
+	}
+	seen[email] = institutionCode
+	return nil
+}
+
+func (a *App) upsertDemoInstitutionUser(
+	ctx context.Context,
+	userID, email, displayName, institutionCode string,
+) error {
+	_, err := a.db.Exec(ctx, `INSERT INTO auth_users(
+		user_id,email,display_name,password_hash,role,institution_code
+	) VALUES ($1,$2,$3,$4,'institution',$5)
+	ON CONFLICT (user_id) DO UPDATE SET
+		email=excluded.email,
+		display_name=excluded.display_name,
+		password_hash=excluded.password_hash,
+		role=excluded.role,
+		institution_code=excluded.institution_code,
+		active=TRUE,
+		updated_at=NOW()`,
+		userID, email, displayName, demoPasswordHash, institutionCode)
 	return err
 }
 

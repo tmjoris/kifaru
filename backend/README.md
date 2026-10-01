@@ -30,10 +30,12 @@ resolve.
 
 ## Authentication and authorization
 
-Startup seeds an institution demo account for each of the 38 licensed banks,
-M-Pesa and Airtel Money, plus one Kifaru staff account. Passwords are stored only
-as bcrypt hashes. Successful sign-in creates a random opaque token; PostgreSQL
-stores its SHA-256 digest, CSRF token, user, timestamps and expiry.
+Startup seeds six institution demo accounts for each of the 38 licensed banks,
+M-Pesa and Airtel Money, plus one Kifaru staff account. Each institution keeps
+one named primary identity and receives the same five reusable Kenyan demo
+identities. Passwords are stored only as bcrypt hashes. Successful sign-in
+creates a random opaque token; PostgreSQL stores its SHA-256 digest, CSRF token,
+user, timestamps and expiry.
 
 The plaintext pitch credentials are maintained only in the repository root's
 git-ignored `demo-credentials.txt`. Generated addresses use each institution's
