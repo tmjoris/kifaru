@@ -110,15 +110,22 @@ func (a *App) produceDemoEvent(ctx context.Context, force bool) (map[string]any,
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var enabled bool
-	var cadence int
+	var cadence, emitted int
 	var offset int64
 	var lastEmitted time.Time
-	err = tx.QueryRow(ctx, `SELECT enabled,cadence_seconds,next_offset,
+	err = tx.QueryRow(ctx, `SELECT enabled,cadence_seconds,next_offset,emitted_since_reset,
 		COALESCE(last_emitted_at,TO_TIMESTAMP(0))
 		FROM demo_stream_state WHERE singleton=TRUE FOR UPDATE`).
-		Scan(&enabled, &cadence, &offset, &lastEmitted)
+		Scan(&enabled, &cadence, &offset, &emitted, &lastEmitted)
 	if err != nil {
 		return nil, false, err
+	}
+	if !enabled && emitted == demoStreamRetention && offset == int64(demoStreamRetention+1) {
+		enabled = true
+		if _, err := tx.Exec(ctx, `UPDATE demo_stream_state
+			SET enabled=TRUE,updated_at=NOW() WHERE singleton=TRUE`); err != nil {
+			return nil, false, err
+		}
 	}
 	if !force && (!enabled || time.Since(lastEmitted) < time.Duration(cadence)*time.Second) {
 		return nil, false, nil

@@ -101,7 +101,8 @@ unseen migration in a PostgreSQL transaction and records the filename in
 `004_authentication.sql` adds demo users and expiring sessions. Startup seeds
 the pitch accounts only after the current institution directory exists.
 `005_rolling_demo_stream.sql` resumes streams stopped by the former event cap;
-the Go producer then maintains rolling retention.
+the Go producer then maintains rolling retention and repairs the same exact
+legacy state if a retiring instance recreates it during a rolling deployment.
 
 ## Go package layout
 

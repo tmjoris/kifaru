@@ -669,7 +669,7 @@ func TestPostgresPipeline(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(ctx, `UPDATE demo_stream_state
-		SET enabled=FALSE,next_offset=$1,emitted_since_reset=$2,last_emitted_at=NOW()
+		SET enabled=FALSE,next_offset=$1,emitted_since_reset=$2,last_emitted_at=TO_TIMESTAMP(0)
 		WHERE singleton=TRUE`, demoStreamRetention+1, demoStreamRetention); err != nil {
 		t.Fatal(err)
 	}
@@ -688,10 +688,21 @@ func TestPostgresPipeline(t *testing.T) {
 	if !resumed {
 		t.Fatal("rolling-stream migration did not resume a stream stopped at the former cap")
 	}
-	rollingEvent, emitted, err := app.produceDemoEvent(ctx, true)
+	if _, err := db.Exec(ctx, `UPDATE demo_stream_state SET enabled=FALSE
+		WHERE singleton=TRUE`); err != nil {
+		t.Fatal(err)
+	}
+	rollingEvent, emitted, err := app.produceDemoEvent(ctx, false)
 	if err != nil || !emitted {
 		t.Fatalf("rolling demo event failed: emitted=%v result=%#v err=%v",
 			emitted, rollingEvent, err)
+	}
+	if err := db.QueryRow(ctx, "SELECT enabled FROM demo_stream_state WHERE singleton=TRUE").
+		Scan(&resumed); err != nil {
+		t.Fatal(err)
+	}
+	if !resumed {
+		t.Fatal("producer did not recover the exact legacy cap state after a rolling-deploy race")
 	}
 	var oldestOffset, newestOffset int64
 	if err := db.QueryRow(ctx, `SELECT COUNT(*),MIN(event_offset),MAX(event_offset)
