@@ -37,7 +37,8 @@ stores its SHA-256 digest, CSRF token, user, timestamps and expiry.
 
 The plaintext pitch credentials are maintained only in the repository root's
 git-ignored `demo-credentials.txt`. Generated addresses use each institution's
-short reference as a demo subdomain and contain no `+` or `-` alias separator.
+short reference in a `.co.ke` domain. The lowercase names are concatenated
+without `.`, `+` or `-` separators; the identities remain synthetic.
 
 Institution sessions can access only their own history, reports, alerts,
 configuration threshold and related validations. Only the receiving institution
