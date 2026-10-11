@@ -141,11 +141,7 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 		return nil, &apiError{http.StatusInternalServerError, err.Error()}
 	}
 	validation.Explanation = a.explain(report, validation, codes)
-	alertType := alertTypeFor(report)
-	if validation.Status == statusCorroborated {
-		alertID := "alt-" + randomHex(5)
-		validation.AlertID = &alertID
-	}
+	newAlert := assignAlertID(&validation, "")
 
 	riskJSON, _ := json.Marshal(codes)
 	evidenceJSON, _ := json.Marshal(report.Evidence)
@@ -206,37 +202,13 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 	}
 
 	var alert map[string]any
-	publishedAlerts := []map[string]any{}
-	if validation.AlertID != nil {
-		alert = map[string]any{
-			"alert_id": *validation.AlertID, "validation_id": validation.ValidationID, "report_id": reportID,
-			"issued_at": utcNow(), "receiving_institution": report.DestinationInstitution,
-			"reporting_institution":    report.ReportingInstitution,
-			"destination_account_hash": report.DestinationAccountHash,
-			"destination_msisdn_hash":  report.DestinationMSISDNHash,
-			"amount":                   report.Amount, "currency": report.Currency, "risk_codes": string(riskJSON),
-			"validation_score": validation.ValidationScore, "validated_by": "Kifaru policy engine",
-			"explanation": validation.Explanation, "state": "sent", "alert_type": alertType,
-		}
-		_, err = tx.Exec(ctx, `INSERT INTO alerts (
-			alert_id,validation_id,report_id,issued_at,receiving_institution,
-			reporting_institution,destination_account_hash,destination_msisdn_hash,
-			amount,currency,risk_codes,validation_score,validated_by,explanation,state,alert_type
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-			alert["alert_id"], alert["validation_id"], alert["report_id"], alert["issued_at"],
-			alert["receiving_institution"], alert["reporting_institution"],
-			alert["destination_account_hash"], alert["destination_msisdn_hash"], alert["amount"],
-			alert["currency"], alert["risk_codes"], alert["validation_score"], alert["validated_by"],
-			alert["explanation"], alert["state"], alert["alert_type"])
-		if err != nil {
-			return nil, &apiError{http.StatusInternalServerError, err.Error()}
-		}
-		_, err = tx.Exec(ctx, `INSERT INTO alert_actions(alert_id,action,actor,at)
-			VALUES ($1,'sent','policy-engine',$2)`, alert["alert_id"], alert["issued_at"])
-		if err != nil {
-			return nil, &apiError{http.StatusInternalServerError, err.Error()}
-		}
-		publishedAlerts = append(publishedAlerts, alert)
+	publishedAlerts, err := reconcileAlert(ctx, tx, report, reportID, codes, validation, "", newAlert,
+		"policy-engine", "report validation")
+	if err != nil {
+		return nil, &apiError{http.StatusInternalServerError, err.Error()}
+	}
+	if len(publishedAlerts) > 0 {
+		alert = publishedAlerts[0]
 	}
 	revalidatedAlerts, err := a.revalidateCorroborated(ctx, tx, reportID, cfg)
 	if err != nil {
@@ -344,8 +316,8 @@ func (a *App) revalidateCorroborated(
 		JOIN validations current_validation ON current_validation.report_id=current.report_id
 			AND current_validation.is_current=1
 		WHERE v.is_current=1
-		  AND v.status=$3
-		  AND current_validation.status IN ($3,$4)
+		  AND v.status = ANY($3)
+		  AND current_validation.status = ANY($4)
 		  AND prior_report.lifecycle_state=$5
 		  AND current_report.lifecycle_state=$5
 		  AND prior_report.expires_at>NOW()
@@ -354,7 +326,8 @@ func (a *App) revalidateCorroborated(
 		  AND prior.institution_code<>current.institution_code
 		  AND prior.observed_at >= $2`,
 		newReportID, time.Now().UTC().Add(-30*24*time.Hour).Format("2006-01-02T15:04:05Z"),
-		statusAwaiting, statusCorroborated, lifecycleActive)
+		[]string{statusAwaiting, statusSingleSourceReview, statusSingleSourceNotice},
+		qualifyingStatuses, lifecycleActive)
 	if err != nil {
 		return nil, err
 	}
@@ -385,11 +358,11 @@ func (a *App) revalidateCorroborated(
 		if err != nil {
 			return nil, err
 		}
-		var previousID, previousStatus string
+		var previousID, previousStatus, previousAlertID string
 		var previousScore float64
-		if err := tx.QueryRow(ctx, `SELECT validation_id,status,validation_score
+		if err := tx.QueryRow(ctx, `SELECT validation_id,status,validation_score,COALESCE(alert_id,'')
 			FROM validations WHERE report_id=$1 AND is_current=1`,
-			reportID).Scan(&previousID, &previousStatus, &previousScore); err != nil {
+			reportID).Scan(&previousID, &previousStatus, &previousScore, &previousAlertID); err != nil {
 			return nil, err
 		}
 		validation, err := a.score(ctx, tx, report, reportID, codes, cfg, time.Now())
@@ -397,10 +370,7 @@ func (a *App) revalidateCorroborated(
 			return nil, err
 		}
 		validation.Explanation = a.explain(report, validation, codes)
-		if validation.Status == statusCorroborated {
-			alertID := "alt-" + randomHex(5)
-			validation.AlertID = &alertID
-		}
+		newAlert := assignAlertID(&validation, previousAlertID)
 		if _, err := tx.Exec(ctx, "UPDATE validations SET is_current=0 WHERE validation_id=$1", previousID); err != nil {
 			return nil, err
 		}
@@ -427,38 +397,12 @@ func (a *App) revalidateCorroborated(
 			"new report supplied matching artefact"); err != nil {
 			return nil, err
 		}
-		if validation.AlertID == nil {
-			continue
-		}
-		riskJSON, _ := json.Marshal(codes)
-		alert := map[string]any{
-			"alert_id": *validation.AlertID, "validation_id": validation.ValidationID,
-			"report_id": reportID, "issued_at": utcNow(),
-			"receiving_institution":    report.DestinationInstitution,
-			"reporting_institution":    report.ReportingInstitution,
-			"destination_account_hash": report.DestinationAccountHash,
-			"destination_msisdn_hash":  report.DestinationMSISDNHash,
-			"amount":                   report.Amount, "currency": report.Currency, "risk_codes": string(riskJSON),
-			"validation_score": validation.ValidationScore, "validated_by": "Kifaru policy engine",
-			"explanation": validation.Explanation, "state": "sent", "alert_type": alertTypeFor(report),
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO alerts (
-			alert_id,validation_id,report_id,issued_at,receiving_institution,
-			reporting_institution,destination_account_hash,destination_msisdn_hash,
-			amount,currency,risk_codes,validation_score,validated_by,explanation,state,alert_type
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-			alert["alert_id"], alert["validation_id"], alert["report_id"], alert["issued_at"],
-			alert["receiving_institution"], alert["reporting_institution"],
-			alert["destination_account_hash"], alert["destination_msisdn_hash"], alert["amount"],
-			alert["currency"], alert["risk_codes"], alert["validation_score"], alert["validated_by"],
-			alert["explanation"], alert["state"], alert["alert_type"]); err != nil {
+		changed, err := reconcileAlert(ctx, tx, report, reportID, codes, validation, previousAlertID,
+			newAlert, "policy-engine", "new report supplied matching artefact")
+		if err != nil {
 			return nil, err
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO alert_actions(alert_id,action,actor,at)
-			VALUES ($1,'sent','policy-engine',$2)`, alert["alert_id"], alert["issued_at"]); err != nil {
-			return nil, err
-		}
-		alerts = append(alerts, alert)
+		alerts = append(alerts, changed...)
 	}
 	return alerts, nil
 }
@@ -482,6 +426,9 @@ func validateReport(report ReportIn) error {
 	}
 	if report.Amount < 0 {
 		return errors.New("amount cannot be negative")
+	}
+	if truthy(report.Evidence["victim_confirmed"]) && report.Amount <= 0 {
+		return errors.New("victim_confirmed requires a completed transfer amount")
 	}
 	if report.BankRiskScore < 0 || report.BankRiskScore > 1 {
 		return errors.New("bank_risk_score must be between 0 and 1")
@@ -654,16 +601,16 @@ func (a *App) score(
 		WHERE a.institution_code != $1
 		  AND prior_report.lifecycle_state=$6
 		  AND prior_report.expires_at>NOW()
-		  AND prior_validation.status IN ($7,$8)
+		  AND prior_validation.status = ANY($7)
 		  AND (
 		    (a.artefact_type='destination_account' AND a.artefact_hash=$2 AND a.match_scope=$5) OR
 		    (a.artefact_type='destination_msisdn' AND a.artefact_hash=$3 AND a.match_scope=$5) OR
 		    (a.artefact_type='device_profile' AND a.artefact_hash=$4 AND a.match_scope='')
 		  )
-		  AND a.observed_at >= $9
+		  AND a.observed_at >= $8
 		ORDER BY a.institution_code`,
 		report.ReportingInstitution, report.DestinationAccountHash, report.DestinationMSISDNHash,
-		device, report.DestinationInstitution, lifecycleActive, statusAwaiting, statusCorroborated, since)
+		device, report.DestinationInstitution, lifecycleActive, qualifyingStatuses, since)
 	if err != nil {
 		return Validation{}, err
 	}
@@ -705,15 +652,15 @@ func (a *App) score(
 			WHERE m.institution_code != $1
 			  AND linked_report.lifecycle_state=$6
 			  AND linked_report.expires_at>NOW()
-			  AND linked_validation.status IN ($7,$8)
+			  AND linked_validation.status = ANY($7)
 			  AND (
 			    (m.artefact_type='destination_account' AND m.artefact_hash=$2 AND m.match_scope=$4) OR
 			    (m.artefact_type='destination_msisdn' AND m.artefact_hash=$3 AND m.match_scope=$4)
 			  )
 			  AND m.observed_at >= $5
-			  AND d.artefact_hash != $9)`,
+			  AND d.artefact_hash != $8)`,
 			report.ReportingInstitution, report.DestinationAccountHash, report.DestinationMSISDNHash,
-			report.DestinationInstitution, since, lifecycleActive, statusAwaiting, statusCorroborated,
+			report.DestinationInstitution, since, lifecycleActive, qualifyingStatuses,
 			device).Scan(&switched); err != nil {
 			return Validation{}, err
 		}
@@ -726,6 +673,8 @@ func (a *App) score(
 	if err != nil {
 		return Validation{}, err
 	}
+	knownBad := kb["known_bad"][report.DestinationAccountHash] || kb["known_bad"][report.DestinationMSISDNHash]
+	knownGood := kb["known_good"][report.DestinationAccountHash] || kb["known_good"][report.DestinationMSISDNHash]
 	if kb["known_bad"][report.DestinationAccountHash] {
 		score += weightKnownBad
 		reasons = append(reasons, "KB:known_bad")
@@ -734,7 +683,7 @@ func (a *App) score(
 		score += weightKnownBad
 		reasons = append(reasons, "KB:known_bad_msisdn")
 	}
-	if kb["known_good"][report.DestinationAccountHash] || kb["known_good"][report.DestinationMSISDNHash] {
+	if knownGood {
 		score += weightKnownGood
 		reasons = append(reasons, "KB:suppressed_legitimate")
 	}
@@ -746,10 +695,34 @@ func (a *App) score(
 
 	validated := numberOr(cfg["validated_threshold"], defaultValidated)
 	insufficient := numberOr(cfg["insufficient_threshold"], defaultInsufficient)
+	standing, err := reporterStanding(ctx, store, report.ReportingInstitution)
+	if err != nil {
+		return Validation{}, err
+	}
+	// The guided scenario demonstrates the corroboration path, so its reports
+	// never rely on reporter standing.
+	trusted := standing.Good && !truthy(report.Evidence["guided_demo"])
+	if trusted {
+		reasons = append(reasons, "TRUST:reporter_good_standing")
+	}
+	victimConfirmed := truthy(report.Evidence["victim_confirmed"]) && report.Amount > 0
+	if victimConfirmed {
+		reasons = append(reasons, "EVIDENCE:victim_confirmed")
+	}
+	// Corroboration from another institution is the default basis for an
+	// alert. A single source can stand in for it only when the destination is
+	// already known to be bad, or the reporter has earned standing through
+	// receiver outcomes. Neither route overrides a known-good destination.
+	singleSourceEligible := score >= insufficient && !knownGood
 	status := statusBelow
-	if score >= validated && len(corro) > 0 {
+	switch {
+	case score >= validated && len(corro) > 0:
 		status = statusCorroborated
-	} else if score >= insufficient {
+	case singleSourceEligible && victimConfirmed && trusted:
+		status = statusSingleSourceReview
+	case singleSourceEligible && (knownBad || trusted):
+		status = statusSingleSourceNotice
+	case score >= insufficient:
 		status = statusAwaiting
 	}
 	corroInstitutions := make([]string, 0, len(corro))
@@ -764,7 +737,75 @@ func (a *App) score(
 		AgentVersion: policyVersion, ValidationScore: score, Status: status,
 		ReasonCodes: reasons, CorroboratingInstitutions: corroInstitutions,
 		CorroborationCount: len(corroInstitutions), LatencyMS: latency,
+		ReporterStanding: standing,
 	}, nil
+}
+
+// reporterStanding summarises receiver decisions on an institution's recent
+// alerts. Retracted alerts are neutral, and scripted guided-scenario outcomes
+// are ignored because no receiver made them.
+func reporterStanding(ctx context.Context, store dbRunner, institution string) (ReporterStanding, error) {
+	var standing ReporterStanding
+	err := store.QueryRow(ctx, `SELECT
+		COUNT(*) FILTER (WHERE a.state='actioned' AND a.outcome IN ('held','recovered')),
+		COUNT(*) FILTER (WHERE a.state='disputed' OR (a.state='actioned' AND a.outcome='released'))
+		FROM alerts a
+		JOIN reports r ON r.report_id=a.report_id
+		WHERE a.reporting_institution=$1
+		  AND a.updated_at >= NOW() - make_interval(days => $2::int)
+		  AND COALESCE(r.evidence,'') NOT LIKE '%"guided_demo":true%'`,
+		institution, standingWindowDays).Scan(&standing.Upheld, &standing.Adverse)
+	if err != nil {
+		return ReporterStanding{}, err
+	}
+	resolved := standing.Upheld + standing.Adverse
+	standing.Good = resolved >= standingMinResolved &&
+		float64(standing.Adverse) <= standingMaxAdverseRate*float64(resolved)
+	return standing, nil
+}
+
+// alertTierFor returns the alert tier for a validation status, or "" when the
+// status does not alert the receiving institution.
+func alertTierFor(status string) string {
+	switch status {
+	case statusCorroborated:
+		return alertTierCorroborated
+	case statusSingleSourceReview:
+		return alertTierReview
+	case statusSingleSourceNotice:
+		return alertTierNotice
+	}
+	return ""
+}
+
+func alertTierRank(tier string) int {
+	switch tier {
+	case alertTierCorroborated:
+		return 3
+	case alertTierReview:
+		return 2
+	case alertTierNotice:
+		return 1
+	}
+	return 0
+}
+
+// singleSourceBasis states why one institution's report was enough to alert.
+func singleSourceBasis(validation Validation, victimConfirmed bool) string {
+	standing := validation.ReporterStanding
+	record := fmt.Sprintf("receivers upheld %d of its %d resolved alerts in the last %d days",
+		standing.Upheld, standing.Upheld+standing.Adverse, standingWindowDays)
+	if victimConfirmed {
+		return "The reporting institution confirmed a victim report for this completed transfer, and " + record + "."
+	}
+	if containsString(validation.ReasonCodes, "TRUST:reporter_good_standing") {
+		if containsString(validation.ReasonCodes, "KB:known_bad") ||
+			containsString(validation.ReasonCodes, "KB:known_bad_msisdn") {
+			return "The destination is on the shared known-bad list, and " + record + "."
+		}
+		return "The reporting institution is in good standing: " + record + "."
+	}
+	return "The destination is on the shared known-bad list."
 }
 
 func (a *App) explain(report ReportIn, validation Validation, codes []string) string {
@@ -797,6 +838,17 @@ func (a *App) explain(report ReportIn, validation Validation, codes []string) st
 		}
 		return fmt.Sprintf("%s was flagged for %s. The protected indicator was corroborated by %s.%s %s",
 			subject, signals, others, switchNote, action)
+	case statusSingleSourceReview:
+		return fmt.Sprintf("%s was flagged for %s. %s No other institution has corroborated it yet, so this is a single-source review alert issued on the reporting institution's evidence. The receiving institution should review the signal and choose its own response.",
+			subject, signals, singleSourceBasis(validation, true))
+	case statusSingleSourceNotice:
+		matched := "No other institution has corroborated it yet."
+		if validation.CorroborationCount > 0 {
+			matched = fmt.Sprintf("%s reported a matching artefact, but the score stayed below the corroborated alert policy.", others)
+		}
+		action := "The receiving institution may monitor the destination; a qualified match from another institution would upgrade this to a corroborated alert."
+		return fmt.Sprintf("%s showed %s. %s %s This is a lower-priority single-source notice.%s %s",
+			subject, signals, matched, singleSourceBasis(validation, false), switchNote, action)
 	case statusAwaiting:
 		if validation.CorroborationCount > 0 {
 			return fmt.Sprintf("%s showed %s. %s reported a matching artefact, but the score stayed below the shared alert policy.%s Keep under review.",

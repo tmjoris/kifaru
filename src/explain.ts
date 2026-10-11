@@ -95,6 +95,14 @@ const REASONS: Record<string, Explanation> = {
     title: "The receiving phone number is on the managed risk list",
     detail: "An authorized operator added this protected identifier to a manually managed list.",
   },
+  "TRUST:reporter_good_standing": {
+    title: "The reporting institution has a strong outcome record",
+    detail: "Receiving institutions upheld most of its recent alerts, so its report can alert without waiting for corroboration.",
+  },
+  "EVIDENCE:victim_confirmed": {
+    title: "A victim confirmed the completed transfer",
+    detail: "The reporting institution recorded a customer fraud report for this transfer, not only a system flag.",
+  },
   "KB:suppressed_legitimate": {
     title: "The receiving account is on the trusted list",
     detail: "It is known to be genuine, which lowers the score.",
@@ -109,10 +117,12 @@ const REASONS: Record<string, Explanation> = {
   },
 };
 
-const REASON_ORDER = ["CODE", "CORRO", "LINK", "KB", "BANK"];
+const REASON_ORDER = ["CODE", "EVIDENCE", "CORRO", "LINK", "KB", "TRUST", "BANK"];
 
 export const STATUS_HELP: Record<string, string> = {
   corroborated: "The signal met policy and matched an eligible active report from another institution.",
+  single_source_review: "A victim-confirmed transfer from a reporter in good standing. The receiver was asked to review it before any corroboration.",
+  single_source_notice: "A lower-priority notice issued on one institution's evidence, because the destination is on the risk list or the reporter is in good standing.",
   needs_review: "The signal remains active while Kifaru waits for qualified independent corroboration.",
   below_threshold: "The signal did not meet the shared alert policy, so no receiving-institution alert was sent.",
   quarantined: "The signal is isolated while a receiving institution's dispute is reviewed.",
@@ -126,7 +136,7 @@ export const ALERT_STATE_HELP: Record<string, string> = {
   acknowledged: "Acknowledged by the receiving institution",
   actioned: "Actioned by the receiving institution",
   disputed: "Disputed by the receiving institution",
-  retracted: "Retracted after the underlying corroboration changed",
+  retracted: "Retracted after the evidence behind it changed",
 };
 
 /** Plain title and explanation for a risk code such as ATO-460. */

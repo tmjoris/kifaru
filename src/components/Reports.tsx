@@ -9,6 +9,8 @@ export function Reports({ records, bank, view, onView }: {
   const submitted = records.filter((item) => reportingBankId(item) === bank.id);
   const received = records.filter((item) => counterpartyBankId(item) === bank.id && item.alertId).length;
   const corroborated = records.filter((item) => item.validationStatus === "corroborated");
+  const singleSource = records.filter((item) =>
+    ["single_source_review", "single_source_notice"].includes(item.validationStatus));
   const belowPolicy = records.filter((item) => item.validationStatus === "below_threshold");
   const cards = [
     { view: "all", label: "All reports", value: records.length, detail: "Every shared-signal record tied to this bank" },
@@ -20,9 +22,10 @@ export function Reports({ records, bank, view, onView }: {
   let subtitle = "Aggregate shared-signal numbers involving this bank.";
   let metrics: [string, number, string][] = [
     ["All reports", records.length, "All shared-signal records tied to this bank"],
-    ["Alerts received", received, "Corroborated alerts received by this bank"],
+    ["Alerts received", received, "Corroborated and single-source alerts received by this bank"],
     ["Submitted signals", submitted.length, "Reports this bank sent to Kifaru"],
     ["Corroborated signals", corroborated.length, "Signals with an eligible independent institution match"],
+    ["Single-source alerts", singleSource.length, "Alerts issued on one institution's evidence before any match"],
     ["Below alert policy", belowPolicy.length, "Signals retained without a receiving-institution alert"],
     ["Incoming transactions", records.filter((item) => moneyDirection(item, bank.id) === "Incoming").length, "Records where funds entered this bank"],
     ["Outgoing transactions", records.filter((item) => moneyDirection(item, bank.id) === "Outgoing").length, "Records where funds left this bank"],
@@ -40,6 +43,7 @@ export function Reports({ records, bank, view, onView }: {
       ["Incoming submitted", submitted.filter((item) => moneyDirection(item, bank.id) === "Incoming").length, "Submitted signals on incoming transactions"],
       ["Outgoing submitted", submitted.filter((item) => moneyDirection(item, bank.id) === "Outgoing").length, "Submitted signals on outgoing transactions"],
       ["Corroborated after submission", submitted.filter((item) => item.validationStatus === "corroborated").length, "Submitted signals independently matched"],
+      ["Single-source alerts", submitted.filter((item) => singleSource.includes(item)).length, "Submitted signals that alerted before any match"],
     ];
   } else if (view.startsWith("code:")) {
     const code = view.slice(5);
@@ -50,6 +54,7 @@ export function Reports({ records, bank, view, onView }: {
     metrics = [
       [code, matching.length, info.title],
       ["Corroborated", matching.filter((item) => item.validationStatus === "corroborated").length, "Independently matched signals for this risk code"],
+      ["Single-source alerts", matching.filter((item) => singleSource.includes(item)).length, "Alerts for this risk code issued before any match"],
       ["Below alert policy", matching.filter((item) => item.validationStatus === "below_threshold").length, "Signals retained without an alert"],
       ["Submitted signals", matching.filter((item) => reportingBankId(item) === bank.id).length, "Submitted by this bank with this risk code"],
     ];

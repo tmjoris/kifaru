@@ -29,8 +29,15 @@ export function displayTransactionId(transaction: Transaction, bankName: string)
   return `${bankName.replace(/\s+/g, "")}-${transaction.id.split("-").at(-1)}`;
 }
 
+/** Statuses that route an alert to the receiving institution. */
+export function isAlerting(status: string) {
+  return ["corroborated", "single_source_review", "single_source_notice"].includes(status);
+}
+
 export function validationLabel(status: string) {
   if (status === "corroborated") return "Corroborated signal";
+  if (status === "single_source_review") return "Single-source review";
+  if (status === "single_source_notice") return "Single-source notice";
   if (status === "below_threshold") return "Below alert policy";
   if (status === "quarantined") return "Quarantined";
   if (status === "retracted") return "Retracted";
@@ -40,7 +47,7 @@ export function validationLabel(status: string) {
 }
 
 export function statusClass(status: string) {
-  if (status === "corroborated") return "fraud";
+  if (["corroborated", "single_source_review"].includes(status)) return "fraud";
   if (["below_threshold", "cleared"].includes(status)) return "clear";
   if (["quarantined", "retracted", "expired"].includes(status)) return "inactive";
   return "review";
@@ -110,14 +117,19 @@ export function pipelineSteps(transaction: Transaction, reporterName?: string): 
       state: matched ? "done" : "pending",
     },
   ];
-  if (transaction.validationStatus === "corroborated") {
+  if (isAlerting(transaction.validationStatus)) {
+    const delivered = transaction.validationStatus === "single_source_review"
+      ? "Single-source review delivered"
+      : transaction.validationStatus === "single_source_notice"
+        ? "Lower-priority notice delivered"
+        : "Alert delivered";
     const action = transaction.alertOutcome === "held"
       ? "Receiving institution recorded a review hold"
       : transaction.alertOutcome === "released"
         ? "Receiving institution released the activity"
         : transaction.alertOutcome === "recovered"
           ? "Receiving institution recorded recovery"
-          : "Alert delivered; receiver decision pending";
+          : `${delivered}; receiver decision pending`;
     steps.push({
       id: "act", label: "Respond",
       detail: transaction.alertType === "advisory" ? "Advisory delivered, no money moved yet" : action,
@@ -146,13 +158,19 @@ export function campaignChain(transaction: Transaction, bankName: (id: string) =
     { label: maskedFingerprint(transaction.destinationHash), kind: "fingerprint", detail: riskCodeInfo(transaction.riskCode.code, transaction.riskCode.label).title },
     { label: bankName(counterpartyBankId(transaction)), kind: "bank", detail: transactionDirection(transaction, counterpartyBankId(transaction)) },
   ];
-  if (transaction.validationStatus === "corroborated") {
+  if (isAlerting(transaction.validationStatus)) {
+    const singleSource = transaction.validationStatus !== "corroborated";
     const outcome = transaction.alertOutcome
       ? `${transaction.alertOutcome[0].toUpperCase()}${transaction.alertOutcome.slice(1)}`
-      : "Receiver review";
+      : transaction.validationStatus === "single_source_notice" ? "Notice delivered" : "Receiver review";
     chain.push(transaction.alertType === "advisory"
       ? { label: "Advisory delivered", kind: "outcome", detail: "The receiving institution monitors the destination" }
-      : { label: outcome, kind: "outcome", detail: "Response recorded by the receiving institution" });
+      : {
+        label: outcome, kind: "outcome",
+        detail: singleSource
+          ? "Issued on one institution's evidence; the receiving institution decides"
+          : "Response recorded by the receiving institution",
+      });
   } else if (["below_threshold", "cleared"].includes(transaction.validationStatus)) {
     chain.push({ label: "No active alert", kind: "outcome", detail: "The signal is below policy or was cleared" });
   } else if (["quarantined", "retracted", "expired"].includes(transaction.validationStatus)) {

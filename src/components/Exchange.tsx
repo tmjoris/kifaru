@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { maskedFingerprint, reportingBankId } from "../domain";
+import { isAlerting, maskedFingerprint, reportingBankId } from "../domain";
 import { riskCodeInfo } from "../explain";
 import type { Transaction } from "../types";
 import { Card, Icon, Status } from "./Shared";
@@ -21,6 +21,8 @@ function outcomeCopy(transaction: Transaction) {
   if (transaction.validationStatus === "quarantined") return ["Signal quarantined", "A dispute removed it from active corroboration"];
   if (transaction.validationStatus === "retracted") return ["Signal retracted", "The reporter withdrew the indicator"];
   if (transaction.validationStatus === "corroborated") return ["Alert delivered", "The receiving institution decides what happens next"];
+  if (transaction.validationStatus === "single_source_review") return ["Single-source review delivered", "Issued on a victim-confirmed report from a reporter in good standing"];
+  if (transaction.validationStatus === "single_source_notice") return ["Lower-priority notice delivered", "Issued on one institution's evidence while awaiting a match"];
   if (transaction.validationStatus === "below_threshold") return ["Stored below policy", "No receiving-institution alert was issued"];
   return ["Awaiting an independent match", "The signal remains visible without a receiving-institution alert"];
 }
@@ -119,7 +121,7 @@ export function Exchange({ transactions, bankName, onOpen }: {
           </div>
           <div className="signal-map-thread onward" aria-hidden="true"><i /></div>
           <div className={`signal-map-node outcome status-${focus.validationStatus}`}>
-            <Icon name={focus.alertOutcome === "held" ? "pause_circle" : focus.validationStatus === "corroborated" ? "notification_important" : "schedule"} />
+            <Icon name={focus.alertOutcome === "held" ? "pause_circle" : isAlerting(focus.validationStatus) ? "notification_important" : "schedule"} />
             <span><strong>{outcome[0]}</strong><small>{outcome[1]}</small></span>
           </div>
         </div>

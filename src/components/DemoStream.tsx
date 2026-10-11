@@ -50,13 +50,13 @@ export function DemoStream({ stream, busy, onToggle, onEmit, onReset }: {
     <div className="stream-outcomes" aria-label="Current demonstration outcomes">
       <div><span>Signals</span><strong>{stream?.metrics.signals ?? 0}</strong></div>
       <div><span>Corroborated</span><strong>{stream?.metrics.corroborated ?? 0}</strong></div>
+      <div><span>Single-source</span><strong>{stream?.metrics.singleSource ?? 0}</strong></div>
       <div><span>Awaiting match</span><strong>{stream?.metrics.awaiting ?? 0}</strong></div>
       <div><span>Alerts delivered</span><strong>{stream?.metrics.alerts ?? 0}</strong></div>
-      <div><span>Receiver actions</span><strong>{stream?.metrics.actioned ?? 0}</strong></div>
+      <div><span>Receiver actions</span><strong>{stream?.metrics.actioned ?? 0}
+        {" · "}KES {(stream?.metrics.actionedValue ?? 0).toLocaleString()}</strong></div>
       <div><span>Disputed or retracted</span>
         <strong>{(stream?.metrics.disputed ?? 0) + (stream?.metrics.retracted ?? 0)}</strong></div>
-      <div><span>Actioned synthetic value</span>
-        <strong>KES {(stream?.metrics.actionedValue ?? 0).toLocaleString()}</strong></div>
       <div><span>Policy p95</span><strong>{Math.round(stream?.metrics.p95LatencyMs ?? 0)} ms</strong></div>
     </div>
     <div className="stream-log" aria-live="polite">

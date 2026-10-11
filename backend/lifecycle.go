@@ -421,15 +421,7 @@ func (a *App) recalculateLinkedReport(
 		return nil, err
 	}
 	validation.Explanation = a.explain(report, validation, codes)
-	newAlert := false
-	if previousAlertID != "" && validation.Status == statusCorroborated {
-		validation.AlertID = &previousAlertID
-	}
-	if previousAlertID == "" && validation.Status == statusCorroborated {
-		generatedAlertID := "alt-" + randomHex(5)
-		validation.AlertID = &generatedAlertID
-		newAlert = true
-	}
+	newAlert := assignAlertID(&validation, previousAlertID)
 	if _, err := tx.Exec(ctx, "UPDATE validations SET is_current=0 WHERE validation_id=$1", previousID); err != nil {
 		return nil, err
 	}
@@ -453,32 +445,104 @@ func (a *App) recalculateLinkedReport(
 		return nil, err
 	}
 
-	changedAlerts := []map[string]any{}
+	return reconcileAlert(ctx, tx, report, reportID, codes, validation, previousAlertID, newAlert, actor, reason)
+}
+
+// assignAlertID links an alerting validation to the report's existing alert,
+// or to a new alert ID. It reports whether a new alert must be inserted.
+func assignAlertID(validation *Validation, previousAlertID string) bool {
+	if alertTierFor(validation.Status) == "" {
+		return false
+	}
+	if previousAlertID != "" {
+		validation.AlertID = &previousAlertID
+		return false
+	}
+	alertID := "alt-" + randomHex(5)
+	validation.AlertID = &alertID
+	return true
+}
+
+// reconcileAlert brings a report's receiver alert in line with its newest
+// validation. It inserts a new alert, moves an open alert to the new tier, or
+// retracts an open alert that the policy no longer supports. Disputed and
+// retracted alerts are closed and left unchanged.
+func reconcileAlert(
+	ctx context.Context,
+	tx pgx.Tx,
+	report ReportIn,
+	reportID string,
+	codes []string,
+	validation Validation,
+	previousAlertID string,
+	newAlert bool,
+	actor, reason string,
+) ([]map[string]any, error) {
 	if newAlert {
 		alert, err := insertSignalAlert(ctx, tx, report, reportID, codes, validation)
 		if err != nil {
 			return nil, err
 		}
-		changedAlerts = append(changedAlerts, alert)
+		return []map[string]any{alert}, nil
 	}
-	if previousAlertID != "" && validation.Status != statusCorroborated {
-		alertRows, err := rowsFrom(ctx, tx, `SELECT receiving_institution,reporting_institution,state
-			FROM alerts WHERE alert_id=$1`, previousAlertID)
+	if previousAlertID == "" {
+		return nil, nil
+	}
+	alertRows, err := rowsFrom(ctx, tx, `SELECT receiving_institution,reporting_institution,state,alert_tier
+		FROM alerts WHERE alert_id=$1`, previousAlertID)
+	if err != nil || len(alertRows) == 0 {
+		return nil, err
+	}
+	previous := alertRows[0]
+	state := fmt.Sprint(previous["state"])
+	if state == "disputed" || state == "retracted" {
+		return nil, nil
+	}
+	receiving := fmt.Sprint(previous["receiving_institution"])
+	reporting := fmt.Sprint(previous["reporting_institution"])
+	previousTier := fmt.Sprint(previous["alert_tier"])
+	tier := alertTierFor(validation.Status)
+	if tier == "" {
+		cause := "alert_policy_no_longer_met"
+		if previousTier == alertTierCorroborated {
+			cause = "corroboration_removed"
+		}
+		changed, err := retractAlert(ctx, tx, previousAlertID, receiving, reporting, cause, reason, actor)
 		if err != nil {
 			return nil, err
 		}
-		if len(alertRows) > 0 && fmt.Sprint(alertRows[0]["state"]) != "disputed" {
-			changed, err := retractAlert(ctx, tx, previousAlertID,
-				fmt.Sprint(alertRows[0]["receiving_institution"]),
-				fmt.Sprint(alertRows[0]["reporting_institution"]),
-				"corroboration_removed", reason, actor)
-			if err != nil {
-				return nil, err
-			}
-			changedAlerts = append(changedAlerts, changed)
+		return []map[string]any{changed}, nil
+	}
+	if tier == previousTier {
+		return nil, nil
+	}
+	direction := "downgraded"
+	if alertTierRank(tier) > alertTierRank(previousTier) {
+		direction = "escalated"
+	}
+	if _, err := tx.Exec(ctx, `UPDATE alerts
+		SET alert_tier=$1,validation_id=$2,validation_score=$3,explanation=$4,updated_at=NOW()
+		WHERE alert_id=$5`, tier, validation.ValidationID, validation.ValidationScore,
+		validation.Explanation, previousAlertID); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO alert_actions(alert_id,action,comment,actor,at)
+		VALUES ($1,$2,$3,$4,$5)`, previousAlertID, direction+":"+tier,
+		nullIfEmpty(reason), actor, utcNow()); err != nil {
+		return nil, err
+	}
+	payload := map[string]any{
+		"alert_id": previousAlertID, "alert_tier": tier, "previous_tier": previousTier, "reason": reason,
+	}
+	for _, institution := range uniqueSorted([]string{receiving, reporting}) {
+		if err := insertNotification(ctx, tx, institution, "alert."+direction, previousAlertID, payload); err != nil {
+			return nil, err
 		}
 	}
-	return changedAlerts, nil
+	return []map[string]any{{
+		"alert_id": previousAlertID, "state": state, "alert_tier": tier, "previous_tier": previousTier,
+		"receiving_institution": receiving, "reporting_institution": reporting,
+	}}, nil
 }
 
 func insertSignalAlert(
@@ -504,17 +568,18 @@ func insertSignalAlert(
 		"risk_codes": string(riskJSON), "validation_score": validation.ValidationScore,
 		"validated_by": "Kifaru policy engine", "explanation": validation.Explanation,
 		"state": "sent", "alert_type": alertTypeFor(report),
+		"alert_tier": alertTierFor(validation.Status),
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO alerts (
 		alert_id,validation_id,report_id,issued_at,receiving_institution,
 		reporting_institution,destination_account_hash,destination_msisdn_hash,
-		amount,currency,risk_codes,validation_score,validated_by,explanation,state,alert_type
-	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+		amount,currency,risk_codes,validation_score,validated_by,explanation,state,alert_type,alert_tier
+	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
 		alert["alert_id"], alert["validation_id"], alert["report_id"], alert["issued_at"],
 		alert["receiving_institution"], alert["reporting_institution"],
 		alert["destination_account_hash"], alert["destination_msisdn_hash"], alert["amount"],
 		alert["currency"], alert["risk_codes"], alert["validation_score"], alert["validated_by"],
-		alert["explanation"], alert["state"], alert["alert_type"]); err != nil {
+		alert["explanation"], alert["state"], alert["alert_type"], alert["alert_tier"]); err != nil {
 		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO alert_actions(alert_id,action,actor,at)

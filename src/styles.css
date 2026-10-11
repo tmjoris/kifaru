@@ -3252,7 +3252,8 @@ dialog.drawer {
   border-left-color: var(--cp-success);
 }
 
-.signal-map-node.outcome.status-needs_review {
+.signal-map-node.outcome.status-needs_review,
+.signal-map-node.outcome.status-single_source_notice {
   border-left-color: var(--cp-warning);
 }
 

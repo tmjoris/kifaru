@@ -27,7 +27,7 @@ func (a *App) history(w http.ResponseWriter, r *http.Request) {
 		r.risk_codes,r.evidence,r.narrative,r.lifecycle_state,r.expires_at,
 		v.validated_at,v.agent_version,v.status,
 		v.validation_score,v.reason_codes,v.corroborating_institutions,v.corroboration_count,
-		v.explanation,v.alert_id,a.state AS alert_state,a.alert_type,
+		v.explanation,v.alert_id,a.state AS alert_state,a.alert_type,a.alert_tier,
 		a.outcome AS alert_outcome,a.outcome_note
 		FROM reports r
 		LEFT JOIN validations v ON v.report_id=r.report_id AND v.is_current=1
@@ -47,7 +47,7 @@ func (a *App) reports(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := a.rows(r.Context(), `SELECT r.*,v.status,v.validation_score,v.reason_codes,
-		v.explanation,v.alert_id,a.state AS alert_state,a.alert_type
+		v.explanation,v.alert_id,a.state AS alert_state,a.alert_type,a.alert_tier
 		FROM reports r
 		LEFT JOIN validations v ON v.report_id=r.report_id AND v.is_current=1
 		LEFT JOIN alerts a ON a.alert_id=v.alert_id
@@ -110,14 +110,16 @@ func (a *App) stats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	counts := map[string]string{
 		"reports": "SELECT COUNT(*) FROM reports", "validations": "SELECT COUNT(*) FROM validations",
-		"corroborated":    "SELECT COUNT(*) FROM validations WHERE is_current=1 AND status='CORROBORATED_SIGNAL'",
-		"awaiting":        "SELECT COUNT(*) FROM validations WHERE is_current=1 AND status='AWAITING_CORROBORATION'",
-		"below_policy":    "SELECT COUNT(*) FROM validations WHERE is_current=1 AND status='BELOW_ALERT_THRESHOLD'",
-		"quarantined":     "SELECT COUNT(*) FROM reports WHERE lifecycle_state='quarantined'",
-		"retracted":       "SELECT COUNT(*) FROM reports WHERE lifecycle_state='retracted'",
-		"alerts":          "SELECT COUNT(*) FROM alerts",
-		"alerts_actioned": "SELECT COUNT(*) FROM alerts WHERE state='actioned'",
-		"alerts_disputed": "SELECT COUNT(*) FROM alerts WHERE state='disputed'",
+		"corroborated":         "SELECT COUNT(*) FROM validations WHERE is_current=1 AND status='CORROBORATED_SIGNAL'",
+		"awaiting":             "SELECT COUNT(*) FROM validations WHERE is_current=1 AND status='AWAITING_CORROBORATION'",
+		"below_policy":         "SELECT COUNT(*) FROM validations WHERE is_current=1 AND status='BELOW_ALERT_THRESHOLD'",
+		"single_source_review": "SELECT COUNT(*) FROM validations WHERE is_current=1 AND status='SINGLE_SOURCE_REVIEW'",
+		"single_source_notice": "SELECT COUNT(*) FROM validations WHERE is_current=1 AND status='SINGLE_SOURCE_NOTICE'",
+		"quarantined":          "SELECT COUNT(*) FROM reports WHERE lifecycle_state='quarantined'",
+		"retracted":            "SELECT COUNT(*) FROM reports WHERE lifecycle_state='retracted'",
+		"alerts":               "SELECT COUNT(*) FROM alerts",
+		"alerts_actioned":      "SELECT COUNT(*) FROM alerts WHERE state='actioned'",
+		"alerts_disputed":      "SELECT COUNT(*) FROM alerts WHERE state='disputed'",
 	}
 	out := map[string]any{}
 	for key, query := range counts {
@@ -130,8 +132,8 @@ func (a *App) stats(w http.ResponseWriter, r *http.Request) {
 	}
 	var avg float64
 	_ = a.db.QueryRow(ctx, `SELECT COALESCE(AVG(latency_ms),0) FROM validations
-		WHERE is_current=1 AND status IN ($1,$2,$3)`,
-		statusCorroborated, statusAwaiting, statusBelow).Scan(&avg)
+		WHERE is_current=1 AND (status = ANY($1) OR status=$2)`,
+		qualifyingStatuses, statusBelow).Scan(&avg)
 	out["avg_latency_ms"] = math.Round(avg*10) / 10
 	out["alerts_by_institution"], _ = a.groupCounts(ctx, "SELECT receiving_institution,COUNT(*) FROM alerts GROUP BY 1")
 	out["reports_by_channel"], _ = a.groupCounts(ctx, "SELECT submission_channel,COUNT(*) FROM reports GROUP BY 1")
