@@ -64,13 +64,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "Institutions submit protected risk signals from their own controls. Kifaru applies a shared policy, looks for an eligible independent match, and routes review alerts while the receiver retains the decision.",
+      "text": "Institutions submit protected risk signals from their own controls. Kifaru applies a shared policy and looks for an eligible\nindependent match or strong single-source evidence, then routes tiered review alerts while the receiver retains the decision.",
       "fontSize": 15,
       "fontFamily": 1,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "Institutions submit protected risk signals from their own controls. Kifaru applies a shared policy, looks for an eligible independent match, and routes review alerts while the receiver retains the decision.",
+      "originalText": "Institutions submit protected risk signals from their own controls. Kifaru applies a shared policy and looks for an eligible\nindependent match or strong single-source evidence, then routes tiered review alerts while the receiver retains the decision.",
       "lineHeight": 1.25
     },
     {
@@ -560,13 +560,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "Signal state?\nCorroborated, awaiting,\nor below policy",
+      "text": "Alert basis?\nCorroborated,\nor strong\nsingle source",
       "fontSize": 14,
       "fontFamily": 1,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": null,
-      "originalText": "Signal state?\nCorroborated, awaiting,\nor below policy",
+      "originalText": "Alert basis?\nCorroborated,\nor strong\nsingle source",
       "lineHeight": 1.25
     },
     {
@@ -622,13 +622,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "Receiving institution alert\nStatus: corroborated signal\nReceiver chooses the outcome",
+      "text": "Receiving institution alert\nCorroborated signal, or\nsingle-source review / notice\nReceiver chooses the outcome",
       "fontSize": 14,
       "fontFamily": 1,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": null,
-      "originalText": "Receiving institution alert\nStatus: corroborated signal\nReceiver chooses the outcome",
+      "originalText": "Receiving institution alert\nCorroborated signal, or\nsingle-source review / notice\nReceiver chooses the outcome",
       "lineHeight": 1.25
     },
     {
@@ -746,13 +746,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "Kifaru dashboard views\n\nAlerts received: corroborated indicators routed to the receiving institution\nSignals submitted: reports this institution sent to the shared policy\nRelated history: active and inactive signal records involving this institution",
+      "text": "Kifaru dashboard views\n\nAlerts received: corroborated and single-source alerts routed to the receiving institution\nSignals submitted: reports this institution sent to the shared policy\nRelated history: active and inactive signal records involving this institution",
       "fontSize": 15,
       "fontFamily": 1,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "Kifaru dashboard views\n\nAlerts received: corroborated indicators routed to the receiving institution\nSignals submitted: reports this institution sent to the shared policy\nRelated history: active and inactive signal records involving this institution",
+      "originalText": "Kifaru dashboard views\n\nAlerts received: corroborated and single-source alerts routed to the receiving institution\nSignals submitted: reports this institution sent to the shared policy\nRelated history: active and inactive signal records involving this institution",
       "lineHeight": 1.25
     },
     {
