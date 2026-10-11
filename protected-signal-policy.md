@@ -50,14 +50,18 @@ Given a structured risk report from an institution:
 
 ## Receiver decisions
 
-Kifaru issues a `review` alert. The receiving institution may acknowledge it and
-record one of these outcomes:
+Kifaru issues a corroborated, single-source review, or single-source notice
+alert, and labels each with its basis. On every tier, the receiving
+institution may acknowledge it and record one of these outcomes:
 
 - `held`
 - `released`
 - `recovered`
 
-Kifaru records the response; it does not execute it.
+Kifaru records the response; it does not execute it. These decisions also
+determine the reporting institution's standing for single-source alerts:
+`held` and `recovered` uphold an alert, while `released` and disputes count
+against it.
 
 ## Example response
 

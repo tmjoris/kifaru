@@ -29,10 +29,12 @@ intelligence:
 1. An institution's existing controls detect suspicious activity.
 2. The institution submits structured evidence and protected identifiers.
 3. Kifaru validates the evidence contract and applies a deterministic policy.
-4. A signal remains active but does not alert a receiver until it has a
-   qualified match from another institution.
+4. By default, a signal remains active but does not alert a receiver until it
+   has a qualified match from another institution.
 5. When the policy and corroboration requirements are met, Kifaru routes a
-   review alert to the destination institution.
+   review alert to the destination institution. Strong single-source evidence
+   (a victim-confirmed transfer, a known-risk destination, or a reporter with a
+   strong outcome record) can route a single-source alert sooner.
 6. The receiving institution acknowledges the alert and records `held`,
    `released`, or `recovered` as its own outcome.
 7. Retraction, dispute, release, or expiry removes a signal from active
@@ -62,7 +64,7 @@ institution and limits the workspace to related records.
 The workspace provides:
 
 - Signals submitted by the institution
-- Corroborated alerts received by the institution
+- Corroborated and single-source alerts received by the institution
 - Related signal history
 - Policy score and evidence explanations
 - Receiving-institution outcomes
@@ -154,6 +156,7 @@ The Go API rejects:
 - Protected identifiers that are not `sha256:` plus 64 lowercase hexadecimal
   characters
 - Unknown destination institutions
+- `victim_confirmed` evidence on a report without a positive transfer amount
 - Invalid timestamps, amounts, scores, or thresholds
 - Narratives longer than 500 characters
 - Narratives that appear to contain an email, Kenyan phone number, or long
@@ -312,6 +315,7 @@ Displayed metrics are operational observations from current synthetic records:
 
 - Signals
 - Corroborated
+- Single-source
 - Awaiting
 - Below policy
 - Quarantined
@@ -347,7 +351,7 @@ flowchart LR
     Institution -->|"protected report + structured evidence"| API
     UI -->|"authenticated JSON + SSE"| API
     API -->|"reports, artefacts, validations, alerts, audit"| DB
-    API -->|"corroborated review alert"| Receiver
+    API -->|"corroborated or single-source alert"| Receiver
     Receiver -->|"acknowledge + recorded outcome"| API
 ```
 
@@ -502,6 +506,8 @@ Coverage includes:
 - Protected identifier and narrative validation
 - Required risk-code evidence and unknown-code rejection
 - Destination-scoped corroboration
+- Single-source alert tiers, reporter standing, and in-place alert escalation
+  and downgrade
 - Prevention of automatic known-risk promotion
 - Idempotent and atomic processing
 - Versioned revalidation
@@ -523,6 +529,8 @@ Go integration suite on every push to `main` and every pull request.
 - Kifaru records indicators and institution decisions; it does not move money.
 - Correlation is not human identification.
 - Corroboration is not a legal or factual fraud determination.
+- Reporter standing reflects past receiver decisions, not the accuracy of any
+  single report.
 - A directory entry is not evidence of participation.
 - The public demonstration key is not a production tokenisation architecture.
 - Demo authentication is not bank-managed SSO, MFA, or connector identity.

@@ -538,7 +538,7 @@ export default function App() {
           <p className="sidebar-label">How it works</p>
           <ol className="how-it-works">
             <li>A reporting institution publishes a protected risk indicator</li>
-            <li>Kifaru looks for a qualified independent match</li>
+            <li>Kifaru looks for a qualified independent match, or strong single-source evidence</li>
             <li>The receiving institution reviews and records its own response</li>
           </ol>
         </div>}

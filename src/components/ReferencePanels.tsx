@@ -104,7 +104,7 @@ export function AdminDetails({
       <KnowledgeItems items={[
         { title: "Workspace structure", text: "Every institution can submit risk signals, receive corroborated and single-source alerts, and investigate related history from the same workspace." },
         { title: "Tenant data boundary", text: `${bank.name} views only related records. This client-side filter is not production authorization.` },
-        { title: "Alert routing", text: "Corroborated signals route to the receiving institution. Below-policy reports remain in history without an alert." },
+        { title: "Alert routing", text: "Corroborated signals route to the receiving institution. A victim-confirmed transfer, a known-risk destination, or a reporter with a strong outcome record can send a labelled single-source alert first. Below-policy reports remain in history without an alert." },
       ]} />
     </Card>
   </div>;
