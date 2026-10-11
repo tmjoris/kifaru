@@ -125,6 +125,9 @@ the Go producer then maintains rolling retention and repairs the same exact
 legacy state if a retiring instance recreates it during a rolling deployment.
 `006_user_access_requests.sql` stores tenant-bound alias requests, their review
 lifecycle, reviewer metadata and the admitted account link.
+`008_single_source_alerts.sql` adds each alert's tier (corroborated,
+single-source review or single-source notice), defaulting existing alerts to
+corroborated.
 
 ## Go package layout
 

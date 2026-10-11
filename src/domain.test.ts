@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  campaignChain, counterpartyBankId, displayTransactionId, isVisible, moneyDirection,
-  pipelineSteps, reportingBankId, riskCounts, transactionFromValidation, validationLabel,
+  campaignChain, counterpartyBankId, displayTransactionId, isAlerting, isVisible, moneyDirection,
+  pipelineSteps, reportingBankId, riskCounts, statusClass, transactionFromValidation, validationLabel,
 } from "./domain.ts";
 import { parseCsv, protectIdentifiers, toCsv } from "./identifiers.ts";
 import { initialBanks } from "./data.ts";
@@ -69,6 +69,28 @@ test("alert outcomes remain decisions recorded by the receiving institution", ()
   const held = { ...transaction, alertType: "review" as const, alertOutcome: "held" as const };
   assert.equal(pipelineSteps(held).at(-1)?.detail, "Receiving institution recorded a review hold");
   assert.equal(campaignChain(held, (id) => id).at(-1)?.label, "Held");
+});
+
+test("single-source alerts reach the receiver but stay distinct from corroborated ones", () => {
+  for (const status of ["corroborated", "single_source_review", "single_source_notice"]) {
+    assert.equal(isAlerting(status), true);
+  }
+  assert.equal(isAlerting("needs_review"), false);
+  assert.equal(validationLabel("single_source_review"), "Single-source review");
+  assert.equal(validationLabel("single_source_notice"), "Single-source notice");
+  assert.equal(statusClass("single_source_review"), "fraud");
+  assert.equal(statusClass("single_source_notice"), "review");
+  const notice = {
+    ...transaction, validationStatus: "single_source_notice" as const, alertTier: "single_source_notice" as const,
+    corroboratingInstitutions: [], corroborationCount: 0,
+  };
+  const steps = pipelineSteps(notice);
+  assert.equal(steps.find((step) => step.id === "match")?.state, "pending");
+  assert.equal(steps.at(-1)?.detail, "Lower-priority notice delivered; receiver decision pending");
+  assert.equal(campaignChain(notice, (id) => id).at(-1)?.label, "Notice delivered");
+  const review = { ...notice, validationStatus: "single_source_review" as const, alertTier: "single_source_review" as const };
+  assert.equal(pipelineSteps(review).at(-1)?.detail, "Single-source review delivered; receiver decision pending");
+  assert.match(campaignChain(review, (id) => id).at(-1)?.detail ?? "", /one institution's evidence/);
 });
 
 test("CSV parsing keeps quoted commas and round-trips", () => {

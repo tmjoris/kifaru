@@ -111,6 +111,8 @@ Kifaru uses explicit signal and lifecycle states:
 | Backend state | Interface label | Meaning |
 |---|---|---|
 | `CORROBORATED_SIGNAL` | Corroborated signal | Meets policy and has an eligible independent institution match |
+| `SINGLE_SOURCE_REVIEW` | Single-source review | A victim-confirmed transfer from a reporter in good standing |
+| `SINGLE_SOURCE_NOTICE` | Single-source notice | Lower priority: a known-risk destination, or a reporter in good standing |
 | `AWAITING_CORROBORATION` | Awaiting corroboration | Active evidence exists, but no qualifying match or alert threshold has been reached |
 | `BELOW_ALERT_THRESHOLD` | Below alert policy | Retained without a receiving-institution alert |
 | `QUARANTINED` | Quarantined | A receiving institution disputed the source alert |
@@ -118,8 +120,9 @@ Kifaru uses explicit signal and lifecycle states:
 | `EXPIRED` | Expired | The active retention period ended |
 | `CLEARED` | Cleared after review | The receiver released the activity after review |
 
-Only `CORROBORATED_SIGNAL` creates a new receiver alert. Inactive lifecycle
-states cannot support another report.
+`CORROBORATED_SIGNAL` and the two single-source states create a receiver alert;
+see [Alert tiers](#alert-tiers). Inactive lifecycle states cannot support
+another report.
 
 ## Qualified corroboration
 
@@ -127,7 +130,7 @@ A match contributes to corroboration only when all of these conditions hold:
 
 - It was reported by a different institution.
 - The prior report is active and unexpired.
-- The prior report's current state is awaiting or corroborated.
+- The prior report's current state is awaiting, corroborated, or single-source.
 - Artefact type, protected hash, and match scope agree.
 - The prior report falls within the configured matching window.
 
@@ -171,8 +174,42 @@ Scoring is deterministic:
 
 The score is clamped to `0.00–0.99`. A report is corroborated only when its
 score reaches `0.60` **and** at least one eligible institution match exists.
-Strong single-source evidence remains awaiting corroboration. Reports at
-`0.35–0.59` remain awaiting; lower scores remain below alert policy.
+Without a match, a report at `0.35` or above remains awaiting unless it
+qualifies for a single-source tier; lower scores remain below alert policy.
+
+## Alert tiers
+
+Corroboration from another institution is the default basis for an alert. It
+limits false accusations, but it gives the first victim's bank no benefit. Two
+narrow routes let one institution's report alert the receiver sooner:
+
+| Condition | Result |
+|---|---|
+| Corroborated by another institution | Corroborated alert |
+| Single source, victim-confirmed transfer, reporter in good standing | Single-source review alert |
+| Single source, known-risk destination, or reporter in good standing | Lower-priority single-source notice |
+| Anything else | Awaiting corroboration |
+
+Both single-source tiers also need a score of at least `0.35`, and neither
+applies to a known-good destination. The score itself is not a route: without
+corroboration it is built almost entirely from the reporter's own inputs.
+
+- **Victim confirmation:** the report sets `evidence.victim_confirmed` to `true`.
+  It is accepted only with a positive transfer amount.
+- **Good standing:** at least five receiver decisions on the reporter's alerts in
+  the last 90 days, with at most 20% adverse. `held` and `recovered` uphold an
+  alert; `released` and disputes count against it, and retracted alerts are
+  neutral. Standing is checked each time a report is scored, so a reporter
+  whose alerts are released loses the route automatically. Guided-scenario
+  outcomes are scripted and never count, and guided reports never use standing.
+
+Receivers make the same decisions on every tier. A single-source alert carries
+its basis and the reporter's record in its explanation. When the evidence
+changes, an open alert moves between tiers in place and keeps its ID and
+receiver state: corroboration escalates a notice, and losing corroboration
+downgrades an alert to a single-source tier if it still qualifies, otherwise
+retracts it. Both institutions are notified with `alert.escalated` or
+`alert.downgraded`.
 
 Kifaru never automatically promotes a corroborated destination to the
 known-risk list. Knowledge-base entries remain deliberate administrative
@@ -196,7 +233,7 @@ When a signal becomes inactive, Kifaru:
 1. Writes a new current validation while retaining the previous record.
 2. Removes the signal from active corroboration.
 3. Rescores linked reports.
-4. Retracts linked alerts that no longer qualify.
+4. Downgrades or retracts linked alerts that no longer qualify.
 5. Notifies affected reporting and receiving institutions.
 6. Appends the change to immutable audit history.
 

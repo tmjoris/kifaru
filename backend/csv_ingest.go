@@ -49,7 +49,10 @@ func (a *App) submitCSV(w http.ResponseWriter, r *http.Request) {
 		}
 		validations = append(validations, dashboardValidation(result, report))
 	}
-	counts := map[string]int{"corroborated": 0, "below_threshold": 0, "needs_review": 0}
+	counts := map[string]int{
+		"corroborated": 0, "single_source_review": 0, "single_source_notice": 0,
+		"below_threshold": 0, "needs_review": 0,
+	}
 	riskCounts := map[string]int{}
 	for _, validation := range validations {
 		counts[validation["status"].(string)]++
@@ -65,6 +68,7 @@ func (a *App) submitCSV(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"summary": map[string]any{
 			"total_rows": len(validations), "corroborated": counts["corroborated"],
+			"single_source":   counts["single_source_review"] + counts["single_source_notice"],
 			"below_threshold": counts["below_threshold"], "needs_review": counts["needs_review"],
 			"top_risk_codes": topCodes,
 		},
@@ -162,11 +166,18 @@ func dashboardValidation(result map[string]any, report ReportIn) map[string]any 
 	}
 	status := map[string]string{
 		statusCorroborated: "corroborated", statusBelow: "below_threshold",
-		statusAwaiting: "needs_review",
+		statusAwaiting:           "needs_review",
+		statusSingleSourceReview: "single_source_review",
+		statusSingleSourceNotice: "single_source_notice",
 	}[validation.Status]
 	action := "No receiving-institution alert; keep the signal in history."
-	if validation.Status == statusCorroborated {
+	switch validation.Status {
+	case statusCorroborated:
 		action = "Send a corroborated risk alert to " + displayInstitution(report.DestinationInstitution) + "."
+	case statusSingleSourceReview:
+		action = "Send a single-source review alert to " + displayInstitution(report.DestinationInstitution) + "."
+	case statusSingleSourceNotice:
+		action = "Send a lower-priority single-source notice to " + displayInstitution(report.DestinationInstitution) + "."
 	}
 	customerRef := report.SubjectCustomerHash
 	if len(customerRef) > 4 {

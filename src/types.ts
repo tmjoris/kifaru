@@ -1,7 +1,9 @@
 export type PortalScope = "institution" | "exchange";
 export type Tab = "outgoing" | "incoming" | "history" | "reports" | "knowledge" | "governance";
-export type Outcome = "corroborated" | "below_threshold" | "needs_review"
-  | "quarantined" | "retracted" | "expired" | "cleared";
+export type Outcome = "corroborated" | "single_source_review" | "single_source_notice"
+  | "below_threshold" | "needs_review" | "quarantined" | "retracted" | "expired" | "cleared";
+/** What an alert rests on: an independent match, or one institution's evidence. */
+export type AlertTier = "corroborated" | "single_source_review" | "single_source_notice";
 export type InstitutionKind = "bank" | "mortgage" | "sacco" | "psp";
 export interface Session {
   scope: PortalScope;
@@ -87,6 +89,7 @@ export interface Transaction {
   alertId?: string;
   alertState?: "sent" | "acknowledged" | "actioned" | "disputed" | "retracted";
   alertType?: "review" | "advisory";
+  alertTier?: AlertTier;
   alertOutcome?: "held" | "released" | "recovered";
   alertOutcomeNote?: string;
 }
@@ -111,6 +114,7 @@ export interface Validation {
 export interface UploadSummary {
   total_rows: number;
   corroborated: number;
+  single_source?: number;
   below_threshold: number;
   needs_review: number;
   top_risk_codes: { code: string; count: number }[];
@@ -163,6 +167,7 @@ export interface DemoStreamStatus {
   metrics: {
     signals: number;
     corroborated: number;
+    singleSource: number;
     awaiting: number;
     belowPolicy: number;
     quarantined: number;

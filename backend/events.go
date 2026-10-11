@@ -405,17 +405,19 @@ func (a *App) demoStreamSnapshot(ctx context.Context) (map[string]any, error) {
 	state["events"] = events
 	state["topic"] = "sentinel.security-alert"
 	state["dataset_basis"] = "Microsoft Sentinel public schemas and PaySim-informed synthetic transactions"
-	var signals, corroborated, awaiting, belowPolicy, quarantined int
+	var signals, corroborated, singleSource, awaiting, belowPolicy, quarantined int
 	if err := a.db.QueryRow(ctx, `SELECT
 		COUNT(*),
 		COUNT(*) FILTER (WHERE v.status=$1),
+		COUNT(*) FILTER (WHERE v.status IN ($5,$6)),
 		COUNT(*) FILTER (WHERE v.status=$2),
 		COUNT(*) FILTER (WHERE v.status=$3),
 		COUNT(*) FILTER (WHERE r.lifecycle_state=$4)
 		FROM reports r
 		LEFT JOIN validations v ON v.report_id=r.report_id AND v.is_current=1`,
-		statusCorroborated, statusAwaiting, statusBelow, lifecycleQuarantined).
-		Scan(&signals, &corroborated, &awaiting, &belowPolicy, &quarantined); err != nil {
+		statusCorroborated, statusAwaiting, statusBelow, lifecycleQuarantined,
+		statusSingleSourceReview, statusSingleSourceNotice).
+		Scan(&signals, &corroborated, &singleSource, &awaiting, &belowPolicy, &quarantined); err != nil {
 		return nil, err
 	}
 	var alerts, acknowledged, actioned, disputed, retracted int
@@ -435,12 +437,12 @@ func (a *App) demoStreamSnapshot(ctx context.Context) (map[string]any, error) {
 	if err := a.db.QueryRow(ctx, `SELECT COALESCE(
 		PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms),0
 	) FROM validations
-	WHERE is_current=1 AND status IN ($1,$2,$3)`,
-		statusCorroborated, statusAwaiting, statusBelow).Scan(&p95Latency); err != nil {
+	WHERE is_current=1 AND (status = ANY($1) OR status=$2)`,
+		qualifyingStatuses, statusBelow).Scan(&p95Latency); err != nil {
 		return nil, err
 	}
 	state["metrics"] = map[string]any{
-		"signals": signals, "corroborated": corroborated, "awaiting": awaiting,
+		"signals": signals, "corroborated": corroborated, "single_source": singleSource, "awaiting": awaiting,
 		"below_policy": belowPolicy, "quarantined": quarantined,
 		"alerts": alerts, "acknowledged": acknowledged, "actioned": actioned,
 		"disputed": disputed, "retracted": retracted,

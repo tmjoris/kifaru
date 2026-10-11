@@ -4,6 +4,7 @@ import type {
   UploadSummary, UserAccessRequest, Validation,
 } from "./types";
 import { riskCodeInfo } from "./explain";
+import { isAlerting } from "./domain";
 
 const configuredApiUrl = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 const API_BASE_URL = configuredApiUrl && !configuredApiUrl.startsWith("http")
@@ -29,7 +30,8 @@ function isValidation(value: unknown): value is Validation {
     "currency", "amount", "validated_by", "short_explanation", "recommended_action"];
   return stringFields.every((field) => typeof value[field] === "string")
     && typeof value.confidence === "number" && Number.isFinite(value.confidence)
-    && ["corroborated", "below_threshold", "needs_review"].includes(String(value.status))
+    && ["corroborated", "single_source_review", "single_source_notice", "below_threshold", "needs_review"]
+      .includes(String(value.status))
     && Array.isArray(value.risk_codes)
     && value.risk_codes.every((code) => isRecord(code) && typeof code.code === "string" && typeof code.label === "string")
     && Array.isArray(value.key_signals) && value.key_signals.every((signal) => typeof signal === "string");
@@ -230,6 +232,8 @@ function parseEvidence(value: unknown): string[] {
 
 function backendStatus(value: unknown): Transaction["validationStatus"] {
   if (value === "CORROBORATED_SIGNAL" || value === "VALIDATED_FRAUD") return "corroborated";
+  if (value === "SINGLE_SOURCE_REVIEW") return "single_source_review";
+  if (value === "SINGLE_SOURCE_NOTICE") return "single_source_notice";
   if (value === "BELOW_ALERT_THRESHOLD" || value === "NOT_FRAUD") return "below_threshold";
   if (value === "QUARANTINED") return "quarantined";
   if (value === "RETRACTED") return "retracted";
@@ -342,8 +346,8 @@ function transactionFromHistory(
     evidence: evidence.length ? evidence : [explanation || "No additional evidence recorded."],
     reasonCodes,
     evidenceFields: parseEvidenceFields(row.evidence),
-    action: explanation || (status === "corroborated"
-      ? "Corroborated risk alert routed to the receiving institution."
+    action: explanation || (isAlerting(status)
+      ? "Risk alert routed to the receiving institution."
       : "Signal retained in the shared history."),
     destinationHash: requiredString(row, "destination_account_hash") || requiredString(row, "destination_msisdn_hash"),
     corroboratingInstitutions,
@@ -357,6 +361,8 @@ function transactionFromHistory(
       ? requiredString(row, "alert_state") : undefined) as Transaction["alertState"],
     alertType: (["review", "advisory"].includes(requiredString(row, "alert_type"))
       ? requiredString(row, "alert_type") : undefined) as Transaction["alertType"],
+    alertTier: (["corroborated", "single_source_review", "single_source_notice"].includes(requiredString(row, "alert_tier"))
+      ? requiredString(row, "alert_tier") : undefined) as Transaction["alertTier"],
     alertOutcome: (["held", "released", "recovered"].includes(requiredString(row, "alert_outcome"))
       ? requiredString(row, "alert_outcome") : undefined) as Transaction["alertOutcome"],
     alertOutcomeNote: requiredString(row, "outcome_note") || undefined,
@@ -577,6 +583,7 @@ function parseDemoStream(payload: unknown): DemoStreamStatus {
     metrics: {
       signals: requiredNumber(metrics, "signals"),
       corroborated: requiredNumber(metrics, "corroborated"),
+      singleSource: requiredNumber(metrics, "single_source"),
       awaiting: requiredNumber(metrics, "awaiting"),
       belowPolicy: requiredNumber(metrics, "below_policy"),
       quarantined: requiredNumber(metrics, "quarantined"),

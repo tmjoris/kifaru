@@ -11,8 +11,9 @@ Given a structured risk report from an institution:
 2. Normalize supported risk codes.
 3. Match protected artefacts against eligible active reports.
 4. Calculate a reproducible policy score.
-5. Route a review alert only when the score and independent-institution match
-   requirements are both met.
+5. Route a review alert when the score and independent-institution match
+   requirements are both met, or a narrower single-source alert when the
+   evidence and the reporter's record justify one.
 6. Preserve the receiving institution's authority to decide and record the
    outcome.
 
@@ -20,6 +21,10 @@ Given a structured risk report from an institution:
 
 - `CORROBORATED_SIGNAL`: policy threshold met with at least one eligible report
   from another institution.
+- `SINGLE_SOURCE_REVIEW`: no qualified match, but the reporter confirmed a
+  victim report for a completed transfer and is in good standing.
+- `SINGLE_SOURCE_NOTICE`: lower priority; no qualified match, but the
+  destination is on the known-risk list or the reporter is in good standing.
 - `AWAITING_CORROBORATION`: active evidence remains available, but the report
   has no qualified match or has not crossed the alert threshold.
 - `BELOW_ALERT_THRESHOLD`: retained without a receiver alert.
@@ -37,6 +42,9 @@ Given a structured risk report from an institution:
 - Count only active, unexpired reports from another institution.
 - Never treat a protected-artefact link as proof of human identity.
 - Never automatically add a corroborated destination to a known-risk list.
+- Never let reporter standing or victim confirmation override a known-good
+  destination.
+- Earn reporter standing only from receiver decisions, never from scores.
 - Store explanations, reasons, policy version, and superseded validations.
 - Recalculate linked intelligence after dispute, retraction, release, or expiry.
 

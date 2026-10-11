@@ -101,6 +101,8 @@ function notificationTitle(eventType: string) {
   if (eventType.includes("recovered")) return "Receiving institution recorded recovery";
   if (eventType.includes("held")) return "Receiving institution recorded a review hold";
   if (eventType.includes("retracted")) return "A linked alert was retracted";
+  if (eventType.includes("escalated")) return "An alert was escalated after new evidence";
+  if (eventType.includes("downgraded")) return "An alert was downgraded after the evidence behind it changed";
   return "Shared signal update";
 }
 

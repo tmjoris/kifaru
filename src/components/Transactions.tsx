@@ -107,6 +107,11 @@ export function Investigation({
     ["What the policy engine recommends", transaction.action],
     ...(transaction.alertType ? [["Alert type", transaction.alertType === "advisory"
       ? "Advisory: no money has moved yet" : "Review request: the receiving institution chooses the response"]] : []),
+    ...(transaction.alertTier ? [["Alert basis", transaction.alertTier === "single_source_review"
+      ? "Single-source review: a victim-confirmed transfer from a reporter in good standing"
+      : transaction.alertTier === "single_source_notice"
+        ? "Single-source notice: lower priority, issued before any corroboration"
+        : "Corroborated by another institution"]] : []),
     ...(transaction.alertState ? [["Alert status", ALERT_STATE_HELP[transaction.alertState] ?? transaction.alertState]] : []),
     ...(transaction.alertOutcome ? [["Institution outcome", transaction.alertOutcome]] : []),
     ...(transaction.lifecycleState ? [["Signal lifecycle", transaction.lifecycleState]] : []),

@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	policyVersion        = "kifaru-policy-0.5.1"
+	policyVersion        = "kifaru-policy-0.6.0"
 	defaultValidated     = 0.60
 	defaultInsufficient  = 0.35
 	weightCode           = 0.50
@@ -22,14 +22,30 @@ const (
 	demoStreamRetention  = 500
 )
 
+// Reporter standing lets a single institution's report alert a receiver
+// without corroboration. It is earned only from receiver decisions on that
+// institution's past alerts: held or recovered outcomes uphold a report, while
+// releases and disputes count against it.
+const (
+	standingWindowDays     = 90
+	standingMinResolved    = 5
+	standingMaxAdverseRate = 0.20
+)
+
 const (
 	statusCorroborated = "CORROBORATED_SIGNAL"
 	statusAwaiting     = "AWAITING_CORROBORATION"
 	statusBelow        = "BELOW_ALERT_THRESHOLD"
-	statusQuarantined  = "QUARANTINED"
-	statusRetracted    = "RETRACTED"
-	statusExpired      = "EXPIRED"
-	statusCleared      = "CLEARED"
+	// Single-source statuses alert the receiver on one institution's evidence.
+	// A review needs a victim-confirmed transfer from a reporter in good
+	// standing; a notice needs a known-bad destination or a reporter in good
+	// standing.
+	statusSingleSourceReview = "SINGLE_SOURCE_REVIEW"
+	statusSingleSourceNotice = "SINGLE_SOURCE_NOTICE"
+	statusQuarantined        = "QUARANTINED"
+	statusRetracted          = "RETRACTED"
+	statusExpired            = "EXPIRED"
+	statusCleared            = "CLEARED"
 )
 
 const (
@@ -39,6 +55,18 @@ const (
 	lifecycleExpired     = "expired"
 	lifecycleCleared     = "cleared"
 )
+
+const (
+	alertTierCorroborated = "corroborated"
+	alertTierReview       = "single_source_review"
+	alertTierNotice       = "single_source_notice"
+)
+
+// qualifyingStatuses are the current-validation statuses of active reports
+// that can corroborate another institution's report.
+var qualifyingStatuses = []string{
+	statusAwaiting, statusCorroborated, statusSingleSourceReview, statusSingleSourceNotice,
+}
 
 // Institution is one licensed Kenyan bank or mobile money provider from
 // data/kenyan_banks.json. All Kifaru records associated with it are synthetic.
@@ -103,6 +131,15 @@ type Validation struct {
 	Explanation               string   `json:"explanation"`
 	LatencyMS                 int      `json:"latency_ms"`
 	AlertID                   *string  `json:"alert_id"`
+	// ReporterStanding is the standing snapshot used for this decision. It is
+	// not stored separately; the explanation records it.
+	ReporterStanding ReporterStanding `json:"reporter_standing"`
+}
+
+type ReporterStanding struct {
+	Upheld  int  `json:"upheld"`
+	Adverse int  `json:"adverse"`
+	Good    bool `json:"good"`
 }
 
 type App struct {

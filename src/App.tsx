@@ -9,7 +9,7 @@ import { initialBanks, riskCodeCatalog } from "./data";
 import { protectIdentifiers } from "./identifiers";
 import { riskCodeInfo } from "./explain";
 import {
-  counterpartyBankId, displayTransactionId, isVisible, moneyDirection, reportingBankId,
+  counterpartyBankId, displayTransactionId, isAlerting, isVisible, moneyDirection, reportingBankId,
   transactionDirection,
 } from "./domain";
 import type {
@@ -75,7 +75,7 @@ export default function App() {
   const records = transactions.filter((item) => isVisible(item, bankId));
   const selected = transactions.find((item) => item.key === selectedKey);
   const submitted = records.filter((item) => reportingBankId(item) === bankId).length;
-  const received = records.filter((item) => counterpartyBankId(item) === bankId && item.validationStatus === "corroborated").length;
+  const received = records.filter((item) => counterpartyBankId(item) === bankId && isAlerting(item.validationStatus)).length;
   const visible = records.filter((item) => filter === "all" || item.validationStatus === filter).filter((item) => {
     const text = [item.customerRef, item.merchant, item.country, item.id, displayTransactionId(item, bankRef(reportingBankId(item))),
       transactionDirection(item, bankId), moneyDirection(item, bankId), bankName(reportingBankId(item)),
@@ -458,11 +458,11 @@ export default function App() {
   const metrics = [
     { label: "Related history", value: records.length, detail: "Records tied to this bank" },
     { label: "Submitted signals", value: submitted, detail: "From this institution's risk controls" },
-    { label: "Alerts received", value: received, detail: "Corroborated indicators sent to this bank" },
+    { label: "Alerts received", value: received, detail: "Corroborated and single-source alerts sent to this bank" },
     { label: "Cross-matched", value: records.filter((item) => item.corroborationCount > 0).length, detail: "Matched by another institution" },
   ];
   const transactionTabs = {
-    incoming: { title: "Alerts received", subtitle: "Corroborated risk alerts routed to this bank." },
+    incoming: { title: "Alerts received", subtitle: "Risk alerts routed to this bank, whether corroborated or issued on one institution's evidence." },
     outgoing: { title: "Signals submitted", subtitle: "Signals this institution submitted to the shared policy engine." },
     history: { title: "Related history", subtitle: "All shared-signal records involving this bank." },
   };
@@ -528,6 +528,7 @@ export default function App() {
             {uploadSummary && <>
               <span><strong>{uploadSummary.total_rows}</strong> rows</span>
               <span><strong>{uploadSummary.corroborated}</strong> corroborated</span>
+              {!!uploadSummary.single_source && <span><strong>{uploadSummary.single_source}</strong> single-source</span>}
               <span><strong>{uploadSummary.needs_review}</strong> review</span>
             </>}
             {!uploading && !uploadError && !uploadSummary && <span className="muted">Validation API: /api</span>}
@@ -548,7 +549,7 @@ export default function App() {
           <h2>{workspaceMeta.label} <BrandDots /></h2>
           <p className="muted">{isExchange
             ? "A synthetic demonstration of protected signals matched and routed across institutions."
-            : "Submit risk signals, receive corroborated alerts, and record your institution's own response."}</p>
+            : "Submit risk signals, receive corroborated and single-source alerts, and record your institution's own response."}</p>
           {dataError && <p className="muted" role="alert">Backend unavailable: {dataError}</p>}
         </div><div className="actions">
           <button className="btn" onClick={() => void switchPortal()}><Icon name="logout" className="btn-icon" />Sign out</button>
@@ -595,6 +596,7 @@ export default function App() {
                   </div>
                   <select className="select" aria-label="Filter by risk" value={filter} onChange={(event) => setFilter(event.target.value)}>
                     <option value="all">All outcomes</option><option value="corroborated">Corroborated signals</option>
+                    <option value="single_source_review">Single-source reviews</option><option value="single_source_notice">Single-source notices</option>
                     <option value="below_threshold">Below alert policy</option><option value="needs_review">Awaiting corroboration</option>
                     <option value="quarantined">Quarantined</option><option value="retracted">Retracted</option>
                     <option value="expired">Expired</option><option value="cleared">Cleared after review</option>
