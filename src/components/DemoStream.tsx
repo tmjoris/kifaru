@@ -4,7 +4,8 @@ import { Card, Icon } from "./Shared";
 function readable(value: string) {
   return value
     .toLowerCase()
-    .replaceAll("_", " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
@@ -68,7 +69,7 @@ export function DemoStream({ stream, busy, onToggle, onEmit, onReset }: {
         <div className="stream-event" key={event.eventOffset}>
           <span className="stream-offset mono">#{event.eventOffset}</span>
           <span><strong>{event.alertName || readable(event.eventType)}</strong>
-            <small>{readable(event.eventType)} · {event.alertSeverity || "Unrated"}</small></span>
+            <small>{readable(event.eventType)} · {readable(event.source)} · {event.alertSeverity || "Unrated"}</small></span>
           <span className={`stream-result ${event.status}`}>{event.outcome ? readable(event.outcome) : readable(event.status)}</span>
         </div>,
       ) : <p className="stream-empty">No synthetic events have been produced. Start the stream or emit one event.</p>}

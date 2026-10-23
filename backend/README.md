@@ -132,6 +132,9 @@ current signal status names, and guided-scenario state.
 single-source review or single-source notice), defaulting existing alerts to
 corroborated.
 
+`009_attack_scenario.sql` stores the attack replay's state: its mode, step,
+report and alert IDs, and the first bank's scenario-only track record.
+
 ## Go package layout
 
 All files use package `main`, separated by responsibility:
@@ -145,6 +148,7 @@ All files use package `main`, separated by responsibility:
 - `pipeline.go` — atomic validation and revalidation
 - `handlers.go` — dashboard and administrative endpoints
 - `events.go` — live events and synthetic Sentinel producer
+- `attack_scenario.go` — attack replay runner and scenario-scoped standing
 - `csv_ingest.go` — CSV adapter
 - `support.go` — shared database, JSON and parsing helpers
 

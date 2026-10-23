@@ -50,7 +50,7 @@ func TestPostgresSingleSourceAlertTiers(t *testing.T) {
 	defer db.Close()
 	if _, err := db.Exec(ctx, `DROP TABLE IF EXISTS
 		user_access_requests,auth_sessions,auth_users,demo_events,demo_stream_state,notifications,
-		guided_demo_state,alert_actions,audit_log,config,knowledge_base,alerts,artefacts,
+		attack_scenario_state,guided_demo_state,alert_actions,audit_log,config,knowledge_base,alerts,artefacts,
 		validations,reports,institutions,schema_migrations CASCADE`); err != nil {
 		t.Fatal(err)
 	}

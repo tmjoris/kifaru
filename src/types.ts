@@ -203,3 +203,37 @@ export interface DashboardData {
   knowledgeBaseEntries: KnowledgeBaseEntry[];
   notifications: Notification[];
 }
+
+export interface AttackSignal {
+  reportId: string;
+  reportingInstitution: string;
+  reportingInstitutionName: string;
+  submittedAt: string;
+  status: Transaction["validationStatus"];
+  score: number;
+  explanation: string;
+  reasonCodes: string[];
+  corroborationCount: number;
+  alertId: string;
+  alertState: string;
+  alertOutcome: string;
+  alertTier: string;
+  alertIssuedAt: string;
+  actions: { action: string; comment: string; at: string }[];
+}
+
+export interface AttackScenarioStatus {
+  runId: string;
+  mode: "without" | "with";
+  step: number;
+  status: "ready" | "running" | "completed" | "failed";
+  error: string;
+  standingUpheld: number;
+  standingAdverse: number;
+  firstSenderName: string;
+  secondSenderName: string;
+  receiverName: string;
+  firstAmount: number;
+  secondAmount: number;
+  signals: AttackSignal[];
+}

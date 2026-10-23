@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  advanceGuidedDemo, createUserAccessRequest, decideUserAccessRequest, emitDemoStreamEvent,
-  loadDashboardData, loadDemoStream, loadGuidedDemo, loadUserAccessRequests, login,
-  logout as logoutSession, resetDemoStream, resetGuidedDemo, restoreSession, setDemoStreamState,
+  advanceAttackScenario, advanceGuidedDemo, createUserAccessRequest, decideUserAccessRequest, emitDemoStreamEvent,
+  loadAttackScenario, loadDashboardData, loadDemoStream, loadGuidedDemo, loadUserAccessRequests, login,
+  logout as logoutSession, resetAttackScenario, resetDemoStream, resetGuidedDemo, restoreSession, setDemoStreamState,
   subscribeToAlerts, updateAlertState, updateInstitutionThreshold, updateReportLifecycle, validateCsv,
 } from "./api";
 import { initialBanks, riskCodeCatalog } from "./data";
@@ -13,7 +13,7 @@ import {
   transactionDirection,
 } from "./domain";
 import type {
-  AuthSession, Bank, DashboardData, DemoStreamStatus, GuidedDemoStatus, KnowledgeBaseEntry,
+  AttackScenarioStatus, AuthSession, Bank, DashboardData, DemoStreamStatus, GuidedDemoStatus, KnowledgeBaseEntry,
   Notification, RiskCodeReference, Session, Tab, Transaction, UploadSummary, UserAccessRequest,
 } from "./types";
 import { BrandDots, Icon, Logo } from "./components/Shared";
@@ -25,6 +25,7 @@ import { PortalLogin } from "./components/PortalLogin";
 import { DemoStream } from "./components/DemoStream";
 import { StaffUserAdmissions } from "./components/UserAccess";
 import { GuidedCampaign, SignalNotifications } from "./components/GuidedCampaign";
+import { AttackReplay } from "./components/AttackReplay";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -48,6 +49,8 @@ export default function App() {
   const [dataError, setDataError] = useState("");
   const [demoStream, setDemoStream] = useState<DemoStreamStatus | null>(null);
   const [guidedDemo, setGuidedDemo] = useState<GuidedDemoStatus | null>(null);
+  const [attackScenario, setAttackScenario] = useState<AttackScenarioStatus | null>(null);
+  const [staffView, setStaffView] = useState<"exchange" | "attack">("exchange");
   const [demoBusy, setDemoBusy] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [userAccessRequests, setUserAccessRequests] = useState<UserAccessRequest[]>([]);
@@ -117,6 +120,8 @@ export default function App() {
     setKnowledgeBaseEntries([]);
     setDemoStream(null);
     setGuidedDemo(null);
+    setAttackScenario(null);
+    setStaffView("exchange");
     setNotifications([]);
     userRequestController.current?.abort();
     setUserAccessRequests([]);
@@ -232,6 +237,12 @@ export default function App() {
     return state;
   }, []);
 
+  const refreshAttackScenario = useCallback(async () => {
+    const state = await loadAttackScenario();
+    setAttackScenario(state);
+    return state;
+  }, []);
+
   const refreshUserAccessRequests = useCallback(async (showLoading = true) => {
     if (!activeSession) return;
     const controller = new AbortController();
@@ -276,8 +287,8 @@ export default function App() {
 
   useEffect(() => {
     if (!activeSession || !isExchange) return;
-    void Promise.all([refreshDemoStream(), refreshGuidedDemo()]).catch(() => undefined);
-  }, [activeSession, isExchange, refreshDemoStream, refreshGuidedDemo]);
+    void Promise.all([refreshDemoStream(), refreshGuidedDemo(), refreshAttackScenario()]).catch(() => undefined);
+  }, [activeSession, isExchange, refreshAttackScenario, refreshDemoStream, refreshGuidedDemo]);
 
   useEffect(() => {
     if (!activeSession) return;
@@ -287,10 +298,13 @@ export default function App() {
         void refreshData(false, true).catch(() => undefined);
       },
       demoEvent: () => {
-        void Promise.all([refreshData(false, true), refreshDemoStream(), refreshGuidedDemo()]).catch(() => undefined);
+        void Promise.all([
+          refreshData(false, true),
+          ...(isExchange ? [refreshDemoStream(), refreshGuidedDemo(), refreshAttackScenario()] : []),
+        ]).catch(() => undefined);
       },
     });
-  }, [activeSession, bank.backendCode, isExchange, refreshData, refreshDemoStream, refreshGuidedDemo]);
+  }, [activeSession, bank.backendCode, isExchange, refreshAttackScenario, refreshData, refreshDemoStream, refreshGuidedDemo]);
 
   async function authenticate(email: string, password: string, nextBankId: string | null, keepSignedIn: boolean) {
     const selectedBank = nextBankId ? bankTemplates.find((item) => item.id === nextBankId) : null;
@@ -436,6 +450,31 @@ export default function App() {
     }
   }
 
+  const advanceAttackReplay = useCallback(async () => {
+    setDemoBusy(true);
+    try {
+      setAttackScenario(await advanceAttackScenario());
+      await refreshData(false).catch(() => undefined);
+    } catch (error) {
+      await refreshAttackScenario().catch(() => undefined);
+      setToast(error instanceof Error ? error.message : "Unable to advance the attack replay.");
+    } finally {
+      setDemoBusy(false);
+    }
+  }, [refreshAttackScenario, refreshData]);
+
+  async function resetAttackReplay(mode: AttackScenarioStatus["mode"]) {
+    setDemoBusy(true);
+    try {
+      setAttackScenario(await resetAttackScenario(mode));
+      await refreshData(false).catch(() => undefined);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Unable to reset the attack replay.");
+    } finally {
+      setDemoBusy(false);
+    }
+  }
+
   async function requestInstitutionUser(alias: string) {
     await createUserAccessRequest(alias);
     await refreshUserAccessRequests(false).catch(() => undefined);
@@ -486,10 +525,26 @@ export default function App() {
     <div className={`app ${collapsed ? "sidebar-collapsed" : ""}`} id="appShell">
       <nav className="nav-rail" aria-label="Signed-in portal">
         <div className="nav-rail-brand"><Logo /></div>
-        <div className="rail-item active" aria-current="page">
-          <span className="rail-icon"><Icon name={workspaceMeta.icon} /></span>
-          <span className="rail-text">{workspaceMeta.railLabel}</span>
-        </div>
+        {isExchange
+          ? <>
+            <button className={`rail-item ${staffView === "exchange" ? "active" : ""}`}
+              aria-current={staffView === "exchange" ? "page" : undefined} onClick={() => setStaffView("exchange")}>
+              <span className="rail-icon"><Icon name={workspaceMeta.icon} /></span>
+              <span className="rail-text">{workspaceMeta.railLabel}</span>
+            </button>
+            <button className={`rail-item ${staffView === "attack" ? "active" : ""}`}
+              aria-current={staffView === "attack" ? "page" : undefined} onClick={() => {
+                setStaffView("attack");
+                setCollapsed(true);
+              }}>
+              <span className="rail-icon"><Icon name="crisis_alert" /></span>
+              <span className="rail-text">Attack replay</span>
+            </button>
+          </>
+          : <div className="rail-item active" aria-current="page">
+            <span className="rail-icon"><Icon name={workspaceMeta.icon} /></span>
+            <span className="rail-text">{workspaceMeta.railLabel}</span>
+          </div>}
         <button className="rail-item rail-signout" aria-label="Sign out" title="Sign out"
           onClick={() => void switchPortal()}>
           <span className="rail-icon"><Icon name="logout" /></span>
@@ -544,82 +599,87 @@ export default function App() {
         </div>}
       </aside>
       <main className="main">
-        <section className="topbar"><div>
-          <p className="eyebrow">{isExchange ? "Ecosystem operations" : "Institution workspace"} · Synthetic demo data</p>
-          <h2>{workspaceMeta.label} <BrandDots /></h2>
-          <p className="muted">{isExchange
-            ? "A synthetic demonstration of protected signals matched and routed across institutions."
-            : "Submit risk signals, receive corroborated and single-source alerts, and record your institution's own response."}</p>
-          {dataError && <p className="muted" role="alert">Backend unavailable: {dataError}</p>}
-        </div><div className="actions">
-          <button className="btn" onClick={() => void switchPortal()}><Icon name="logout" className="btn-icon" />Sign out</button>
-          <button className="btn" onClick={() => {
-            const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-            document.documentElement.dataset.theme = next;
-            window.localStorage.setItem("kifaru-theme", next);
-          }}><Icon name="contrast" className="btn-icon" />Toggle theme</button>
-          <button className="btn primary" disabled={loadingData || userRequestsLoading} onClick={() => void Promise.all([
-            refreshData(), refreshUserAccessRequests(false),
-          ]).then(() => {
-            setToast("Data refreshed.");
-          }).catch(() => undefined)}><Icon name="refresh" className="btn-icon" />{loadingData || userRequestsLoading ? "Loading..." : "Refresh data"}</button>
-        </div></section>
-        {isExchange
-          ? <div className="stack">
-            <StaffUserAdmissions requests={userAccessRequests} loading={userRequestsLoading}
-              error={userRequestsError} onDecision={reviewInstitutionUser} notify={setToast} />
-            <GuidedCampaign campaign={guidedDemo} busy={demoBusy}
-              onAdvance={advanceGuidedCampaign} onReset={clearGuidedCampaign} />
-            <DemoStream stream={demoStream} busy={demoBusy}
-              onToggle={controlDemoStream} onEmit={emitDemoEvent} onReset={clearDemoStream} />
-            {updateWaiting && <p className="update-waiting" role="status">New activity has arrived. The cards update when you move the pointer off them.</p>}
-            <div onPointerEnter={() => pointerOverList(true)} onPointerLeave={() => pointerOverList(false)}>
-              <Exchange transactions={transactions} bankName={bankName} onOpen={setSelectedKey} />
-            </div>
-          </div>
+        {isExchange && staffView === "attack"
+          ? <AttackReplay scenario={attackScenario} busy={demoBusy}
+            onAdvance={advanceAttackReplay} onReset={resetAttackReplay} />
           : <>
-            <SignalNotifications notifications={notifications} />
-            <section className="grid metrics">{metrics.map((metric) =>
-              <div className="metric" key={metric.label}><div className="metric-label"><span>{metric.label}</span></div>
-                <div className="metric-value">{metric.value}</div><div className="metric-detail">{metric.detail}</div>
-              </div>,
-            )}</section>
-            <nav className="tabs" aria-label="Institution sections">{tabs.map((item) =>
-              <button key={item.id} className={`tab-btn ${tab === item.id ? "active" : ""}`} aria-pressed={tab === item.id} onClick={() => setTab(item.id)}>{item.label}</button>,
-            )}</nav>
-            {(tab === "incoming" || tab === "outgoing" || tab === "history") && <>
-              <div className="transaction-controls">
-                <div className="control-row">
-                  <div className="search-field">
-                    <Icon name="search" />
-                    <input className="input" aria-label="Search transactions" placeholder="Search by institution, risk or report ID" value={query} onChange={(event) => setQuery(event.target.value)} />
-                  </div>
-                  <select className="select" aria-label="Filter by risk" value={filter} onChange={(event) => setFilter(event.target.value)}>
-                    <option value="all">All outcomes</option><option value="corroborated">Corroborated signals</option>
-                    <option value="single_source_review">Single-source reviews</option><option value="single_source_notice">Single-source notices</option>
-                    <option value="below_threshold">Below alert policy</option><option value="needs_review">Awaiting corroboration</option>
-                    <option value="quarantined">Quarantined</option><option value="retracted">Retracted</option>
-                    <option value="expired">Expired</option><option value="cleared">Cleared after review</option>
-                  </select>
-                </div>
-              </div>
-              {updateWaiting && <p className="update-waiting" role="status">New activity has arrived. The list updates when you move the pointer off it.</p>}
+          <section className="topbar"><div>
+            <p className="eyebrow">{isExchange ? "Ecosystem operations" : "Institution workspace"} · Synthetic demo data</p>
+            <h2>{workspaceMeta.label} <BrandDots /></h2>
+            <p className="muted">{isExchange
+              ? "A synthetic demonstration of protected signals matched and routed across institutions."
+              : "Submit risk signals, receive corroborated and single-source alerts, and record your institution's own response."}</p>
+            {dataError && <p className="muted" role="alert">Backend unavailable: {dataError}</p>}
+          </div><div className="actions">
+            <button className="btn" onClick={() => void switchPortal()}><Icon name="logout" className="btn-icon" />Sign out</button>
+            <button className="btn" onClick={() => {
+              const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+              document.documentElement.dataset.theme = next;
+              window.localStorage.setItem("kifaru-theme", next);
+            }}><Icon name="contrast" className="btn-icon" />Toggle theme</button>
+            <button className="btn primary" disabled={loadingData || userRequestsLoading} onClick={() => void Promise.all([
+              refreshData(), refreshUserAccessRequests(false),
+            ]).then(() => {
+              setToast("Data refreshed.");
+            }).catch(() => undefined)}><Icon name="refresh" className="btn-icon" />{loadingData || userRequestsLoading ? "Loading..." : "Refresh data"}</button>
+          </div></section>
+          {isExchange
+            ? <div className="stack">
+              <StaffUserAdmissions requests={userAccessRequests} loading={userRequestsLoading}
+                error={userRequestsError} onDecision={reviewInstitutionUser} notify={setToast} />
+              <GuidedCampaign campaign={guidedDemo} busy={demoBusy}
+                onAdvance={advanceGuidedCampaign} onReset={clearGuidedCampaign} />
+              <DemoStream stream={demoStream} busy={demoBusy}
+                onToggle={controlDemoStream} onEmit={emitDemoEvent} onReset={clearDemoStream} />
+              {updateWaiting && <p className="update-waiting" role="status">New activity has arrived. The cards update when you move the pointer off them.</p>}
               <div onPointerEnter={() => pointerOverList(true)} onPointerLeave={() => pointerOverList(false)}>
-                <TransactionTable {...transactionTabs[tab]} records={visible.filter((item) => tab === "history"
-                  || (tab === "outgoing" ? reportingBankId(item) === bankId : counterpartyBankId(item) === bankId && item.alertId))}
-                  bank={bank} bankName={bankName} bankRef={bankRef} history={tab === "history"} onOpen={setSelectedKey} />
+                <Exchange transactions={transactions} bankName={bankName} onOpen={setSelectedKey} />
               </div>
+            </div>
+            : <>
+              <SignalNotifications notifications={notifications} />
+              <section className="grid metrics">{metrics.map((metric) =>
+                <div className="metric" key={metric.label}><div className="metric-label"><span>{metric.label}</span></div>
+                  <div className="metric-value">{metric.value}</div><div className="metric-detail">{metric.detail}</div>
+                </div>,
+              )}</section>
+              <nav className="tabs" aria-label="Institution sections">{tabs.map((item) =>
+                <button key={item.id} className={`tab-btn ${tab === item.id ? "active" : ""}`} aria-pressed={tab === item.id} onClick={() => setTab(item.id)}>{item.label}</button>,
+              )}</nav>
+              {(tab === "incoming" || tab === "outgoing" || tab === "history") && <>
+                <div className="transaction-controls">
+                  <div className="control-row">
+                    <div className="search-field">
+                      <Icon name="search" />
+                      <input className="input" aria-label="Search transactions" placeholder="Search by institution, risk or report ID" value={query} onChange={(event) => setQuery(event.target.value)} />
+                    </div>
+                    <select className="select" aria-label="Filter by risk" value={filter} onChange={(event) => setFilter(event.target.value)}>
+                      <option value="all">All outcomes</option><option value="corroborated">Corroborated signals</option>
+                      <option value="single_source_review">Single-source reviews</option><option value="single_source_notice">Single-source notices</option>
+                      <option value="below_threshold">Below alert policy</option><option value="needs_review">Awaiting corroboration</option>
+                      <option value="quarantined">Quarantined</option><option value="retracted">Retracted</option>
+                      <option value="expired">Expired</option><option value="cleared">Cleared after review</option>
+                    </select>
+                  </div>
+                </div>
+                {updateWaiting && <p className="update-waiting" role="status">New activity has arrived. The list updates when you move the pointer off it.</p>}
+                <div onPointerEnter={() => pointerOverList(true)} onPointerLeave={() => pointerOverList(false)}>
+                  <TransactionTable {...transactionTabs[tab]} records={visible.filter((item) => tab === "history"
+                    || (tab === "outgoing" ? reportingBankId(item) === bankId : counterpartyBankId(item) === bankId && item.alertId))}
+                    bank={bank} bankName={bankName} bankRef={bankRef} history={tab === "history"} onOpen={setSelectedKey} />
+                </div>
+              </>}
+              {tab === "reports" && <Reports records={records} bank={bank} view={reportView} onView={setReportView} />}
+              {tab === "knowledge" && <KnowledgeBase bank={bank} entries={knowledgeBaseEntries} riskCodes={riskCodes} />}
+              {tab === "governance" && <AdminDetails bank={bank} notify={setToast}
+                userRequests={userAccessRequests} userRequestDomain={userRequestDomain}
+                userRequestsLoading={userRequestsLoading} userRequestsError={userRequestsError}
+                onUserRequest={requestInstitutionUser}
+                onThresholdChange={async (threshold) => {
+                  await updateInstitutionThreshold(bank.backendCode, threshold);
+                  await refreshData(false);
+                }} />}
             </>}
-            {tab === "reports" && <Reports records={records} bank={bank} view={reportView} onView={setReportView} />}
-            {tab === "knowledge" && <KnowledgeBase bank={bank} entries={knowledgeBaseEntries} riskCodes={riskCodes} />}
-            {tab === "governance" && <AdminDetails bank={bank} notify={setToast}
-              userRequests={userAccessRequests} userRequestDomain={userRequestDomain}
-              userRequestsLoading={userRequestsLoading} userRequestsError={userRequestsError}
-              onUserRequest={requestInstitutionUser}
-              onThresholdChange={async (threshold) => {
-                await updateInstitutionThreshold(bank.backendCode, threshold);
-                await refreshData(false);
-              }} />}
           </>}
       </main>
     </div>
