@@ -26,6 +26,7 @@ import { DemoStream } from "./components/DemoStream";
 import { StaffUserAdmissions } from "./components/UserAccess";
 import { GuidedCampaign, SignalNotifications } from "./components/GuidedCampaign";
 import { AttackReplay } from "./components/AttackReplay";
+import { RiskCheck } from "./components/RiskCheck";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -491,7 +492,7 @@ export default function App() {
   const tabs: { id: Tab; label: string }[] = [
     { id: "outgoing", label: "Signals submitted" },
     { id: "incoming", label: "Alerts received" }, { id: "history", label: "Related history" },
-    { id: "reports", label: "Reports" }, { id: "knowledge", label: "Knowledge base" },
+    { id: "risk", label: "Risk check" }, { id: "reports", label: "Reports" }, { id: "knowledge", label: "Knowledge base" },
     { id: "governance", label: "Governance" },
   ];
   const metrics = [
@@ -669,6 +670,7 @@ export default function App() {
                     bank={bank} bankName={bankName} bankRef={bankRef} history={tab === "history"} onOpen={setSelectedKey} />
                 </div>
               </>}
+              {tab === "risk" && <RiskCheck bank={bank} banks={banks} />}
               {tab === "reports" && <Reports records={records} bank={bank} view={reportView} onView={setReportView} />}
               {tab === "knowledge" && <KnowledgeBase bank={bank} entries={knowledgeBaseEntries} riskCodes={riskCodes} />}
               {tab === "governance" && <AdminDetails bank={bank} notify={setToast}

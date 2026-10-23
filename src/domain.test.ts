@@ -4,7 +4,7 @@ import {
   campaignChain, counterpartyBankId, displayTransactionId, isAlerting, isVisible, moneyDirection,
   pipelineSteps, reportingBankId, riskCounts, statusClass, transactionFromValidation, validationLabel,
 } from "./domain.ts";
-import { parseCsv, protectIdentifiers, toCsv } from "./identifiers.ts";
+import { parseCsv, protectIdentifier, protectIdentifiers, toCsv } from "./identifiers.ts";
 import { initialBanks } from "./data.ts";
 import type { Transaction, Validation } from "./types.ts";
 
@@ -149,4 +149,13 @@ test("identifier columns are hashed in the browser before upload", async () => {
   assert.equal(parseCsv(again.csv)[1][0], row[1], "the same normalized identifier must hash to the same value");
   const unchanged = await protectIdentifiers(csv, "test-key");
   assert.equal(unchanged.hashed, 0, "values that are already hashed are left alone");
+});
+
+test("single identifiers hash like the demo banks, with an optional run key", async () => {
+  // Reference digests: HMAC-SHA256 over "<run key>:<normalized value>" with the
+  // shared demo key, as demo-banks/kifaru.go protect() computes them.
+  assert.equal(await protectIdentifier(" 011 4417 ", "abcd"),
+    "sha256:ff3c0425cf5dfb97a95242bcb49038a2ad9641f1175e49ff645308c52f1c6f46");
+  assert.equal(await protectIdentifier("Browser-1A2B"),
+    "sha256:59ec62a3bb715c158fca08ca20fe1ef9f8056b22bd8a5afa5ccec9acc000bb9e");
 });

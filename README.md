@@ -284,6 +284,11 @@ names the reporter, the report or its evidence. Institution users can check
 only as their own institution, and every check is written to the audit log.
 The calling institution decides whether to warn the customer, delay or block.
 
+The institution workspace's **Risk check** tab runs the check by hand: it hashes
+the account number or device ID in the browser with the upload key before
+sending. The demo banks call the same endpoint at sign-in and before each
+transfer, and add a flag to their own fraud score.
+
 ## Reversible lifecycle
 
 Signals are not permanent accusations.

@@ -1,7 +1,7 @@
 import type {
   AttackScenarioStatus, AttackSignal, AuthSession, Bank, DashboardData, DemoStreamEvent,
-  DemoStreamStatus, GuidedDemoStatus, KnowledgeBaseEntry, Notification, PortalScope, RiskCodeReference, Transaction,
-  UploadSummary, UserAccessRequest, Validation,
+  DemoStreamStatus, GuidedDemoStatus, KnowledgeBaseEntry, Notification, PortalScope, RiskCheckResult,
+  RiskCodeReference, RiskSignal, Transaction, UploadSummary, UserAccessRequest, Validation,
 } from "./types";
 import { riskCodeInfo } from "./explain";
 import { isAlerting } from "./domain";
@@ -529,6 +529,47 @@ export async function updateAlertState(
     body: JSON.stringify({ state, outcome, comment }),
     signal,
   });
+}
+
+const RISK_TIERS = ["reported", "known_risk", "corroborated", "single_source_review", "single_source_notice"];
+
+function parseRiskSignal(value: unknown): RiskSignal {
+  if (!isRecord(value) || typeof value.checked !== "boolean" || typeof value.flagged !== "boolean") {
+    throw new Error("The backend returned an invalid risk check.");
+  }
+  const tier = requiredString(value, "tier");
+  return {
+    checked: value.checked,
+    flagged: value.flagged,
+    tier: RISK_TIERS.includes(tier) ? tier as RiskSignal["tier"] : "",
+    institutions: typeof value.institutions === "number" ? value.institutions : 0,
+  };
+}
+
+/** Asks whether other institutions hold active reports on protected identifiers. */
+export async function runRiskCheck(
+  institution: string,
+  check: { deviceProfile?: string; destinationAccountHash?: string; destinationInstitution?: string },
+  signal?: AbortSignal,
+): Promise<RiskCheckResult> {
+  const payload = await fetchJson(`/api/v1/risk-check?institution=${encodeURIComponent(institution)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...(check.deviceProfile ? { device_profile: check.deviceProfile } : {}),
+      ...(check.destinationAccountHash ? {
+        destination_account_hash: check.destinationAccountHash,
+        destination_institution: check.destinationInstitution,
+      } : {}),
+    }),
+    signal,
+  });
+  if (!isRecord(payload)) throw new Error("The backend returned an invalid risk check.");
+  return {
+    checkedAt: requiredString(payload, "checked_at"),
+    device: parseRiskSignal(payload.device),
+    destination: parseRiskSignal(payload.destination),
+  };
 }
 
 export async function updateReportLifecycle(
