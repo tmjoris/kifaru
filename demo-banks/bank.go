@@ -124,9 +124,13 @@ type Bank struct {
 
 func newBank(cfg BankConfig) *Bank {
 	bank := &Bank{cfg: cfg, kifaru: newKifaruClient(cfg.KifaruEmail, cfg.KifaruCode)}
-	bank.resetLocked(randomID(4), false)
+	bank.resetLocked(startupSalt, false)
 	return bank
 }
+
+// startupSalt is shared by every bank in one process, so their protected
+// identifiers match in Kifaru even before the director's first reset.
+var startupSalt = randomID(4)
 
 func randomID(size int) string {
 	buffer := make([]byte, size)
@@ -281,6 +285,9 @@ func (b *Bank) login(w http.ResponseWriter, r *http.Request) {
 	} else {
 		b.event("", "%s signed in", account.Name)
 	}
+	if b.connector {
+		go b.signInCheck(account.Name, device, b.salt)
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"token": token, "name": account.Name})
 }
 
@@ -345,7 +352,7 @@ func (b *Bank) me(w http.ResponseWriter, r *http.Request) {
 }
 
 // score is the bank's own fraud engine. It only sees this bank's customers.
-func (b *Bank) score(account *Account, device string, beneficiary *Beneficiary, amount float64) (float64, []string, []string, bool) {
+func (b *Bank) score(account *Account, device string, beneficiary *Beneficiary, amount float64, risk *RiskCheck) (float64, []string, []string, bool) {
 	now := time.Now()
 	score := 0.10
 	reasons, codes := []string{}, []string{}
@@ -399,6 +406,22 @@ func (b *Bank) score(account *Account, device string, beneficiary *Beneficiary, 
 			}
 		}
 	}
+	// Kifaru's answer is one more input; the block decision stays this bank's.
+	if risk != nil && risk.Device.Flagged {
+		score += 0.35
+		reasons = append(reasons, "Kifaru: device reported by another institution")
+	}
+	if risk != nil && risk.Destination.Flagged {
+		switch risk.Destination.Tier {
+		case "corroborated", "single_source_review":
+			score += 0.40
+		case "single_source_notice", "known_risk":
+			score += 0.25
+		default:
+			score += 0.20
+		}
+		reasons = append(reasons, "Kifaru: beneficiary account flagged ("+tierName(risk.Destination.Tier)+")")
+	}
 	return math.Min(0.99, math.Round(score*100)/100), reasons, codes, shared
 }
 
@@ -413,6 +436,8 @@ func (b *Bank) transfer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+	request.Account = strings.Join(strings.Fields(request.Account), "")
+	risk := b.prePaymentCheck(r, request.Bank, request.Account)
 	b.mu.Lock()
 	current, account, ok := b.sessionFor(r)
 	if !ok {
@@ -420,7 +445,6 @@ func (b *Bank) transfer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "Please sign in again.")
 		return
 	}
-	request.Account = strings.Join(strings.Fields(request.Account), "")
 	if _, known := bankByID(request.Bank); !known || request.Account == "" {
 		b.mu.Unlock()
 		writeError(w, http.StatusBadRequest, "Choose a bank and enter an account number.")
@@ -452,7 +476,7 @@ func (b *Bank) transfer(w http.ResponseWriter, r *http.Request) {
 		account.Beneficiaries = append(account.Beneficiaries, beneficiary)
 		b.event("", "%s added a new beneficiary: %s %s", account.Name, beneficiary.BankName, beneficiary.Account)
 	}
-	score, reasons, codes, shared := b.score(account, current.device, beneficiary, request.Amount)
+	score, reasons, codes, shared := b.score(account, current.device, beneficiary, request.Amount, risk)
 	transfer := &Transfer{
 		ID: randomID(3), At: time.Now(), Customer: account.Username, CustomerName: account.Name,
 		Device: current.device, NewDevice: !contains(account.KnownDevices, current.device),
@@ -778,7 +802,7 @@ func (b *Bank) opsState(w http.ResponseWriter, _ *http.Request) {
 		"kifaru_email": b.cfg.KifaruEmail, "connector": b.connector, "block_threshold": b.cfg.BlockThreshold,
 		"report_threshold": b.cfg.ReportThreshold, "accounts": accounts, "transfers": b.transfers,
 		"credits": b.credits, "withdrawals": b.withdrawals, "events": events, "alerts": alerts,
-		"receives": b.cfg.ID == "equity", "network_url": networkURL(),
+		"receives": b.cfg.ID == "equity", "network_url": networkURL(), "run_key": b.salt,
 	})
 }
 
@@ -875,8 +899,57 @@ func tierName(tier string) string {
 		return "single-source review"
 	case "single_source_notice":
 		return "single-source notice"
+	case "known_risk":
+		return "known-risk list"
+	case "reported":
+		return "reported, awaiting corroboration"
 	}
 	return tier
+}
+
+// prePaymentCheck asks Kifaru, before a transfer is scored, whether other
+// institutions reported this session's device or the beneficiary account.
+// It fails open: if Kifaru is off or unreachable the bank scores on its own.
+func (b *Bank) prePaymentCheck(r *http.Request, toBank, toAccount string) *RiskCheck {
+	destination, known := bankByID(toBank)
+	b.mu.Lock()
+	current, _, ok := b.sessionFor(r)
+	connector, salt := b.connector, b.salt
+	b.mu.Unlock()
+	if !ok || !connector || !known || toAccount == "" {
+		return nil
+	}
+	risk, err := b.kifaru.check(protect(salt, current.device), protect(salt, toAccount), destination.KifaruCode)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if err != nil {
+		b.event("warn", "Kifaru risk check unavailable, scoring without it: %v", err)
+		return nil
+	}
+	if risk.Destination.Flagged {
+		b.event("kifaru", "Kifaru pre-payment check: %s %s is flagged (%s, %d institution(s))",
+			destination.Name, toAccount, tierName(risk.Destination.Tier), risk.Destination.Institutions)
+	} else {
+		b.event("", "Kifaru pre-payment check: %s %s is not flagged", destination.Name, toAccount)
+	}
+	if risk.Device.Flagged {
+		b.event("kifaru", "Kifaru pre-payment check: this device is in %d other institution(s)' active reports",
+			risk.Device.Institutions)
+	}
+	return &risk
+}
+
+// signInCheck warns the fraud desk when a device signing in already appears
+// in another institution's active report. It never blocks the sign-in.
+func (b *Bank) signInCheck(name, device, salt string) {
+	risk, err := b.kifaru.check(protect(salt, device), "", "")
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if err != nil || !risk.Device.Flagged || b.salt != salt {
+		return
+	}
+	b.event("kifaru", "Kifaru: %s signed in from a device in %d other institution(s)' active reports (%s)",
+		name, risk.Device.Institutions, tierName(risk.Device.Tier))
 }
 
 func (b *Bank) hold(w http.ResponseWriter, r *http.Request) {

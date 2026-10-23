@@ -156,6 +156,34 @@ func (k *KifaruClient) publish(report map[string]any) (KifaruResult, error) {
 	return result, nil
 }
 
+// RiskSignal is Kifaru's answer for one checked identifier. It says only
+// whether other institutions reported it, how strongly and how many.
+type RiskSignal struct {
+	Checked      bool   `json:"checked"`
+	Flagged      bool   `json:"flagged"`
+	Tier         string `json:"tier"`
+	Institutions int    `json:"institutions"`
+}
+
+// RiskCheck is Kifaru's pre-payment or sign-in answer.
+type RiskCheck struct {
+	Device      RiskSignal `json:"device"`
+	Destination RiskSignal `json:"destination"`
+}
+
+// check asks Kifaru about a protected device and, when given, a protected
+// destination account at destinationInstitution.
+func (k *KifaruClient) check(device, destinationAccount, destinationInstitution string) (RiskCheck, error) {
+	body := map[string]string{"device_profile": device}
+	if destinationAccount != "" {
+		body["destination_account_hash"] = destinationAccount
+		body["destination_institution"] = destinationInstitution
+	}
+	var result RiskCheck
+	err := k.call(http.MethodPost, "/v1/risk-check?institution="+k.institution, body, &result)
+	return result, err
+}
+
 // KifaruAlert is an alert routed to a receiving bank.
 type KifaruAlert struct {
 	AlertID                string  `json:"alert_id"`

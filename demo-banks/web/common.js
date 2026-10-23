@@ -18,13 +18,18 @@ export async function api(path, { method = "GET", body, token } = {}) {
   return payload;
 }
 
-/** A per-browser device ID. Each bank sees a different one, as real apps would. */
+/**
+ * A per-browser device ID, kept in a cookie. Cookies ignore the port, so all
+ * three banks on 127.0.0.1 see the same browser, as Kifaru's device check needs.
+ */
 export function deviceId() {
-  let id = localStorage.getItem("demo-device-id");
+  const match = document.cookie.match(/(?:^|;\s*)demo-device-id=([^;]+)/);
+  let id = match ? decodeURIComponent(match[1]) : "";
   if (!id) {
-    id = `browser-${crypto.getRandomValues(new Uint32Array(1))[0].toString(16)}`;
-    localStorage.setItem("demo-device-id", id);
+    try { id = localStorage.getItem("demo-device-id") || ""; } catch { id = ""; }
   }
+  if (!id) id = `browser-${crypto.getRandomValues(new Uint32Array(1))[0].toString(16)}`;
+  document.cookie = `demo-device-id=${encodeURIComponent(id)}; path=/; max-age=31536000; SameSite=Lax`;
   return id;
 }
 
