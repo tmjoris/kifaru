@@ -34,11 +34,14 @@ URL. The password for these Kifaru accounts is `KifaruDemo2026!`.
 
 ## Start everything (local)
 
-Run each block in its own terminal:
+Run each block in its own terminal, from the repository root. The first time,
+run `npm ci` to install the frontend dependencies.
+
+Bash (macOS, Linux, Git Bash):
 
 ```bash
 # 1. Postgres (skip if you already have one)
-docker run -d --rm --name kifaru-pg -e POSTGRES_PASSWORD=kifaru -e POSTGRES_DB=kifaru -p 55432:5432 postgres:16
+docker run -d --rm --name kifaru-pg -e POSTGRES_PASSWORD=kifaru -e POSTGRES_DB=kifaru -p 55432:5432 -v kifaru-pgdata:/var/lib/postgresql/data postgres:16
 
 # 2. API
 cd backend && DATABASE_URL="postgres://postgres:kifaru@localhost:55432/kifaru?sslmode=disable" PORT=8000 go run .
@@ -46,6 +49,30 @@ cd backend && DATABASE_URL="postgres://postgres:kifaru@localhost:55432/kifaru?ss
 # 3. Frontend
 npm run dev
 ```
+
+PowerShell (Windows):
+
+```powershell
+# 1. Postgres (skip if you already have one)
+docker run -d --rm --name kifaru-pg -e POSTGRES_PASSWORD=kifaru -e POSTGRES_DB=kifaru -p 55432:5432 -v kifaru-pgdata:/var/lib/postgresql/data postgres:16
+
+# 2. API
+cd backend; $env:DATABASE_URL="postgres://postgres:kifaru@localhost:55432/kifaru?sslmode=disable"; $env:PORT="8000"; go run .
+
+# 3. Frontend
+npm run dev
+```
+
+The `kifaru-pgdata` volume keeps the database when the container stops. The API
+re-creates the demo logins on every start, so the passwords above always work.
+To start from an empty database, stop the container and run
+`docker volume rm kifaru-pgdata`.
+
+PowerShell `$env:` variables last only for that terminal window, so set them
+again in a new one. If `docker` reports that it cannot connect to
+`dockerDesktopLinuxEngine`, start Docker Desktop. If it then keeps returning
+`500 Internal Server Error`, quit Docker Desktop, run `wsl --shutdown`, and
+start it again.
 
 Then open <http://127.0.0.1:5173/staff>. To use the hosted version, open your
 Render frontend URL and add `/staff`. Leave time for the deploy first: the
@@ -64,7 +91,15 @@ cd demo-banks && go run .
 The pages are embedded in the program, so restart `go run .` after any change
 to files in `demo-banks/web`. If the default ports are taken, set
 `NETWORK_PORT`, `NCBA_PORT`, `KCB_PORT` and `EQUITY_PORT` to free ports, and
-use those in the URLs below.
+use those in the URLs below. For example:
+
+```bash
+cd demo-banks && NCBA_PORT=9201 go run .
+```
+
+```powershell
+cd demo-banks; $env:NCBA_PORT="9201"; go run .
+```
 
 The three services have independent customer profiles, balances, fraud rules,
 analyst feeds, and transfer ledgers. Open these URLs in separate tabs:
@@ -117,7 +152,15 @@ interbank switch log, the shared mailbox and the three banks' `/ops` pages in
 frames, each with links to open that bank's customer and operations pages in
 their own tab. The frames load once and are not reloaded while you present.
 
-For a manual run, sign in to a customer tab and make a transfer. When that
+For a manual run, sign in to a customer tab and make a transfer. Each bank
+blocks a transfer whose score reaches its block threshold. On NCBA, a first
+payment from a new device to a new beneficiary scores 0.60 and goes through. A
+second payment from the same customer to that beneficiary adds 0.25 and is
+blocked, and so is a payment from a device another customer just used. A block
+signs out every session on that device and refuses its sign-ins until the next
+reset. The fraud desk then calls the customers, account holder included, who
+recently paid the same beneficiary, and they confirm the fraud. Reset from the
+director to sign in from that browser again. When that
 bank's Kifaru connector is enabled,
 flagged transfer reports use Kifaru's report API and appear in the staff SOC
 event stream with the sending bank and policy outcome. The receiving bank's
