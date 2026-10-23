@@ -733,7 +733,9 @@ func (a *App) score(
 	switch {
 	case score >= validated && len(corro) > 0:
 		status = statusCorroborated
-	case singleSourceEligible && victimConfirmed && trusted:
+	// Presentation override: the independent demo banks have no receiver
+	// track record, so a victim-confirmed report from them alerts at once.
+	case singleSourceEligible && victimConfirmed && (trusted || truthy(report.Evidence["synthetic_bank_demo"])):
 		status = statusSingleSourceReview
 	case singleSourceEligible && (knownBad || trusted):
 		status = statusSingleSourceNotice

@@ -113,6 +113,7 @@ type Bank struct {
 	accounts    map[string]*Account
 	sessions    map[string]session
 	deviceUse   map[string]map[string]time.Time
+	blocked     map[string]bool
 	transfers   []*Transfer
 	credits     []*Credit
 	withdrawals []*Withdrawal
@@ -141,6 +142,7 @@ func (b *Bank) resetLocked(salt string, connector bool) {
 	}
 	b.sessions = map[string]session{}
 	b.deviceUse = map[string]map[string]time.Time{}
+	b.blocked = map[string]bool{}
 	b.transfers, b.credits, b.withdrawals = nil, nil, nil
 	b.events = nil
 	b.alerts = map[string]*AlertView{}
@@ -262,6 +264,12 @@ func (b *Bank) login(w http.ResponseWriter, r *http.Request) {
 	if device == "" {
 		device = "unknown-device"
 	}
+	if b.blocked[device] {
+		b.event("bad", "Refused sign-in to %s's account from a blocked device", account.Name)
+		writeError(w, http.StatusForbidden,
+			"Sign-in from this device has been blocked by "+b.cfg.Name+"'s fraud team. Please contact customer care.")
+		return
+	}
 	token := randomID(16)
 	b.sessions[token] = session{username: account.Username, device: device}
 	if b.deviceUse[device] == nil {
@@ -381,6 +389,16 @@ func (b *Bank) score(account *Account, device string, beneficiary *Beneficiary, 
 			break
 		}
 	}
+	if newBeneficiary {
+		for _, transfer := range b.transfers {
+			if transfer.Customer == account.Username && transfer.Status == "completed" &&
+				transfer.ToBank == beneficiary.Bank && transfer.ToAccount == beneficiary.Account {
+				score += 0.25
+				reasons = append(reasons, "Repeat payment to a beneficiary added this session")
+				break
+			}
+		}
+	}
 	return math.Min(0.99, math.Round(score*100)/100), reasons, codes, shared
 }
 
@@ -449,10 +467,11 @@ func (b *Bank) transfer(w http.ResponseWriter, r *http.Request) {
 		transfer.Status = "blocked"
 		b.event("bad", "Blocked %s from %s to %s %s (score %.2f)", kes(transfer.Amount),
 			account.Name, transfer.ToBankName, transfer.ToAccount, score)
+		b.lockOutDevice(current.device)
 		b.mu.Unlock()
 		go b.investigate(transfer)
 		writeJSON(w, http.StatusOK, map[string]any{"status": "blocked",
-			"message": "This transfer has been blocked for your security. Please contact customer care."})
+			"message": "This transfer has been blocked for your security and you have been signed out. Please contact customer care."})
 		return
 	}
 	account.Balance -= transfer.Amount
@@ -485,13 +504,28 @@ func (b *Bank) transfer(w http.ResponseWriter, r *http.Request) {
 		"message": fmt.Sprintf("%s sent to %s %s.", kes(transfer.Amount), transfer.ToBankName, transfer.ToAccount)})
 }
 
+// lockOutDevice ends every session on a device that made a blocked transfer
+// and refuses its further sign-ins until the next reset. Callers hold b.mu.
+func (b *Bank) lockOutDevice(device string) {
+	b.blocked[device] = true
+	ended := 0
+	for token, current := range b.sessions {
+		if current.device == device {
+			delete(b.sessions, token)
+			ended++
+		}
+	}
+	b.event("bad", "Fraud team signed out %d session(s) on the device and blocked its sign-ins", ended)
+}
+
 // investigate is the fraud desk's follow-up to a blocked transfer: it calls
-// customers who recently paid the same beneficiary.
+// customers, including the account holder, who recently paid the same
+// beneficiary.
 func (b *Bank) investigate(blocked *Transfer) {
 	b.mu.Lock()
 	linked := []*Transfer{}
 	for _, transfer := range b.transfers {
-		if transfer.Status == "completed" && !transfer.FraudConfirmed && transfer.Customer != blocked.Customer &&
+		if transfer.Status == "completed" && !transfer.FraudConfirmed &&
 			transfer.ToBank == blocked.ToBank && transfer.ToAccount == blocked.ToAccount &&
 			blocked.At.Sub(transfer.At) < recentWindow {
 			linked = append(linked, transfer)

@@ -274,7 +274,7 @@ async function confirmTransfer() {
   dashboard();
   try {
     const result = await call("/api/transfers", { method: "POST", body: { bank: sent.bank, account: sent.account, name: sent.name, amount: sent.amount } });
-    if (result.status === "blocked") setNotice(`Transfer blocked by ${config.name}'s own fraud checks.`, "bad");
+    if (result.status === "blocked") setNotice(`Transfer blocked by ${config.name}'s own fraud checks. You have been signed out.`, "bad");
     else setNotice(`Transfer sent through the simulated interbank switch: ${kes(sent.amount)}.`, "ok");
   } catch (error) { setNotice(error.message, "bad"); }
   sending = false;
