@@ -1,5 +1,19 @@
 export type PortalScope = "institution" | "exchange";
-export type Tab = "outgoing" | "incoming" | "history" | "reports" | "knowledge" | "governance";
+export type Tab = "outgoing" | "incoming" | "history" | "risk" | "reports" | "knowledge" | "governance";
+/** Strongest basis for a risk-check flag, weakest first. */
+export type RiskTier = "reported" | "known_risk" | AlertTier;
+/** Kifaru's whole answer for one checked artefact; it never names the reporter. */
+export interface RiskSignal {
+  checked: boolean;
+  flagged: boolean;
+  tier: RiskTier | "";
+  institutions: number;
+}
+export interface RiskCheckResult {
+  checkedAt: string;
+  device: RiskSignal;
+  destination: RiskSignal;
+}
 export type Outcome = "corroborated" | "single_source_review" | "single_source_notice"
   | "below_threshold" | "needs_review" | "quarantined" | "retracted" | "expired" | "cleared";
 /** What an alert rests on: an independent match, or one institution's evidence. */

@@ -4258,3 +4258,101 @@ html[data-theme="dark"] .attack-replay {
     border-left: 0;
   }
 }
+
+.risk-check-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 24px;
+  align-items: start;
+  padding: 1.25rem;
+}
+
+.risk-check-form {
+  display: grid;
+  gap: 8px;
+}
+
+.risk-check-form label {
+  font-size: 0.86rem;
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.risk-check-form .btn {
+  justify-self: start;
+  margin-top: 8px;
+}
+
+.risk-check-error {
+  color: var(--cp-danger);
+  margin: 0;
+}
+
+.risk-check-results {
+  display: grid;
+  gap: 12px;
+}
+
+.risk-result {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  padding: 16px;
+  border: 1px solid var(--cp-border);
+  border-left-width: 4px;
+  border-radius: var(--cp-radius);
+  background: var(--cp-surface-soft);
+}
+
+.risk-result p {
+  margin: 0;
+}
+
+.risk-result.flagged {
+  border-left-color: var(--cp-danger);
+}
+
+.risk-result.caution {
+  border-left-color: var(--cp-warning);
+}
+
+.risk-result.clear {
+  border-left-color: var(--cp-success);
+}
+
+.risk-result-title {
+  color: var(--cp-text-soft);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.risk-result-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1.15rem;
+}
+
+.risk-result.flagged .risk-result-verdict {
+  color: var(--cp-danger);
+}
+
+.risk-result.caution .risk-result-verdict {
+  color: var(--cp-warning);
+}
+
+.risk-result.clear .risk-result-verdict {
+  color: var(--cp-success);
+}
+
+@media (max-width: 860px) {
+  .risk-check-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .risk-check-card .card-header {
+    flex-wrap: wrap;
+  }
+}
