@@ -81,10 +81,11 @@ Kifaru staff sign in at `/staff`. The staff view provides:
 - Ecosystem-wide synthetic signal history
 - The protected-indicator relationship map
 - A deterministic guided campaign
+- An attack replay, run once without Kifaru and once with it
 - The continuous Sentinel-shaped synthetic stream
 - Honest operational counts and policy latency
 - Institution user-admission decisions
-- Stream and guided-scenario reset controls
+- Stream, guided-scenario and attack-replay reset controls
 
 The directory represents 37 commercial banks, HFC as the mortgage finance
 institution, M-Pesa, and Airtel Money. Representation in the directory does not
@@ -105,6 +106,39 @@ for a reliable presentation flow:
 
 Reset removes the guided reports, validations, alerts, actions, notifications,
 and artefacts while leaving immutable audit history intact.
+
+## Attack replay
+
+The **Attack replay** entry in the staff portal plays one account-takeover
+campaign twice. An attacker takes over Grace's NCBA account and sends
+KES 85,000 to a three-day-old mule account at Equity Bank. NCBA blocks a second
+takeover from the same phone, so the attacker moves to KCB. There, a new phone
+sends KES 150,000 to the same account, and the attacker then tries to cash out.
+
+| Step | Without Kifaru | With Kifaru |
+| --- | --- | --- |
+| 1. NCBA takeover | Transfer completes | Same |
+| 2. NCBA blocks the second attempt | NCBA emails Equity's fraud mailbox | NCBA's victim-confirmed report issues a single-source review to Equity |
+| 3. Receiving bank | Nothing to act on | Equity holds the account (post-no-debit) |
+| 4. KCB takeover | Transfer completes unnoticed | KCB's weaker flag corroborates, the alert escalates, and the credit is frozen on arrival |
+| 5. Cash-out | KES 235,000 lost | Withdrawal declined, and both transfers are returned |
+
+The attack replay is a scripted presentation flow. A separate local three-bank
+simulation is also available in `demo-banks/`: NCBA, KCB and Equity each run an
+independent service with customer sign-in, account balances, transfer history,
+bank-specific fraud controls, and an analyst workspace. Flagged transfers
+published through a bank's Kifaru connector enter the retained SOC event stream
+with their sending institution and policy outcome. See [DEMO-GUIDE.md](DEMO-GUIDE.md)
+for the seven-tab setup, and [PLAN.md](PLAN.md) for manual and automated
+rehearsal steps.
+
+Single-source review needs reporter standing. Rather than borrow or change
+NCBA's real record, the replay gives NCBA a track record of nine upheld alerts
+inside the scenario (`attack_scenario_state`). Scenario reports carry
+`evidence.attack_scenario`, and only the replay can set that field. Replay
+outcomes never count toward real standing. Reset removes every replay record
+and selects the mode for the next run. Arrow keys, Page Down and Space advance
+the replay, which suits a presentation clicker.
 
 ## Signal outcomes
 
@@ -204,7 +238,8 @@ corroboration it is built almost entirely from the reporter's own inputs.
   alert; `released` and disputes count against it, and retracted alerts are
   neutral. Standing is checked each time a report is scored, so a reporter
   whose alerts are released loses the route automatically. Guided-scenario
-  outcomes are scripted and never count, and guided reports never use standing.
+  and attack-replay outcomes are scripted and never count, and guided reports
+  never use standing.
 
 Receivers make the same decisions on every tier. A single-source alert carries
 its basis and the reporter's record in its explanation. When the evidence
@@ -409,6 +444,10 @@ POST   /v1/admin/demo-stream/reset
 GET    /v1/admin/guided-demo
 POST   /v1/admin/guided-demo/advance
 POST   /v1/admin/guided-demo/reset
+
+GET    /v1/admin/attack-scenario
+POST   /v1/admin/attack-scenario/advance
+POST   /v1/admin/attack-scenario/reset    {"mode": "without" | "with"}
 ```
 
 ## Migrations and audit integrity
@@ -427,7 +466,8 @@ The lifecycle migration:
 
 Audit rows are append-only through a PostgreSQL trigger. Authentication events,
 validations, revalidations, signal lifecycle changes, alert decisions,
-configuration changes, admission decisions, and guided operations are audited.
+configuration changes, admission decisions, guided operations, and attack-replay
+resets are audited.
 
 ## Repository layout
 
@@ -437,6 +477,7 @@ configuration changes, admission decisions, and guided operations are audited.
 ├── backend/
 │   ├── data/
 │   ├── migrations/
+│   ├── attack_scenario.go
 │   ├── auth.go
 │   ├── csv_ingest.go
 │   ├── database.go
@@ -516,6 +557,7 @@ Coverage includes:
 - Reporter retraction and staff expiry
 - Institution notifications
 - Guided campaign completion, release, and reset
+- Attack replay in both modes, scenario-scoped standing, and reset
 - Sentinel-shaped event processing and retention
 - Device/network switching
 - All 40 represented institutions

@@ -86,6 +86,83 @@ func (a *App) publishStreamEvent(keys []string, eventName, eventID string, paylo
 	}
 }
 
+// recordBankDemoEvent keeps reports from the independent classroom bank apps
+// in the same retained SOC stream as generated connector events.
+func (a *App) recordBankDemoEvent(ctx context.Context, report ReportIn, result map[string]any) error {
+	tx, err := a.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var offset int64
+	var next int64
+	if err := tx.QueryRow(ctx, `SELECT next_offset FROM demo_stream_state
+		WHERE singleton=TRUE FOR UPDATE`).Scan(&offset); err != nil {
+		return err
+	}
+	if _, err := pruneDemoStreamRetention(ctx, tx, demoStreamRetention-1); err != nil {
+		return err
+	}
+	next = offset + 1
+	validation, _ := result["validation"].(Validation)
+	if validation.Status == "" {
+		if raw, ok := result["validation"].(map[string]any); ok {
+			validation.Status = fmt.Sprint(raw["status"])
+		}
+	}
+	reportID := fmt.Sprint(result["report_id"])
+	eventType := fmt.Sprint(report.Evidence["demo_event_type"])
+	if eventType == "" || eventType == "<nil>" {
+		eventType = "bank_transaction_risk_signal"
+	}
+	alertName := fmt.Sprintf("%s transfer risk signal", report.ReportingSystem)
+	severity := "Medium"
+	if report.BankRiskScore >= 0.75 {
+		severity = "High"
+	}
+	payload, err := json.Marshal(map[string]any{
+		"AlertName":              alertName,
+		"AlertSeverity":          severity,
+		"ReportingInstitution":   report.ReportingInstitution,
+		"DestinationInstitution": report.DestinationInstitution,
+		"TransactionRef":         report.TransactionRef,
+		"Amount":                 report.Amount,
+		"Currency":               report.Currency,
+		"RiskCodes":              report.RiskCodes,
+		"SyntheticBankDemo":      true,
+	})
+	if err != nil {
+		return err
+	}
+	created := time.Now().UTC()
+	if _, err := tx.Exec(ctx, `INSERT INTO demo_events(
+		event_offset,topic,partition_key,event_type,source,payload,status,report_id,outcome,created_at,processed_at
+	) VALUES ($1,$2,$3,$4,$5,$6,'processed',$7,$8,$9,$9)`,
+		offset, "sentinel.security-alert", report.TransactionRef, eventType,
+		"synthetic-bank-demo:"+report.ReportingInstitution, string(payload), reportID, validation.Status, created); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE demo_stream_state SET next_offset=$1,
+		emitted_since_reset=emitted_since_reset+1,last_emitted_at=$2,updated_at=$2
+		WHERE singleton=TRUE`, next, created); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	event := map[string]any{
+		"event_offset": offset, "topic": "sentinel.security-alert", "event_type": eventType,
+		"source": "synthetic-bank-demo:" + report.ReportingInstitution,
+		"status": "processed", "report_id": reportID, "outcome": validation.Status,
+		"alert_name": alertName, "alert_severity": severity,
+		"created_at":              created.Format(time.RFC3339),
+		"reporting_institution":   report.ReportingInstitution,
+		"destination_institution": report.DestinationInstitution,
+	}
+	a.publishStreamEvent([]string{"*"}, "demo-event", fmt.Sprint(offset), event)
+	return nil
+}
+
 func (a *App) runDemoProducer(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
