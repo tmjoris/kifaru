@@ -95,6 +95,8 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		a.streamAlerts(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/validations/"):
 		a.validationDetail(w, r, strings.TrimPrefix(path, "/v1/validations/"))
+	case r.Method == http.MethodPost && path == "/v1/risk-check":
+		a.riskCheck(w, r)
 	case r.Method == http.MethodPost && path == "/v1/reports":
 		a.submitReport(w, r, "rest")
 	case r.Method == http.MethodPost && path == "/v1/reports/batch":

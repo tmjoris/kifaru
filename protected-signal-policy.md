@@ -47,6 +47,8 @@ Given a structured risk report from an institution:
 - Earn reporter standing only from receiver decisions, never from scores.
 - Store explanations, reasons, policy version, and superseded validations.
 - Recalculate linked intelligence after dispute, retraction, release, or expiry.
+- Answer a risk check with only flagged, tier and reporter count; never name
+  the reporter, report or evidence, and audit every check.
 
 ## Receiver decisions
 

@@ -253,6 +253,37 @@ Kifaru never automatically promotes a corroborated destination to the
 known-risk list. Knowledge-base entries remain deliberate administrative
 decisions.
 
+## Risk check
+
+Alerts go only to the institution receiving the funds. A sending institution
+can also ask, before a sign-in or a payment, whether other institutions hold
+active reports on a protected device or destination account:
+
+```text
+POST /v1/risk-check?institution=<caller>
+{"device_profile": "sha256:...",
+ "destination_account_hash": "sha256:...", "destination_institution": "psp_c"}
+```
+
+Either identifier may be sent alone. Each answer gives only `flagged`, the
+strongest `tier` and the number of reporting institutions:
+
+| Tier | Basis |
+| --- | --- |
+| `corroborated` | An active corroborated report |
+| `single_source_review` | An active single-source review |
+| `single_source_notice` | An active single-source notice |
+| `known_risk` | The destination is on the known-bad list |
+| `reported` | An active report still awaiting corroboration |
+
+The check uses the same filters as corroboration: active, unexpired,
+qualifying reports from another institution in the last 30 days. Destination
+accounts stay scoped to their institution, device profiles match across all
+institutions, and a known-good destination is never flagged. The answer never
+names the reporter, the report or its evidence. Institution users can check
+only as their own institution, and every check is written to the audit log.
+The calling institution decides whether to warn the customer, delay or block.
+
 ## Reversible lifecycle
 
 Signals are not permanent accusations.
@@ -416,6 +447,7 @@ GET    /v1/notifications?institution=
 GET    /v1/stream?institution=
 POST   /v1/alerts/{alert_id}/state
 PATCH  /v1/reports/{report_id}/lifecycle
+POST   /v1/risk-check?institution=
 
 POST   /v1/auth/login
 GET    /v1/auth/session
