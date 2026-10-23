@@ -53,7 +53,7 @@ function render() {
   const scrollY = window.scrollY;
   root.innerHTML = `<div class="app dark bank-${safe(config.id)}">${header(config, "Operations console", connector)}
     <main class="ops">
-      <div class="sim-banner">${icon("science")}<span><strong>Simulated operations</strong> Independent bank ledger and bank-specific fraud rules. Kifaru is an optional connector.</span></div>
+      <div class="sim-banner">${icon("science")}<span><strong>Simulated operations</strong> Independent bank ledger and bank-specific fraud rules. Kifaru is an optional connector. Demo run key for Kifaru's risk check: <code>${safe(state.run_key || "")}</code></span></div>
       <div class="kpis">${kpi("account_tree", "Transfers scored", transfers.length)}${kpi("block", "Blocked", blocked, blocked ? "alert" : "")}${kpi("notifications_active", "Kifaru alerts", alerts.length, alerts.length ? "info" : "")}${kpi("south_west", "Credits in", credits.length)}</div>
       <div class="ops-grid">
         <div class="stack">

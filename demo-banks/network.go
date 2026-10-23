@@ -272,6 +272,7 @@ func autopilotSteps(mode string) []autopilotStep {
 	}
 	if mode == "with" {
 		steps[2].Title = "Equity's fraud desk places a hold after Kifaru's alert"
+		steps[3].Title = "Switch to a new phone and try Faith's KCB account, KES 150,000; KCB checks Kifaru first"
 	} else {
 		steps[2].Title = "Equity's fraud desk checks for anything to act on"
 		steps[5].Title = "Equity looks for funds to return"
@@ -318,8 +319,10 @@ func (n *Network) attackTransfer(bank, username, device string, amount float64) 
 		tone = "bad"
 	}
 	n.logAttacker(tone, "transfer %s to Equity 0114417: %s", kes(amount), result.Status)
-	if result.Status == "blocked" {
+	if result.Status == "blocked" && bank == "ncba" {
 		n.logAttacker("warn", "%s has flagged this phone. Moving to KCB.", bankName(bank))
+	} else if result.Status == "blocked" {
+		n.logAttacker("warn", "%s stopped the payment before it left. No new money reaches the mule.", bankName(bank))
 	}
 	return nil
 }
@@ -418,7 +421,7 @@ func (n *Network) runStep(step int, mode string) error {
 		if result.Returned == 0 {
 			n.logAttacker("", "Equity has nothing left to return. The money is gone.")
 		} else {
-			n.logAttacker("", "Equity returned %s to NCBA and KCB", kes(result.Returned))
+			n.logAttacker("", "Equity returned %s to the sending banks", kes(result.Returned))
 		}
 		return nil
 	}

@@ -151,6 +151,9 @@ shows how many are done. Below it are the attacker activity console, the
 interbank switch log, the shared mailbox and the three banks' `/ops` pages in
 frames, each with links to open that bank's customer and operations pages in
 their own tab. The frames load once and are not reloaded while you present.
+With Kifaru, step 4 ends at KCB: its pre-payment check finds NCBA's flag on
+Equity 0114417 and blocks Faith's KES 150,000 before it leaves, so only NCBA's
+KES 85,000 reaches the mule account, and Equity returns it.
 
 For a manual run, sign in to a customer tab and make a transfer. Each bank
 blocks a transfer whose score reaches its block threshold. On NCBA, a first
@@ -166,6 +169,22 @@ flagged transfer reports use Kifaru's report API and appear in the staff SOC
 event stream with the sending bank and policy outcome. The receiving bank's
 analyst tab shows the resulting alert when policy issues one.
 
+With the connector on, each bank also asks Kifaru's risk check when a customer
+signs in and before it scores a transfer. A beneficiary account that another
+bank reported adds 0.20 to 0.40 to the score, depending on the tier, and a
+device that another bank reported adds 0.35. The block decision stays with
+each bank. All three banks read the same device ID cookie, so after NCBA
+blocks Grace's repeat payment, signing in to Faith's KCB account from that
+browser is flagged, and KCB blocks a payment to Equity 0114417 before it
+leaves. Each bank's `/ops` page lists the Kifaru reasons and shows the demo run
+key.
+
+In Kifaru, the **Risk check** tab of each institution workspace runs the same
+check by hand. Enter a beneficiary account and its institution, a device ID,
+or both, and the demo run key from any bank's `/ops` page. The browser hashes
+them before sending. Kifaru answers only flagged or not flagged, the strongest
+tier and how many institutions reported it.
+
 For a live connected run, select **Prepare reporter history** in the director.
 It ensures NCBA has enough synthetic, upheld alerts through Kifaru's API to
 meet the single-source reporter-standing rule. It is safe to run again and
@@ -180,7 +199,7 @@ staff-portal replay remains available as a fallback.
   by each bank connector.
 - **Customer tabs:** open each bank's customer URL above and sign in as Grace,
   Faith, and J. Kiprono (the first profile is selected by default). Each origin
-  has its own browser session.
+  has its own browser session, but all three share one device ID.
 - **Analyst tabs:** open each bank's `/ops` URL above. Turn the **Kifaru
   connector** switch on in each bank where you want reports sent. During the
   attack, Equity's analyst workspace shows incoming alerts and holds. The
