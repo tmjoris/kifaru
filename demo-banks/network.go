@@ -97,13 +97,49 @@ type Network struct {
 	switchLog []SwitchEntry
 	attacker  []LogLine
 	prepared  string
+	settled   map[string]bool
+	inFlight  map[string]bool
 }
 
 func newNetwork() *Network {
 	return &Network{
 		mode: "without", salt: randomID(4),
 		mail: []Mail{}, switchLog: []SwitchEntry{}, attacker: []LogLine{},
+		settled: map[string]bool{}, inFlight: map[string]bool{},
 	}
+}
+
+var errInFlight = errors.New("this message is already being processed")
+
+// once delivers a switch message at most once per key. A message that
+// already settled succeeds again without being delivered; a failed one can
+// be retried.
+func (n *Network) once(key string, deliver func() error) (bool, error) {
+	n.mu.Lock()
+	if n.settled[key] {
+		n.mu.Unlock()
+		return true, nil
+	}
+	if n.inFlight[key] {
+		n.mu.Unlock()
+		return false, errInFlight
+	}
+	n.inFlight[key] = true
+	n.mu.Unlock()
+	err := deliver()
+	n.mu.Lock()
+	delete(n.inFlight, key)
+	if err == nil {
+		n.settled[key] = true
+	}
+	n.mu.Unlock()
+	return false, err
+}
+
+// switchRef returns the message reference, which every switch message needs.
+func switchRef(request map[string]any) string {
+	ref, _ := request["ref"].(string)
+	return strings.TrimSpace(ref)
 }
 
 func (n *Network) routes() http.Handler {
@@ -132,10 +168,24 @@ func (n *Network) switchTransfer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "unknown destination bank")
 		return
 	}
-	err := postJSON(bankURL(to)+"/interbank/credit", request, nil)
+	ref := switchRef(request)
+	if ref == "" {
+		writeError(w, http.StatusBadRequest, "ref is required")
+		return
+	}
+	duplicate, err := n.once("credit:"+ref, func() error {
+		return postJSON(bankURL(to)+"/interbank/credit", request, nil)
+	})
+	if errors.Is(err, errInFlight) {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 	amount, _ := request["amount"].(float64)
 	entry := SwitchEntry{At: time.Now(), Status: "settled", Text: fmt.Sprintf("%s → %s %s · %s",
 		request["from_bank_name"], bankName(to), request["to_account"], kes(amount))}
+	if duplicate {
+		entry.Status = "repeat ignored, already settled"
+	}
 	if err != nil {
 		entry.Status = "rejected: " + err.Error()
 	}
@@ -146,7 +196,7 @@ func (n *Network) switchTransfer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true, "duplicate": duplicate})
 }
 
 func (n *Network) switchReturn(w http.ResponseWriter, r *http.Request) {
@@ -160,10 +210,24 @@ func (n *Network) switchReturn(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "unknown bank")
 		return
 	}
-	err := postJSON(bankURL(to)+"/interbank/return", request, nil)
+	ref := switchRef(request)
+	if ref == "" {
+		writeError(w, http.StatusBadRequest, "ref is required")
+		return
+	}
+	duplicate, err := n.once("return:"+ref, func() error {
+		return postJSON(bankURL(to)+"/interbank/return", request, nil)
+	})
+	if errors.Is(err, errInFlight) {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 	amount, _ := request["amount"].(float64)
 	entry := SwitchEntry{At: time.Now(), Status: "returned", Text: fmt.Sprintf("%s → %s · %s returned",
 		request["returned_by_name"], bankName(to), kes(amount))}
+	if duplicate {
+		entry.Status = "repeat ignored, already returned"
+	}
 	if err != nil {
 		entry.Status = "rejected: " + err.Error()
 	}
@@ -174,7 +238,7 @@ func (n *Network) switchReturn(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true, "duplicate": duplicate})
 }
 
 func (n *Network) postMail(w http.ResponseWriter, r *http.Request) {
@@ -239,6 +303,7 @@ func (n *Network) setMode(w http.ResponseWriter, r *http.Request) {
 	}
 	n.mode, n.salt, n.step = request.Mode, randomID(4), 0
 	n.mail, n.switchLog, n.attacker = nil, nil, nil
+	n.settled, n.inFlight = map[string]bool{}, map[string]bool{}
 	salt := n.salt
 	n.mu.Unlock()
 	failures := []string{}

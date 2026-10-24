@@ -11,6 +11,7 @@ let noticeTimer;
 let activeView = "overview";
 let hideBalance = false;
 let review = null; // the transfer waiting for the customer's confirmation
+let receipt = null; // the sent transfer, with its reference
 let sending = false;
 let animate = true;
 let draft = { bank: "", account: "0114417", name: "J. Kiprono", amount: "85000" };
@@ -107,7 +108,12 @@ function loginView() {
 async function refresh() {
   if (!token) return loginView();
   try { me = await call("/api/me"); dashboard(); }
-  catch { token = ""; sessionStorage.removeItem("simulated-bank-session"); loginView(); }
+  catch (error) {
+    token = ""; sessionStorage.removeItem("simulated-bank-session"); receipt = null;
+    // Say why the session ended, unless a notice already explains it.
+    if (!notice && error.status === 401 && error.message !== "Please sign in again.") setNotice(error.message, "bad");
+    loginView();
+  }
 }
 
 const shortDate = (at) => new Date(at).toLocaleDateString("en-KE", { day: "numeric", month: "short" });
@@ -117,7 +123,7 @@ function activityRows(items, incoming, limit) {
   return items.slice().reverse().slice(0, limit).map(item => {
     const title = incoming ? `${safe(item.from_bank_name)} transfer` : `To ${safe(item.to_name || item.to_bank_name)}`;
     const status = incoming ? item.state : item.status;
-    const sub = `${safe(incoming ? item.from_bank_name : item.to_bank_name)} · ${shortDate(item.at)}`;
+    const sub = `${safe(incoming ? item.from_bank_name : item.to_bank_name)} · ${shortDate(item.at)}${item.ref ? ` · ${safe(item.ref)}` : ""}`;
     const tone = status === "blocked" ? "bad" : status === "completed" ? "ok" : "";
     return `<div class="activity-row"><span class="activity-icon ${incoming ? "incoming" : "outgoing"}">${icon(incoming ? "south_west" : "north_east")}</span>
       <span class="activity-main"><strong>${title}</strong><small>${sub}</small></span>
@@ -201,6 +207,18 @@ function reviewSheet() {
   </div></div>`;
 }
 
+function receiptSheet() {
+  if (!receipt) return "";
+  const bank = config.banks.find(b => b.id === receipt.bank);
+  const row = (label, value) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
+  const sentAt = new Date(receipt.at).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short" });
+  return `<div class="sheet-backdrop" id="receipt-backdrop"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+    <span class="badge-icon">${icon("task_alt")}</span><span class="eyebrow">Transfer receipt</span><h2 id="receipt-title">${kes(receipt.amount)} sent</h2>
+    <dl>${row("Reference", `<strong>${safe(receipt.ref)}</strong>`)}${row("Date", safe(sentAt))}${row("From", `${safe(me.name)} · ${safe(me.account_masked)}`)}${row("To", safe(receipt.name))}${row("Bank", safe(bank?.name || receipt.bank.toUpperCase()))}${row("Account", safe(receipt.account))}${row("Amount", `<strong>${kes(receipt.amount)}</strong>`)}</dl>
+    <div class="sheet-actions single"><button class="btn btn-primary" data-done>Done</button></div>
+  </div></div>`;
+}
+
 function toast() {
   if (!notice) return "";
   const fresh = noticeFresh ? "fresh" : "";
@@ -232,7 +250,7 @@ function dashboard() {
         </div>
         <footer class="page-foot">${safe(config.name)} · Online banking · Simulation with synthetic data</footer>
       </main>
-    </div>${reviewSheet()}${toast()}</div>`;
+    </div>${reviewSheet()}${receiptSheet()}${toast()}</div>`;
   window.scrollTo(0, scrollY);
   bindDashboard();
 }
@@ -243,8 +261,13 @@ function bindDashboard() {
   root.querySelector("#toggle-balance").onclick = () => { hideBalance = !hideBalance; dashboard(); };
   root.querySelector("#logout").onclick = async () => {
     try { await call("/api/logout", { method: "POST" }); } catch {}
-    token = ""; sessionStorage.removeItem("simulated-bank-session"); notice = null; review = null; loginView();
+    token = ""; sessionStorage.removeItem("simulated-bank-session"); notice = null; review = null; receipt = null; loginView();
   };
+  if (receipt) {
+    const close = () => { receipt = null; dashboard(); };
+    root.querySelector("[data-done]").onclick = close;
+    root.querySelector("#receipt-backdrop").addEventListener("click", (event) => { if (event.target.id === "receipt-backdrop") close(); });
+  }
 
   const form = root.querySelector("#transfer");
   form.addEventListener("input", () => { draft = Object.fromEntries(new FormData(form)); });
@@ -274,16 +297,18 @@ async function confirmTransfer() {
   dashboard();
   try {
     const result = await call("/api/transfers", { method: "POST", body: { bank: sent.bank, account: sent.account, name: sent.name, amount: sent.amount } });
-    if (result.status === "blocked") setNotice(`Transfer blocked by ${config.name}'s own fraud checks. You have been signed out.`, "bad");
-    else setNotice(`Transfer sent through the simulated interbank switch: ${kes(sent.amount)}.`, "ok");
+    if (result.status === "blocked") setNotice(`Transfer blocked by ${config.name}'s own fraud checks. You have been signed out. Reference ${result.ref}.`, "bad");
+    else receipt = { ...sent, ref: result.ref, at: result.at };
   } catch (error) { setNotice(error.message, "bad"); }
   sending = false;
   review = null;
   await refresh();
+  root.querySelector("[data-done]")?.focus();
 }
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && review && !sending) { review = null; dashboard(); }
+  else if (event.key === "Escape" && receipt) { receipt = null; dashboard(); }
 });
 
 api("/api/config").then(value => { config = value; return refresh(); }).catch(error => {
@@ -291,5 +316,5 @@ api("/api/config").then(value => { config = value; return refresh(); }).catch(er
 });
 setInterval(() => {
   const focused = document.activeElement;
-  if (token && me && !review && !sending && !focused?.matches("input, select, textarea")) refresh();
+  if (token && me && !review && !receipt && !sending && !focused?.matches("input, select, textarea")) refresh();
 }, 2500);

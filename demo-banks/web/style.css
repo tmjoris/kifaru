@@ -330,6 +330,7 @@ a { color: inherit; }
 .sheet dt { color: var(--muted); }
 .sheet dd { font-weight: 600; text-align: right; }
 .sheet-actions { display: grid; grid-template-columns: 1fr 1.5fr; gap: .6rem; margin-top: .8rem; }
+.sheet-actions.single { grid-template-columns: 1fr; }
 .toast { position: fixed; right: 1.5rem; bottom: 1.5rem; z-index: 60; display: flex; align-items: center; gap: .65rem; max-width: min(420px, calc(100vw - 2rem)); padding: .85rem 1.1rem; color: #fff; border-radius: 14px; font-weight: 600; font-size: .86rem; box-shadow: 0 24px 50px -20px rgba(0, 0, 0, .5); }
 .toast.ok { background: #14633c; }
 .toast.bad { background: #a52a21; }
