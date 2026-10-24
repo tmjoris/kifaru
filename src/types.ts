@@ -1,5 +1,19 @@
 export type PortalScope = "institution" | "exchange";
-export type Tab = "outgoing" | "incoming" | "history" | "reports" | "knowledge" | "governance";
+export type Tab = "outgoing" | "incoming" | "history" | "risk" | "reports" | "knowledge" | "governance";
+/** Strongest basis for a risk-check flag, weakest first. */
+export type RiskTier = "reported" | "known_risk" | AlertTier;
+/** Kifaru's whole answer for one checked artefact; it never names the reporter. */
+export interface RiskSignal {
+  checked: boolean;
+  flagged: boolean;
+  tier: RiskTier | "";
+  institutions: number;
+}
+export interface RiskCheckResult {
+  checkedAt: string;
+  device: RiskSignal;
+  destination: RiskSignal;
+}
 export type Outcome = "corroborated" | "single_source_review" | "single_source_notice"
   | "below_threshold" | "needs_review" | "quarantined" | "retracted" | "expired" | "cleared";
 /** What an alert rests on: an independent match, or one institution's evidence. */
@@ -202,4 +216,38 @@ export interface DashboardData {
   riskCodes: RiskCodeReference[];
   knowledgeBaseEntries: KnowledgeBaseEntry[];
   notifications: Notification[];
+}
+
+export interface AttackSignal {
+  reportId: string;
+  reportingInstitution: string;
+  reportingInstitutionName: string;
+  submittedAt: string;
+  status: Transaction["validationStatus"];
+  score: number;
+  explanation: string;
+  reasonCodes: string[];
+  corroborationCount: number;
+  alertId: string;
+  alertState: string;
+  alertOutcome: string;
+  alertTier: string;
+  alertIssuedAt: string;
+  actions: { action: string; comment: string; at: string }[];
+}
+
+export interface AttackScenarioStatus {
+  runId: string;
+  mode: "without" | "with";
+  step: number;
+  status: "ready" | "running" | "completed" | "failed";
+  error: string;
+  standingUpheld: number;
+  standingAdverse: number;
+  firstSenderName: string;
+  secondSenderName: string;
+  receiverName: string;
+  firstAmount: number;
+  secondAmount: number;
+  signals: AttackSignal[];
 }

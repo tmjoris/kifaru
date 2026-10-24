@@ -1,7 +1,7 @@
 import type {
-  AuthSession, Bank, DashboardData, DemoStreamEvent, DemoStreamStatus, GuidedDemoStatus,
-  KnowledgeBaseEntry, Notification, PortalScope, RiskCodeReference, Transaction,
-  UploadSummary, UserAccessRequest, Validation,
+  AttackScenarioStatus, AttackSignal, AuthSession, Bank, DashboardData, DemoStreamEvent,
+  DemoStreamStatus, GuidedDemoStatus, KnowledgeBaseEntry, Notification, PortalScope, RiskCheckResult,
+  RiskCodeReference, RiskSignal, Transaction, UploadSummary, UserAccessRequest, Validation,
 } from "./types";
 import { riskCodeInfo } from "./explain";
 import { isAlerting } from "./domain";
@@ -531,6 +531,47 @@ export async function updateAlertState(
   });
 }
 
+const RISK_TIERS = ["reported", "known_risk", "corroborated", "single_source_review", "single_source_notice"];
+
+function parseRiskSignal(value: unknown): RiskSignal {
+  if (!isRecord(value) || typeof value.checked !== "boolean" || typeof value.flagged !== "boolean") {
+    throw new Error("The backend returned an invalid risk check.");
+  }
+  const tier = requiredString(value, "tier");
+  return {
+    checked: value.checked,
+    flagged: value.flagged,
+    tier: RISK_TIERS.includes(tier) ? tier as RiskSignal["tier"] : "",
+    institutions: typeof value.institutions === "number" ? value.institutions : 0,
+  };
+}
+
+/** Asks whether other institutions hold active reports on protected identifiers. */
+export async function runRiskCheck(
+  institution: string,
+  check: { deviceProfile?: string; destinationAccountHash?: string; destinationInstitution?: string },
+  signal?: AbortSignal,
+): Promise<RiskCheckResult> {
+  const payload = await fetchJson(`/api/v1/risk-check?institution=${encodeURIComponent(institution)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...(check.deviceProfile ? { device_profile: check.deviceProfile } : {}),
+      ...(check.destinationAccountHash ? {
+        destination_account_hash: check.destinationAccountHash,
+        destination_institution: check.destinationInstitution,
+      } : {}),
+    }),
+    signal,
+  });
+  if (!isRecord(payload)) throw new Error("The backend returned an invalid risk check.");
+  return {
+    checkedAt: requiredString(payload, "checked_at"),
+    device: parseRiskSignal(payload.device),
+    destination: parseRiskSignal(payload.destination),
+  };
+}
+
 export async function updateReportLifecycle(
   reportId: string,
   state: "retracted" | "expired",
@@ -662,6 +703,77 @@ export async function advanceGuidedDemo(signal?: AbortSignal) {
 export async function resetGuidedDemo(signal?: AbortSignal) {
   return parseGuidedDemo(await fetchJson("/api/v1/admin/guided-demo/reset", {
     method: "POST",
+    signal,
+  }));
+}
+
+function parseAttackSignal(payload: unknown): AttackSignal {
+  const record = isRecord(payload) ? payload : {};
+  return {
+    reportId: requiredString(record, "report_id"),
+    reportingInstitution: requiredString(record, "reporting_institution"),
+    reportingInstitutionName: requiredString(record, "reporting_institution_name"),
+    submittedAt: requiredString(record, "submitted_at"),
+    status: backendStatus(record.status),
+    score: requiredNumber(record, "score"),
+    explanation: requiredString(record, "explanation"),
+    reasonCodes: Array.isArray(record.reason_codes) ? record.reason_codes.map(String) : [],
+    corroborationCount: requiredNumber(record, "corroboration_count"),
+    alertId: requiredString(record, "alert_id"),
+    alertState: requiredString(record, "alert_state"),
+    alertOutcome: requiredString(record, "alert_outcome"),
+    alertTier: requiredString(record, "alert_tier"),
+    alertIssuedAt: requiredString(record, "alert_issued_at"),
+    actions: (Array.isArray(record.actions) ? record.actions : []).filter(isRecord).map((action) => ({
+      action: requiredString(action, "action"),
+      comment: requiredString(action, "comment"),
+      at: requiredString(action, "at"),
+    })),
+  };
+}
+
+function parseAttackScenario(payload: unknown): AttackScenarioStatus {
+  if (!isRecord(payload)) {
+    throw new Error("The backend returned an invalid attack scenario state.");
+  }
+  const status = requiredString(payload, "status");
+  const mode = requiredString(payload, "mode");
+  if (!["ready", "running", "completed", "failed"].includes(status) || !["without", "with"].includes(mode)) {
+    throw new Error("The attack scenario returned an unknown state.");
+  }
+  return {
+    runId: requiredString(payload, "run_id"),
+    mode: mode as AttackScenarioStatus["mode"],
+    step: requiredNumber(payload, "step"),
+    status: status as AttackScenarioStatus["status"],
+    error: requiredString(payload, "error"),
+    standingUpheld: requiredNumber(payload, "standing_upheld"),
+    standingAdverse: requiredNumber(payload, "standing_adverse"),
+    firstSenderName: requiredString(payload, "first_sender_name"),
+    secondSenderName: requiredString(payload, "second_sender_name"),
+    receiverName: requiredString(payload, "receiver_name"),
+    firstAmount: requiredNumber(payload, "first_amount"),
+    secondAmount: requiredNumber(payload, "second_amount"),
+    signals: Array.isArray(payload.signals) ? payload.signals.map(parseAttackSignal) : [],
+  };
+}
+
+export async function loadAttackScenario(signal?: AbortSignal) {
+  return parseAttackScenario(await fetchJson("/api/v1/admin/attack-scenario", { signal }));
+}
+
+export async function advanceAttackScenario(signal?: AbortSignal) {
+  return parseAttackScenario(await fetchJson("/api/v1/admin/attack-scenario/advance", {
+    method: "POST",
+    signal,
+  }));
+}
+
+export async function resetAttackScenario(mode: AttackScenarioStatus["mode"], signal?: AbortSignal) {
+  return parseAttackScenario(await fetchJson("/api/v1/admin/attack-scenario/reset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
     signal,
   }));
 }

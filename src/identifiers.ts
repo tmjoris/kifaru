@@ -89,6 +89,19 @@ async function hmacHex(key: CryptoKey, value: string) {
   return [...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * Protects one identifier the same way as an upload. The demo banks prefix each
+ * value with a per-run key before hashing, so pass that key to match them.
+ */
+export async function protectIdentifier(value: string, runKey = "", secret = DEMO_UPLOAD_KEY) {
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const normalized = value.replace(/\s+/g, "").toLowerCase();
+  const prefix = runKey.trim();
+  return `sha256:${await hmacHex(key, prefix ? `${prefix}:${normalized}` : normalized)}`;
+}
+
 /** Replaces raw identifiers with `sha256:` HMAC digests and reports how many were hashed. */
 export async function protectIdentifiers(csv: string, secret = DEMO_UPLOAD_KEY) {
   const rows = parseCsv(csv);

@@ -29,6 +29,12 @@ func (a *App) submitReport(w http.ResponseWriter, r *http.Request, channel strin
 		writeError(w, apiErr.status, apiErr.message)
 		return
 	}
+	if truthy(report.Evidence["synthetic_bank_demo"]) && result["idempotent_replay"] != true {
+		if err := a.recordBankDemoEvent(r.Context(), report, result); err != nil {
+			writeError(w, http.StatusInternalServerError, "report accepted but demo stream event could not be recorded")
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -65,6 +71,10 @@ type apiError struct {
 
 func (a *App) process(ctx context.Context, report ReportIn, channel string) (map[string]any, *apiError) {
 	start := time.Now()
+	if attackScenarioRun(report.Evidence) != "" && !fromAttackScenario(ctx) {
+		return nil, &apiError{http.StatusUnprocessableEntity,
+			"evidence field attack_scenario is reserved for the attack scenario"}
+	}
 	if err := validateReport(report); err != nil {
 		return nil, &apiError{http.StatusUnprocessableEntity, err.Error()}
 	}
@@ -695,7 +705,12 @@ func (a *App) score(
 
 	validated := numberOr(cfg["validated_threshold"], defaultValidated)
 	insufficient := numberOr(cfg["insufficient_threshold"], defaultInsufficient)
-	standing, err := reporterStanding(ctx, store, report.ReportingInstitution)
+	var standing ReporterStanding
+	if run := attackScenarioRun(report.Evidence); run != "" {
+		standing, err = attackScenarioStanding(ctx, store, run, report.ReportingInstitution)
+	} else {
+		standing, err = reporterStanding(ctx, store, report.ReportingInstitution)
+	}
 	if err != nil {
 		return Validation{}, err
 	}
@@ -718,7 +733,9 @@ func (a *App) score(
 	switch {
 	case score >= validated && len(corro) > 0:
 		status = statusCorroborated
-	case singleSourceEligible && victimConfirmed && trusted:
+	// Presentation override: the independent demo banks have no receiver
+	// track record, so a victim-confirmed report from them alerts at once.
+	case singleSourceEligible && victimConfirmed && (trusted || truthy(report.Evidence["synthetic_bank_demo"])):
 		status = statusSingleSourceReview
 	case singleSourceEligible && (knownBad || trusted):
 		status = statusSingleSourceNotice
@@ -742,8 +759,8 @@ func (a *App) score(
 }
 
 // reporterStanding summarises receiver decisions on an institution's recent
-// alerts. Retracted alerts are neutral, and scripted guided-scenario outcomes
-// are ignored because no receiver made them.
+// alerts. Retracted alerts are neutral, and scripted guided and attack
+// scenario outcomes are ignored because no receiver made them.
 func reporterStanding(ctx context.Context, store dbRunner, institution string) (ReporterStanding, error) {
 	var standing ReporterStanding
 	err := store.QueryRow(ctx, `SELECT
@@ -753,15 +770,21 @@ func reporterStanding(ctx context.Context, store dbRunner, institution string) (
 		JOIN reports r ON r.report_id=a.report_id
 		WHERE a.reporting_institution=$1
 		  AND a.updated_at >= NOW() - make_interval(days => $2::int)
-		  AND COALESCE(r.evidence,'') NOT LIKE '%"guided_demo":true%'`,
+		  AND COALESCE(r.evidence,'') NOT LIKE '%"guided_demo":true%'
+		  AND COALESCE(r.evidence,'') NOT LIKE '%"attack_scenario":%'`,
 		institution, standingWindowDays).Scan(&standing.Upheld, &standing.Adverse)
 	if err != nil {
 		return ReporterStanding{}, err
 	}
+	return standing.evaluated(), nil
+}
+
+// evaluated sets Good from the resolved-outcome record.
+func (standing ReporterStanding) evaluated() ReporterStanding {
 	resolved := standing.Upheld + standing.Adverse
 	standing.Good = resolved >= standingMinResolved &&
 		float64(standing.Adverse) <= standingMaxAdverseRate*float64(resolved)
-	return standing, nil
+	return standing
 }
 
 // alertTierFor returns the alert tier for a validation status, or "" when the
