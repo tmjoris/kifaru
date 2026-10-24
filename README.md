@@ -129,8 +129,8 @@ independent service with customer sign-in, account balances, transfer history,
 bank-specific fraud controls, and an analyst workspace. Flagged transfers
 published through a bank's Kifaru connector enter the retained SOC event stream
 with their sending institution and policy outcome. See [DEMO-GUIDE.md](DEMO-GUIDE.md)
-for the seven-tab setup, and [PLAN.md](PLAN.md) for manual and automated
-rehearsal steps.
+for the seven-tab setup, and [TestWork.md](TestWork.md) for expected results
+and the test plan.
 
 Single-source review needs reporter standing. Rather than borrow or change
 NCBA's real record, the replay gives NCBA a track record of nine upheld alerts

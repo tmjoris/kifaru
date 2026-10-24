@@ -58,9 +58,22 @@ Report lines: NCBA 0.70, KCB 0.45, Equity 0.70.
 | 6. Return | Nothing to return | KES 85,000 returned to NCBA |
 | Final balances | Grace 327,500; Faith 380,000; Kiprono 0 | Grace 412,500; Faith 530,000; Kiprono 0 |
 
-Only the With Kifaru column has been run end to end since the risk check was
-added. Run the Without Kifaru column first and correct this table if it
-differs.
+Both columns were run end to end on 2026-10-24. Without Kifaru, NCBA's email
+reaches the shared mailbox and Equity gets no alert.
+
+### Sessions, receipts and the switch
+
+| Case | Expected |
+| --- | --- |
+| Successful payment | Receipt with reference, date, payee, bank, account and amount; the reference also shows in the activity list |
+| Blocked payment | Notice gives the payment's reference |
+| No sign-in, transfer or withdrawal for `SESSION_IDLE_MINUTES` (default 15) | Next request returns 401 with "You were signed out after N minutes without activity"; ops feed logs it; page refreshes do not extend the session |
+| Session ended by a fraud block | 401 message asks the customer to contact customer care |
+| Same credit sent twice through the switch | Credited once; second answer has `"duplicate": true`; switch log shows "repeat ignored" |
+| Same credit sent twice straight to the bank | Credited once |
+| Same return sent twice | Refunded once |
+| Switch message without `ref` | 400 |
+| Failed credit or return | Not recorded as settled, so a retry is delivered |
 
 ## 1. Go unit tests in `demo-banks/`
 
@@ -85,8 +98,15 @@ stub Kifaru and the switch with `httptest.Server` instances and point
 - **Ledger:** amount validation, available-balance checks, held-account
   transfers and withdrawals refused, frozen-on-arrival credits, partial and full
   returns, and repeating a return.
-- **Switch:** unknown destination, credit failure refunding the sender, and
-  return routing.
+- **Switch:** unknown destination, missing reference, credit failure refunding
+  the sender, return routing, and every row of the sessions, receipts and
+  switch table above. Send two identical messages at once and check the
+  account is credited once; the second gets 409 or a duplicate answer,
+  depending on timing.
+- **Sessions:** expiry after the idle limit (set a short limit through
+  `SESSION_IDLE_MINUTES` or a clock you control), activity extending it,
+  `/api/me` leaving it unchanged, and the reason returned after expiry or a
+  fraud block.
 - **No raw identifiers:** reports and logs never contain a clear account
   number, customer name or device ID.
 
@@ -112,8 +132,8 @@ mocked responses. A working script for the manual run, the Kifaru analyst
 views and the director replay was used on 2026-10-24; turn it into specs under
 `e2e/` with a config that starts the API, Vite and the banks.
 
-- Each customer sign-in, transfer, blocked attempt, forced sign-out and
-  sign-out.
+- Each customer sign-in, transfer receipt, blocked attempt with its
+  reference, forced sign-out, idle sign-out and sign-out.
 - Operator connector toggles, Equity alert, hold and return.
 - The director in both modes, checking ledgers and alert states at each step.
 - Kifaru in a separate browser context: Equity's **Alerts received**, NCBA's

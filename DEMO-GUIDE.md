@@ -189,8 +189,15 @@ For a live connected run, select **Prepare reporter history** in the director.
 It ensures NCBA has enough synthetic, upheld alerts through Kifaru's API to
 meet the single-source reporter-standing rule. It is safe to run again and
 does not keep adding history once NCBA qualifies. Use only the demo database.
-See [PLAN.md](PLAN.md) for the manual exercise and automated test plan. The
-staff-portal replay remains available as a fallback.
+See [TestWork.md](TestWork.md) for the expected results and the test plan.
+The staff-portal replay remains available as a fallback.
+
+Each successful payment opens a receipt with its reference, and a blocked
+payment's notice gives its reference too. A customer who signs in, sends or
+withdraws nothing for 15 minutes is signed out with a message saying why.
+Set `SESSION_IDLE_MINUTES` before `go run .` to change the limit. The switch
+settles each transfer reference once, so a repeated credit or return changes
+nothing.
 
 ## Screen setup
 
