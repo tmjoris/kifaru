@@ -2,7 +2,9 @@ package main
 
 import (
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Customer is an online banking customer. Every customer and account is
@@ -82,6 +84,16 @@ func env(key, fallback string) string {
 		return strings.TrimSuffix(value, "/")
 	}
 	return fallback
+}
+
+// sessionIdle is how long a customer stays signed in without a sign-in,
+// transfer or withdrawal. Set SESSION_IDLE_MINUTES to change it.
+func sessionIdle() time.Duration {
+	minutes, err := strconv.Atoi(env("SESSION_IDLE_MINUTES", "15"))
+	if err != nil || minutes <= 0 {
+		minutes = 15
+	}
+	return time.Duration(minutes) * time.Minute
 }
 
 func kifaruAPI() string      { return env("KIFARU_API_URL", "http://127.0.0.1:8000") }

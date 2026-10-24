@@ -96,8 +96,9 @@ type AlertView struct {
 }
 
 type session struct {
-	username string
-	device   string
+	username   string
+	device     string
+	lastActive time.Time
 }
 
 // Bank is one simulated bank: its own customers, ledger, fraud engine and
@@ -112,6 +113,7 @@ type Bank struct {
 	resetAt     time.Time
 	accounts    map[string]*Account
 	sessions    map[string]session
+	ended       map[string]string
 	deviceUse   map[string]map[string]time.Time
 	blocked     map[string]bool
 	transfers   []*Transfer
@@ -145,6 +147,7 @@ func (b *Bank) resetLocked(salt string, connector bool) {
 		b.accounts[customer.Username] = &Account{Customer: customer, Balance: customer.Balance}
 	}
 	b.sessions = map[string]session{}
+	b.ended = map[string]string{}
 	b.deviceUse = map[string]map[string]time.Time{}
 	b.blocked = map[string]bool{}
 	b.transfers, b.credits, b.withdrawals = nil, nil, nil
@@ -275,7 +278,7 @@ func (b *Bank) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := randomID(16)
-	b.sessions[token] = session{username: account.Username, device: device}
+	b.sessions[token] = session{username: account.Username, device: device, lastActive: time.Now()}
 	if b.deviceUse[device] == nil {
 		b.deviceUse[device] = map[string]time.Time{}
 	}
@@ -300,19 +303,53 @@ func contains(values []string, value string) bool {
 	return false
 }
 
+func sessionToken(r *http.Request) string {
+	return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+}
+
+// sessionFor returns the caller's session. A session ends after sessionIdle
+// without a sign-in, transfer or withdrawal; page refreshes do not extend it.
 func (b *Bank) sessionFor(r *http.Request) (session, *Account, bool) {
-	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	token := sessionToken(r)
 	current, ok := b.sessions[token]
 	if !ok {
 		return session{}, nil, false
 	}
-	return current, b.accounts[current.username], true
+	account := b.accounts[current.username]
+	if idle := sessionIdle(); time.Since(current.lastActive) > idle {
+		minutes := fmt.Sprintf("%d minutes", int(idle.Minutes()))
+		if idle == time.Minute {
+			minutes = "1 minute"
+		}
+		delete(b.sessions, token)
+		b.ended[token] = "You were signed out after " + minutes + " without activity. Please sign in again."
+		b.event("", "%s's session ended after %s without activity", account.Name, minutes)
+		return session{}, nil, false
+	}
+	return current, account, true
+}
+
+// touch records customer activity on the caller's session.
+func (b *Bank) touch(r *http.Request) {
+	token := sessionToken(r)
+	if current, ok := b.sessions[token]; ok {
+		current.lastActive = time.Now()
+		b.sessions[token] = current
+	}
+}
+
+// signInAgain tells a caller without a session why it ended.
+func (b *Bank) signInAgain(r *http.Request) string {
+	if reason := b.ended[sessionToken(r)]; reason != "" {
+		return reason
+	}
+	return "Please sign in again."
 }
 
 func (b *Bank) logout(w http.ResponseWriter, r *http.Request) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	delete(b.sessions, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+	delete(b.sessions, sessionToken(r))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -321,7 +358,7 @@ func (b *Bank) me(w http.ResponseWriter, r *http.Request) {
 	defer b.mu.Unlock()
 	_, account, ok := b.sessionFor(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "Please sign in again.")
+		writeError(w, http.StatusUnauthorized, b.signInAgain(r))
 		return
 	}
 	transfers := []*Transfer{}
@@ -441,10 +478,12 @@ func (b *Bank) transfer(w http.ResponseWriter, r *http.Request) {
 	b.mu.Lock()
 	current, account, ok := b.sessionFor(r)
 	if !ok {
+		message := b.signInAgain(r)
 		b.mu.Unlock()
-		writeError(w, http.StatusUnauthorized, "Please sign in again.")
+		writeError(w, http.StatusUnauthorized, message)
 		return
 	}
+	b.touch(r)
 	if _, known := bankByID(request.Bank); !known || request.Account == "" {
 		b.mu.Unlock()
 		writeError(w, http.StatusBadRequest, "Choose a bank and enter an account number.")
@@ -494,7 +533,7 @@ func (b *Bank) transfer(w http.ResponseWriter, r *http.Request) {
 		b.lockOutDevice(current.device)
 		b.mu.Unlock()
 		go b.investigate(transfer)
-		writeJSON(w, http.StatusOK, map[string]any{"status": "blocked",
+		writeJSON(w, http.StatusOK, map[string]any{"status": "blocked", "ref": transfer.Ref, "at": transfer.At,
 			"message": "This transfer has been blocked for your security and you have been signed out. Please contact customer care."})
 		return
 	}
@@ -524,7 +563,7 @@ func (b *Bank) transfer(w http.ResponseWriter, r *http.Request) {
 	if publish {
 		go b.publish(transfer, "flagged transfer", 0)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "completed",
+	writeJSON(w, http.StatusOK, map[string]any{"status": "completed", "ref": transfer.Ref, "at": transfer.At,
 		"message": fmt.Sprintf("%s sent to %s %s.", kes(transfer.Amount), transfer.ToBankName, transfer.ToAccount)})
 }
 
@@ -536,6 +575,7 @@ func (b *Bank) lockOutDevice(device string) {
 	for token, current := range b.sessions {
 		if current.device == device {
 			delete(b.sessions, token)
+			b.ended[token] = "You were signed out after a blocked payment. Please contact customer care."
 			ended++
 		}
 	}
@@ -686,9 +726,10 @@ func (b *Bank) withdraw(w http.ResponseWriter, r *http.Request) {
 	defer b.mu.Unlock()
 	_, account, ok := b.sessionFor(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "Please sign in again.")
+		writeError(w, http.StatusUnauthorized, b.signInAgain(r))
 		return
 	}
+	b.touch(r)
 	if request.Amount <= 0 || request.Amount > account.Balance {
 		writeError(w, http.StatusBadRequest, "Enter an amount up to your available balance.")
 		return
@@ -739,6 +780,13 @@ func (b *Bank) interbankCredit(w http.ResponseWriter, r *http.Request) {
 	if account == nil {
 		writeError(w, http.StatusNotFound, "no such account")
 		return
+	}
+	// A retried credit with a reference already applied changes nothing.
+	for _, credit := range b.credits {
+		if request.Ref != "" && credit.Ref == request.Ref {
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true, "duplicate": true})
+			return
+		}
 	}
 	account.Balance += request.Amount
 	credit := &Credit{Ref: request.Ref, At: time.Now(), Account: account.Account, FromBank: request.FromBank,
