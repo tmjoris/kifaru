@@ -95,6 +95,8 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		a.streamAlerts(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/validations/"):
 		a.validationDetail(w, r, strings.TrimPrefix(path, "/v1/validations/"))
+	case r.Method == http.MethodPost && path == "/v1/risk-check":
+		a.riskCheck(w, r)
 	case r.Method == http.MethodPost && path == "/v1/reports":
 		a.submitReport(w, r, "rest")
 	case r.Method == http.MethodPost && path == "/v1/reports/batch":
@@ -160,6 +162,21 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.resetGuidedDemo(w, r)
+	case r.Method == http.MethodGet && path == "/v1/admin/attack-scenario":
+		if !requireRole(w, user, "staff") {
+			return
+		}
+		a.attackScenarioStatus(w, r)
+	case r.Method == http.MethodPost && path == "/v1/admin/attack-scenario/advance":
+		if !requireRole(w, user, "staff") {
+			return
+		}
+		a.advanceAttackScenario(w, r)
+	case r.Method == http.MethodPost && path == "/v1/admin/attack-scenario/reset":
+		if !requireRole(w, user, "staff") {
+			return
+		}
+		a.resetAttackScenario(w, r)
 	case r.Method == http.MethodPatch && strings.HasPrefix(path, "/v1/admin/user-requests/"):
 		requestID := strings.TrimPrefix(path, "/v1/admin/user-requests/")
 		if requestID == "" {
