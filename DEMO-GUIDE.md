@@ -31,61 +31,226 @@ that is `http://127.0.0.1:5173`.
 
 For the hosted demo, replace `http://127.0.0.1:5173` with the deployed frontend
 URL. The password for these Kifaru accounts is `KifaruDemo2026!`.
+Leave time for a new deploy to finish first: the replay needs migration `009`.
 
-## Start everything (local)
+## Start from scratch
 
-Run each block in its own terminal, from the repository root. The first time,
-run `npm ci` to install the frontend dependencies.
+This takes you from a computer with nothing installed to a finished run. It
+works on Windows 10 or 11 (PowerShell) and on Ubuntu 22.04 or 24.04. Everything
+runs on your own machine and uses synthetic data only. Allow about 30 minutes,
+most of it downloads.
 
-Bash (macOS, Linux, Git Bash):
+### 1. Install the tools
 
-```bash
-# 1. Postgres (skip if you already have one)
-docker run -d --rm --name kifaru-pg -e POSTGRES_PASSWORD=kifaru -e POSTGRES_DB=kifaru -p 55432:5432 -v kifaru-pgdata:/var/lib/postgresql/data postgres:16
+You need four tools:
 
-# 2. API
-cd backend && DATABASE_URL="postgres://postgres:kifaru@localhost:55432/kifaru?sslmode=disable" PORT=8000 go run .
+| Tool | Version | Used for |
+| --- | --- | --- |
+| Git | any | getting the code |
+| Go | 1.22 or later | the Kifaru API and the three demo banks |
+| Node.js | 22.18 or later, or 24 | the Kifaru web app |
+| Docker | any recent | the PostgreSQL database |
 
-# 3. Frontend
-npm run dev
-```
-
-PowerShell (Windows):
+**Windows (PowerShell).** `winget` comes with Windows 11 and current Windows 10.
 
 ```powershell
-# 1. Postgres (skip if you already have one)
+winget install --id Git.Git -e
+winget install --id GoLang.Go -e
+winget install --id OpenJS.NodeJS.LTS -e
+winget install --id Docker.DockerDesktop -e
+```
+
+Close PowerShell and open a new window so the new tools are on your path. Then
+start **Docker Desktop** and wait until it says it is running. The first start
+may ask you to turn on WSL 2 and restart the PC.
+
+**Ubuntu.**
+
+```bash
+sudo apt update
+sudo apt install -y git curl docker.io
+sudo snap install go --classic
+sudo snap install node --classic --channel=22
+sudo usermod -aG docker "$USER"
+```
+
+Log out and back in so the `docker` group applies. (Until then, put `sudo`
+before each `docker` command.) Ubuntu's own `golang` package is too old, which
+is why Go comes from `snap`.
+
+**Check the versions** (same on both systems):
+
+```
+git --version
+go version
+node --version
+docker --version
+```
+
+Go must be 1.22 or later and Node v22.18 or later. If either is older, install
+a newer one before going on.
+
+### 2. Get the code
+
+```
+git clone https://github.com/tmjoris/kifaru.git
+cd kifaru
+npm ci
+```
+
+`main` has everything you need. `npm ci` installs the web app's dependencies and
+only has to run once.
+
+`demo-credentials.txt` is not in the repository. You do not need it for this
+guide, because the logins you use are in the table above. It only holds the
+analyst logins for the other licensed banks. If you want it, copy it from the
+machine that has it into the repository root.
+
+### 3. Start the four services
+
+Open four terminals in the `kifaru` folder and start them in this order. Each
+one keeps running, so leave it open.
+
+**Terminal 1: database.**
+
+```
 docker run -d --rm --name kifaru-pg -e POSTGRES_PASSWORD=kifaru -e POSTGRES_DB=kifaru -p 55432:5432 -v kifaru-pgdata:/var/lib/postgresql/data postgres:16
+```
 
-# 2. API
-cd backend; $env:DATABASE_URL="postgres://postgres:kifaru@localhost:55432/kifaru?sslmode=disable"; $env:PORT="8000"; go run .
+The first run downloads the image. Wait about five seconds after it returns
+before starting the API. The `kifaru-pgdata` volume keeps your data when the
+container stops.
 
-# 3. Frontend
+**Terminal 2: Kifaru API.**
+
+Ubuntu:
+
+```bash
+cd backend
+DATABASE_URL="postgres://postgres:kifaru@localhost:55432/kifaru?sslmode=disable" PORT=8000 go run .
+```
+
+Windows:
+
+```powershell
+cd backend
+$env:DATABASE_URL="postgres://postgres:kifaru@localhost:55432/kifaru?sslmode=disable"
+$env:PORT="8000"
+go run .
+```
+
+It is ready when it prints `KIFARU Go API listening on :8000`. On the first
+start it creates the tables and the demo logins. If it stops with
+`connect to PostgreSQL`, the database was not ready yet. Wait a few seconds and
+run it again. It re-creates the demo logins on every start, so the passwords in
+this guide always work.
+
+**Terminal 3: Kifaru web app.**
+
+```
 npm run dev
 ```
 
-The `kifaru-pgdata` volume keeps the database when the container stops. The API
-re-creates the demo logins on every start, so the passwords above always work.
-To start from an empty database, stop the container and run
-`docker volume rm kifaru-pgdata`.
+It is ready when it shows a local address of `http://127.0.0.1:5173/`.
 
-PowerShell `$env:` variables last only for that terminal window, so set them
-again in a new one. If `docker` reports that it cannot connect to
-`dockerDesktopLinuxEngine`, start Docker Desktop. If it then keeps returning
-`500 Internal Server Error`, quit Docker Desktop, run `wsl --shutdown`, and
-start it again.
+**Terminal 4: the three demo banks and the director.** Start the API first,
+because the banks talk to it.
 
-Then open <http://127.0.0.1:5173/staff>. To use the hosted version, open your
-Render frontend URL and add `/staff`. Leave time for the deploy first: the
-replay needs migration `009`.
+```
+cd demo-banks
+go run .
+```
+
+It is ready when it prints that the director is listening on port 9100 and
+each bank on ports 9101, 9102 and 9103.
+
+### 4. Check that it works
+
+| Service | Address | What you should see |
+| --- | --- | --- |
+| Kifaru API | <http://127.0.0.1:8000/health> | a short JSON reply |
+| Kifaru web app | <http://127.0.0.1:5173/staff> | the staff sign-in page |
+| Director | <http://127.0.0.1:9100> | the scenario page with three bank frames |
+| NCBA, KCB, Equity | ports 9101, 9102, 9103 | each bank's sign-in page |
+
+Sign in to the staff page with the staff email and password from the **Logins**
+table. If you get in, the API and the database are working.
+
+If something is wrong:
+
+- **A port is taken.** Stop whatever uses it, or move the demo banks with the
+  variables in the table below. The API port is the `PORT` variable.
+- **`docker` cannot connect to `dockerDesktopLinuxEngine` (Windows).** Start
+  Docker Desktop. If it then keeps returning `500 Internal Server Error`, quit
+  Docker Desktop, run `wsl --shutdown`, and start it again.
+- **`docker: permission denied` (Ubuntu).** Log out and back in after the
+  `usermod` step, or put `sudo` before the command.
+- **A PowerShell variable seems to be ignored.** `$env:` values last only for
+  that terminal window. Set them again in a new one.
+- **The director says to start all three banks.** Terminal 4 is not running, or
+  it stopped. Start it again.
+- **You changed a file in `demo-banks/web`.** The pages are built into the
+  program, so stop terminal 4 with Ctrl+C and run `go run .` again.
+
+### 5. Settings you can change
+
+The defaults suit a single machine. Set a variable in the terminal before `go run .`
+(`$env:NAME="value"` on Windows, `NAME=value` before the command on Ubuntu).
+
+| Variable | Used by | Default | What it does |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | API | none, required | PostgreSQL connection string |
+| `PORT` | API | `8000` | API port |
+| `NETWORK_PORT` | demo banks | `9100` | director and interbank switch port |
+| `NCBA_PORT`, `KCB_PORT`, `EQUITY_PORT` | demo banks | `9101`, `9102`, `9103` | each bank's port |
+| `KIFARU_API_URL` | demo banks | `http://127.0.0.1:8000` | where the banks send reports and risk checks. Set it to the hosted API to run against the hosted demo. |
+| `KIFARU_WEB_URL` | demo banks | `http://127.0.0.1:5173` | where the director's Kifaru staff link points |
+| `KIFARU_DEMO_PASSWORD` | demo banks | `KifaruDemo2026!` | the Kifaru analyst password the banks sign in with. Keep it the same as the password at the top of this guide. |
+| `NETWORK_URL` | demo banks | the director's own address | where the banks find the interbank switch |
+| `DEMO_HASH_KEY` | demo banks | built-in demo key | key used to hash account and device details before they are sent |
+| `SESSION_IDLE_MINUTES` | demo banks | `15` | idle time before a customer is signed out |
+
+### 6. Run the demo from start to finish
+
+1. Complete steps 1 to 4 and sign in to the staff page once.
+2. Open the director at <http://127.0.0.1:9100> and, in other tabs, the three
+   customer pages listed under **Independent bank apps**.
+3. In the director, select **Prepare reporter history**. It is safe to repeat.
+4. **Run 1.** Select **Without Kifaru**. This resets all three banks and
+   switches their Kifaru connectors off. Select **Next attacker step** six
+   times and talk through each step.
+5. **Run 2.** Select **With Kifaru**. This resets everything again and switches
+   all three connectors on, so you do not need to use the connector switches.
+   Select **Next attacker step** six times. Watch the Equity analyst frame for
+   the alert and the staff page for the SOC events.
+6. To rehearse again, select **Without Kifaru** or **With Kifaru** once more.
+   Reset once more just before you present.
+
+For a manual run instead of the director, sign in to a customer tab, turn the
+**Kifaru connector** on in that bank's `/ops` page, and make transfers by hand.
+
+### 7. Stop everything
+
+Press Ctrl+C in terminals 4, 3 and 2. Then stop the database:
+
+```
+docker stop kifaru-pg
+```
+
+The container removes itself when it stops, and your data stays in the
+`kifaru-pgdata` volume. To wipe the database and start clean, run
+`docker volume rm kifaru-pgdata` after stopping the container.
 
 ## Independent bank apps
 
 The separate-service rehearsal lives in `demo-banks/`. Each service binds to
-localhost and uses synthetic classroom accounts only. Start the Kifaru API as
-above, then run the demo services in a separate terminal:
+localhost and uses synthetic classroom accounts only. This is terminal 4 in
+**Start from scratch**. Start the Kifaru API first, then run the demo services in
+a separate terminal:
 
-```bash
-cd demo-banks && go run .
+```
+cd demo-banks
+go run .
 ```
 
 The pages are embedded in the program, so restart `go run .` after any change
@@ -162,10 +327,10 @@ second payment from the same customer to that beneficiary adds 0.25 and is
 blocked, and so is a payment from a device another customer just used. A block
 signs out every session on that device and refuses its sign-ins until the next
 reset. The fraud desk then calls the customers, account holder included, who
-recently paid the same beneficiary, and they confirm the fraud. Reset from the
-director to sign in from that browser again. When that
-bank's Kifaru connector is enabled,
-flagged transfer reports use Kifaru's report API and appear in the staff SOC
+recently paid the same beneficiary, and they confirm the fraud. Select
+**Without Kifaru** or **With Kifaru** in the director to reset and sign in from
+that browser again. When that bank's Kifaru connector is enabled, flagged
+transfer reports use Kifaru's report API and appear in the staff SOC
 event stream with the sending bank and policy outcome. The receiving bank's
 analyst tab shows the resulting alert when policy issues one.
 
@@ -217,6 +382,11 @@ nothing.
 - **Fit:** if the replay doesn't fit the projector, zoom the browser to 90%.
 
 ## Running the fake attack
+
+This section describes the replay in the Kifaru staff portal. The bank director
+at port 9100 runs the same story with real transfers across the three bank
+apps; it uses **Next attacker step** and is covered in **Run the demo from start
+to finish** above.
 
 **→, Page Down or Space** advances one step, so a presentation clicker works.
 
