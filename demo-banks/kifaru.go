@@ -20,7 +20,7 @@ import (
 // match a later one.
 func protect(salt, value string) string {
 	mac := hmac.New(sha256.New, []byte(hashKey()))
-	normalized := strings.ToLower(strings.Join(strings.Fields(value), ""))
+	normalized := strings.Join(strings.Fields(value), "")
 	if salt != "" {
 		normalized = salt + ":" + normalized
 	}
