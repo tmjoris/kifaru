@@ -8,7 +8,10 @@
     "server": "cd backend && go run .",
     "build": "tsc --noEmit && vite build && mkdir -p dist/staff && cp dist/index.html dist/staff/index.html",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --experimental-strip-types --test src/domain.test.ts"
+    "test": "node --experimental-strip-types --test src/domain.test.ts demo-banks/web/common.test.mjs",
+    "test:banks": "cd demo-banks && go test -race ./...",
+    "smoke": "node scripts/smoke.mjs",
+    "audit": "npm audit --audit-level=high"
   },
   "dependencies": {
     "react": "^19.1.0",

@@ -774,6 +774,10 @@ func (b *Bank) interbankCredit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+	if request.Amount <= 0 {
+		writeError(w, http.StatusBadRequest, "amount must be positive")
+		return
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	account := b.accountByNumber(request.ToAccount)
@@ -812,6 +816,10 @@ func (b *Bank) interbankReturn(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decode(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if request.Amount <= 0 {
+		writeError(w, http.StatusBadRequest, "amount must be positive")
 		return
 	}
 	b.mu.Lock()

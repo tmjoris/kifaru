@@ -1,10 +1,12 @@
 # Demo bank test work
 
-The independent demo banks (`demo-banks/`) have no automated tests yet. This
-is the work needed to cover them, the Kifaru risk check they call, and the
-director's scripted replay. The Kifaru API already has Go tests
-(`backend/*_test.go`, including `risk_check_test.go`) and the frontend has
-`src/domain.test.ts`.
+The independent demo banks (`demo-banks/`) now have automated tests for the
+bank, switch and director logic: see [TESTING.md](TESTING.md) for what runs and
+how. This file keeps the expected results those tests assert, and the work
+that is still open: section 2 (integration tests against the real Kifaru API)
+and section 3 (browser end-to-end tests). The Kifaru API's own Go tests
+(`backend/*_test.go`, including `risk_check_test.go`) and the frontend's
+`src/domain.test.ts` were already in place.
 
 All data stays synthetic. Tests that need PostgreSQL drop every table, so
 point `TEST_DATABASE_URL` only at a throwaway database such as `kifaru_test`,
@@ -75,7 +77,13 @@ reaches the shared mailbox and Equity gets no alert.
 | Switch message without `ref` | 400 |
 | Failed credit or return | Not recorded as settled, so a retry is delivered |
 
-## 1. Go unit tests in `demo-banks/`
+## 1. Go unit tests in `demo-banks/` (mostly done)
+
+Implemented in `demo-banks/*_test.go`, with smoke, security and load tests
+beside them; see [TESTING.md](TESTING.md). Not covered yet from this list:
+partial returns of a credit, and a check that the banks' logs hold no clear
+account number, name or device ID (reports and risk checks sent to Kifaru are
+checked).
 
 Add `*_test.go` files in package `main`. Drive the handlers with `httptest`;
 stub Kifaru and the switch with `httptest.Server` instances and point
@@ -110,7 +118,7 @@ stub Kifaru and the switch with `httptest.Server` instances and point
 - **No raw identifiers:** reports and logs never contain a clear account
   number, customer name or device ID.
 
-## 2. Integration tests
+## 2. Integration tests (open)
 
 Run the real Kifaru API against a disposable database (`TEST_DATABASE_URL`)
 and all three banks plus the network on free ports, each with fresh state.
@@ -125,7 +133,7 @@ Skip when the database variable is unset.
   earlier reports retracted).
 - One bank cannot change another bank's state except through the switch.
 
-## 3. Browser end-to-end tests
+## 3. Browser end-to-end tests (open)
 
 Use Playwright (`@playwright/test`) against the real local services, never
 mocked responses. A working script for the manual run, the Kifaru analyst
