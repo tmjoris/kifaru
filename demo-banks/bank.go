@@ -530,7 +530,7 @@ func (b *Bank) transfer(w http.ResponseWriter, r *http.Request) {
 		transfer.Status = "blocked"
 		b.event("bad", "Blocked %s from %s to %s %s (score %.2f)", kes(transfer.Amount),
 			account.Name, transfer.ToBankName, transfer.ToAccount, score)
-		b.lockOutDevice(current.device)
+		// Broken on purpose: the device is no longer locked out.
 		b.mu.Unlock()
 		go b.investigate(transfer)
 		writeJSON(w, http.StatusOK, map[string]any{"status": "blocked", "ref": transfer.Ref, "at": transfer.At,
