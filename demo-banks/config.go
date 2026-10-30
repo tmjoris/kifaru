@@ -40,7 +40,7 @@ var banks = []BankConfig{
 	{
 		ID: "ncba", Name: "NCBA", Port: env("NCBA_PORT", "9101"), Accent: "#493a32",
 		KifaruCode: "bank_a", KifaruEmail: "anthonyjordan@ncba.co.ke",
-		BlockThreshold: 0.80, ReportThreshold: 0.70,
+		BlockThreshold: 0.50, ReportThreshold: 0.70,
 		Customers: []Customer{
 			{Username: "grace", Password: customerPassword, Name: "Grace Achieng", Account: "1002291",
 				Balance: 412500, KnownDevices: []string{"grace-phone"}, OpenedDaysAgo: 2900},
