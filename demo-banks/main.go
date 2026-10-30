@@ -37,9 +37,14 @@ func staticFiles() http.Handler {
 	return http.StripPrefix("/static/", http.FileServer(http.FS(sub)))
 }
 
+// listenAddr keeps every service on the loopback interface. The ops, reset
+// and interbank routes have no sign-in, which is only safe while nothing
+// outside this machine can reach them.
+func listenAddr(port string) string { return "127.0.0.1:" + port }
+
 func serve(name, port string, handler http.Handler) {
-	log.Printf("%s listening on http://127.0.0.1:%s", name, port)
-	server := &http.Server{Addr: "127.0.0.1:" + port, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
+	log.Printf("%s listening on http://%s", name, listenAddr(port))
+	server := &http.Server{Addr: listenAddr(port), Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	log.Fatal(server.ListenAndServe())
 }
 
