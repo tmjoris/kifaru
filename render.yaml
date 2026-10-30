@@ -15,6 +15,21 @@ services:
         value: https://kifarulive.onrender.com
 
   - type: web
+    name: kifaru-demo-banks
+    runtime: go
+    plan: free
+    autoDeployTrigger: commit
+    rootDir: demo-banks
+    buildCommand: mkdir -p bin && go build -o bin/demo-banks .
+    startCommand: ./bin/demo-banks hosted
+    healthCheckPath: /demo-banks/api/state
+    envVars:
+      - key: KIFARU_API_URL
+        value: https://kifaru-api.onrender.com
+      - key: KIFARU_WEB_URL
+        value: https://kifarulive.onrender.com
+
+  - type: web
     name: kifarulive
     runtime: static
     autoDeployTrigger: commit

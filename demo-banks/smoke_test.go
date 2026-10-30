@@ -2,15 +2,24 @@ package main
 
 import (
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
 )
 
 var (
-	htmlRef   = regexp.MustCompile(`(?:src|href)="(/static/[^"]+)"`)
-	importRef = regexp.MustCompile(`from\s+"(/static/[^"]+)"`)
+	htmlRef   = regexp.MustCompile(`(?:src|href)="(static/[^"]+)"`)
+	importRef = regexp.MustCompile(`from\s+"(\./[^"]+)"`)
 )
+
+// resolve finds a relative file the way the browser does, so the pages work
+// at / and under /demo-banks/<bank>/.
+func resolve(from, ref string) string {
+	base, _ := url.Parse(from)
+	target, _ := url.Parse(ref)
+	return base.ResolveReference(target).Path
+}
 
 // Smoke tests answer one question fast: does the whole thing start and do the
 // main journeys work at all? They use the real embedded pages and the real
@@ -39,7 +48,7 @@ func TestSmoke_EveryPageAndItsFilesLoad(t *testing.T) {
 			// Every file the page names, and every module those scripts import, must exist.
 			queue := []string{}
 			for _, match := range htmlRef.FindAllStringSubmatch(string(body), -1) {
-				queue = append(queue, match[1])
+				queue = append(queue, resolve(page.path, match[1]))
 			}
 			if len(queue) < 2 {
 				t.Fatalf("the page references %d static files, want its stylesheet and script", len(queue))
@@ -63,7 +72,7 @@ func TestSmoke_EveryPageAndItsFilesLoad(t *testing.T) {
 						t.Errorf("%s: content type %q, want JavaScript", path, kind)
 					}
 					for _, match := range importRef.FindAllStringSubmatch(string(content), -1) {
-						queue = append(queue, match[1])
+						queue = append(queue, resolve(path, match[1]))
 					}
 				}
 				if strings.HasSuffix(path, ".css") && !strings.Contains(kind, "css") {

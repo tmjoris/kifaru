@@ -151,9 +151,8 @@ views and the director replay was used on 2026-10-24; turn it into specs under
   the simulation notice on the director and ops pages stay visible.
 - Reset, replay twice, and confirm the runs are isolated.
 
-The browser console currently shows a 404 for `/favicon.ico` on the bank and
-director pages, and expected 401s from session checks. Serve a favicon or
-filter these so the suite can fail on real console errors.
+The browser console shows expected 401s from session checks. Filter these so
+the suite can fail on real console errors.
 
 ## Definition of done
 

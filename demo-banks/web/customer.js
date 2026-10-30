@@ -1,10 +1,12 @@
-import { api, deviceId, escapeHtml, header, icon, kes } from "/static/common.js";
+import { api, deviceId, escapeHtml, header, icon, kes } from "./common.js";
 
 const root = document.querySelector("#app");
 const safe = escapeHtml;
 let config;
 let me;
-let token = sessionStorage.getItem("simulated-bank-session");
+let token = "";
+// When hosted, the three banks share one origin, so each keeps its own session.
+const sessionKey = () => `simulated-bank-session-${config.id}`;
 let notice = null; // { text, kind: "ok" | "bad" }
 let noticeFresh = false;
 let noticeTimer;
@@ -93,11 +95,11 @@ function loginView() {
     const form = new FormData(event.currentTarget);
     event.currentTarget.querySelector("button").disabled = true;
     try {
-      const result = await api("/api/login", { method: "POST", body: {
+      const result = await api("api/login", { method: "POST", body: {
         username: form.get("username"), password: form.get("password"), device: deviceId(),
       } });
       token = result.token;
-      sessionStorage.setItem("simulated-bank-session", token);
+      sessionStorage.setItem(sessionKey(), token);
       notice = null;
       animate = true;
       await refresh();
@@ -107,9 +109,9 @@ function loginView() {
 
 async function refresh() {
   if (!token) return loginView();
-  try { me = await call("/api/me"); dashboard(); }
+  try { me = await call("api/me"); dashboard(); }
   catch (error) {
-    token = ""; sessionStorage.removeItem("simulated-bank-session"); receipt = null;
+    token = ""; sessionStorage.removeItem(sessionKey()); receipt = null;
     // Say why the session ended, unless a notice already explains it.
     if (!notice && error.status === 401 && error.message !== "Please sign in again.") setNotice(error.message, "bad");
     loginView();
@@ -260,8 +262,8 @@ function bindDashboard() {
   root.querySelectorAll("[data-scroll-transfer]").forEach(button => button.addEventListener("click", () => root.querySelector("#transfer-card")?.scrollIntoView({ behavior: "smooth", block: "start" })));
   root.querySelector("#toggle-balance").onclick = () => { hideBalance = !hideBalance; dashboard(); };
   root.querySelector("#logout").onclick = async () => {
-    try { await call("/api/logout", { method: "POST" }); } catch {}
-    token = ""; sessionStorage.removeItem("simulated-bank-session"); notice = null; review = null; receipt = null; loginView();
+    try { await call("api/logout", { method: "POST" }); } catch {}
+    token = ""; sessionStorage.removeItem(sessionKey()); notice = null; review = null; receipt = null; loginView();
   };
   if (receipt) {
     const close = () => { receipt = null; dashboard(); };
@@ -296,7 +298,7 @@ async function confirmTransfer() {
   sending = true;
   dashboard();
   try {
-    const result = await call("/api/transfers", { method: "POST", body: { bank: sent.bank, account: sent.account, name: sent.name, amount: sent.amount } });
+    const result = await call("api/transfers", { method: "POST", body: { bank: sent.bank, account: sent.account, name: sent.name, amount: sent.amount } });
     if (result.status === "blocked") setNotice(`Transfer blocked by ${config.name}'s own fraud checks. You have been signed out. Reference ${result.ref}.`, "bad");
     else receipt = { ...sent, ref: result.ref, at: result.at };
   } catch (error) { setNotice(error.message, "bad"); }
@@ -311,7 +313,7 @@ document.addEventListener("keydown", (event) => {
   else if (event.key === "Escape" && receipt) { receipt = null; dashboard(); }
 });
 
-api("/api/config").then(value => { config = value; return refresh(); }).catch(error => {
+api("api/config").then(value => { config = value; token = sessionStorage.getItem(sessionKey()) || ""; return refresh(); }).catch(error => {
   root.innerHTML = `<main class="page"><div class="banner bad">${icon("error")}<span>${safe(error.message)}. Start this simulated bank service and reload.</span></div></main>`;
 });
 setInterval(() => {

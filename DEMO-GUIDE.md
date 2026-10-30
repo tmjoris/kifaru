@@ -209,7 +209,7 @@ The defaults suit a single machine. Set a variable in the terminal before `go ru
 | Variable | Used by | Default | What it does |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | API | none, required | PostgreSQL connection string |
-| `PORT` | API | `8000` | API port |
+| `PORT` | API, and demo banks in `hosted` mode | `8000`; `9100` for the banks | the port to listen on |
 | `NETWORK_PORT` | demo banks | `9100` | director and interbank switch port |
 | `NCBA_PORT`, `KCB_PORT`, `EQUITY_PORT` | demo banks | `9101`, `9102`, `9103` | each bank's port |
 | `KIFARU_API_URL` | demo banks | `http://127.0.0.1:8000` | where the banks send reports and risk checks. Set it to the hosted API to run against the hosted demo. |
@@ -253,7 +253,8 @@ The container removes itself when it stops, and your data stays in the
 ## Independent bank apps
 
 The separate-service rehearsal lives in `demo-banks/`. Each service binds to
-localhost and uses synthetic classroom accounts only. This is terminal 4 in
+localhost and uses synthetic classroom accounts only. To put it online, see
+**Host the demo banks** below. This is terminal 4 in
 **Start from scratch**. Start the Kifaru API first, then run the demo services in
 a separate terminal:
 
@@ -353,6 +354,42 @@ browser is flagged, and KCB blocks a payment to Equity 0114417 before it
 leaves. Each bank's `/ops` page lists the Kifaru reasons and shows the demo run
 key.
 
+### When KCB blocks a payment after NCBA
+
+This is expected. With the connectors on, pay Equity 0114417 from a taken-over
+NCBA account, then try again from a KCB account in the same browser. KCB blocks
+the payment, and it still reports it to Kifaru.
+
+KCB checks with Kifaru before it scores the payment. NCBA has already reported
+the device and the account, so Faith's payment scores:
+
+| Signal | Score |
+| --- | --- |
+| Base | 0.10 |
+| New device for Faith | +0.25 |
+| New beneficiary | +0.20 |
+| KES 50,000 or more | +0.05 |
+| Kifaru: device reported by NCBA | +0.35 |
+| Kifaru: account flagged | +0.40 |
+| Total | 0.99, the cap. KCB blocks at 0.75. |
+
+A payment to a different account still scores 0.95 on the device report alone.
+
+KCB decides before it takes the money, so Faith's balance does not change. KCB's
+`/ops` page shows the blocked payment with its score and the Kifaru reasons.
+That browser is signed out of KCB and cannot sign in again until the next
+reset.
+
+The report is what this step is for. Faith has no earlier payment to that
+account for the fraud desk to confirm, so KCB reports the attempt itself.
+Equity now has reports from two banks about the same account, so its alert is
+corroborated, and it can hold the account before NCBA's KES 85,000 is
+withdrawn.
+
+To compare, repeat the run with the connectors off, or with **Without Kifaru**
+in the director. KCB cannot see NCBA's report, the payment goes through at
+0.60, and the money reaches the mule account.
+
 In Kifaru, the **Risk check** tab of each institution workspace runs the same
 check by hand. Enter a beneficiary account and its institution, a device ID,
 or both, and the demo run key from any bank's `/ops` page. The browser hashes
@@ -372,6 +409,56 @@ withdraws nothing for 15 minutes is signed out with a message saying why.
 Set `SESSION_IDLE_MINUTES` before `go run .` to change the limit. The switch
 settles each transfer reference once, so a repeated credit or return changes
 nothing.
+
+## Host the demo banks
+
+Render gives each web service one public port. The hosted demo therefore runs
+the director, the switch and all three banks in one program, each under its
+own path:
+
+| Page | Path |
+| --- | --- |
+| Director | `/demo-banks/` |
+| NCBA | `/demo-banks/ncba/`, analyst page `/demo-banks/ncba/ops` |
+| KCB | `/demo-banks/kcb/`, analyst page `/demo-banks/kcb/ops` |
+| Equity | `/demo-banks/equity/`, analyst page `/demo-banks/equity/ops` |
+
+The site root redirects to the director.
+
+`render.yaml` sets this up as the `kifaru-demo-banks` service. It builds
+`demo-banks/`, starts it with `hosted`, and points the banks at the hosted
+Kifaru API. Once Render has deployed it, open
+`https://kifaru-demo-banks.onrender.com/demo-banks/`. Check the service's
+address in the Render dashboard; Render adds a suffix when the name is taken.
+
+To try the hosted layout on your own machine, start the Kifaru API, then:
+
+```bash
+cd demo-banks && PORT=9300 go run . hosted
+```
+
+```powershell
+cd demo-banks; $env:PORT="9300"; go run . hosted
+```
+
+Then open <http://127.0.0.1:9300/demo-banks/>. Set `KIFARU_API_URL` first to
+use another Kifaru API.
+
+Things to know before you present from the hosted copy:
+
+- The pages need no sign-in, the same as locally. Anyone with the link can run
+  the director, switch connectors or reset the banks, so share it only with the
+  class. The routes the services use among themselves (the switch, credits,
+  returns, mail and reset) need a key the program makes when it starts, so a
+  visitor cannot call them directly.
+- The banks keep their state in memory. The free plan stops the service after
+  15 minutes without visitors, and the next visit starts it with fresh
+  balances and a new run key. The first page can take a minute to load. Open
+  the director before you present and select **Without Kifaru** or **With
+  Kifaru** to reset.
+- The banks sign in to the hosted Kifaru API with the analyst logins at the top
+  of this guide and send it synthetic reports. Select **Prepare reporter
+  history** once there too.
 
 ## Screen setup
 
