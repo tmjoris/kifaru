@@ -4,6 +4,10 @@
 //   npm run smoke                  check the banks and the director
 //   npm run smoke -- --kifaru      also check the Kifaru API and web app
 //
+// In PowerShell, use npm.cmd for the second form (npm.cmd run smoke -- --kifaru)
+// or run node scripts/smoke.mjs --kifaru: PowerShell drops the "--" when it
+// calls npm.ps1, so --kifaru never reaches this script.
+//
 // It signs in once at each bank from a device called "smoke-check" and makes no
 // payments, so it is safe to run in the middle of a rehearsal. Set NCBA_URL,
 // KCB_URL, EQUITY_URL, NETWORK_URL, KIFARU_API_URL or KIFARU_WEB_URL if your
@@ -31,10 +35,18 @@ const check = async (name, run) => {
     console.log(`  FAIL  ${name}: ${reason}`);
   }
 };
+// Each request gets 8 seconds. The timer is cleared once the answer arrives, so
+// it never holds the process open after the last check.
 const get = async (url, init) => {
-  const response = await fetch(url, { signal: AbortSignal.timeout(8000), ...init });
-  if (!response.ok) throw new Error(`${url} answered ${response.status}`);
-  return response;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error(`${url} took longer than 8 seconds`)), 8000);
+  try {
+    const response = await fetch(url, { signal: controller.signal, ...init });
+    if (!response.ok) throw new Error(`${url} answered ${response.status}`);
+    return response;
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 console.log("Demo banks");
@@ -82,4 +94,6 @@ if (withKifaru) {
 }
 
 console.log(failed ? `\n${failed} check(s) failed` : "\nAll checks passed");
-process.exit(failed ? 1 : 0);
+// Let Node exit on its own: process.exit() while fetch sockets are closing
+// crashes Node on Windows with a libuv assertion and a non-zero exit code.
+process.exitCode = failed ? 1 : 0;

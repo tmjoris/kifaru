@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"sync"
 	"testing"
@@ -13,7 +14,13 @@ import (
 // that nothing breaks, that answers stay fast, and that no money is created or
 // lost. The thresholds are deliberately loose so a busy CI runner does not
 // fail them; they catch a hang, a deadlock or a serious slowdown, not a few
-// milliseconds. For a heavier run against the live demo, see load/k6-banks.js.
+// milliseconds. The speed limits fail the test in CI, or anywhere with
+// LOAD_STRICT=1; on a developer machine busy with other work they only log, and
+// the correctness checks still fail as usual. For a heavier run against the
+// live demo, see load/k6-banks.js.
+
+// strictSpeed reports whether the p95 limits should fail the test.
+func strictSpeed() bool { return os.Getenv("CI") != "" || os.Getenv("LOAD_STRICT") != "" }
 
 type sample struct {
 	name     string
@@ -63,8 +70,10 @@ func (r *recorder) report(t *testing.T, started time.Time, p95Limit time.Duratio
 		p95 := r.percentile(name, 0.95)
 		t.Logf("  %-22s %5d requests  p50 %-7v p95 %-7v p99 %v", name, names[name],
 			r.percentile(name, 0.50).Round(time.Microsecond), p95.Round(time.Microsecond), r.percentile(name, 0.99).Round(time.Microsecond))
-		if p95 > p95Limit {
+		if p95 > p95Limit && strictSpeed() {
 			t.Errorf("%s p95 = %v, want under %v", name, p95, p95Limit)
+		} else if p95 > p95Limit {
+			t.Logf("%s p95 = %v is over the %v limit; set LOAD_STRICT=1 to fail on it here", name, p95, p95Limit)
 		}
 	}
 	for _, s := range r.samples {

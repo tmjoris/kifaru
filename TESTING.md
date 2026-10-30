@@ -107,6 +107,10 @@ npm run smoke                 # banks and director
 npm run smoke -- --kifaru     # also the Kifaru API and web app
 ```
 
+In PowerShell, run the second one as `npm.cmd run smoke -- --kifaru` or
+`node scripts/smoke.mjs --kifaru`. PowerShell drops the `--` when it calls
+`npm.ps1`, so plain `npm` skips the Kifaru checks without saying so.
+
 It signs in once per bank from a device named `smoke-check` and makes no
 payments, so it is safe in the middle of a rehearsal. It exits with 1 if
 anything fails. Set `NCBA_URL`, `KCB_URL`, `EQUITY_URL`, `NETWORK_URL`,
@@ -139,7 +143,11 @@ anything fails. Set `NCBA_URL`, `KCB_URL`, `EQUITY_URL`, `NETWORK_URL`,
 ### Load and performance
 
 `TestLoad_…` runs inside the Go test run, with loose limits so a busy build
-machine does not cause false alarms:
+machine does not cause false alarms. The p95 speed limits fail the test in CI,
+or on your machine with `LOAD_STRICT=1`. Otherwise they only log, because a
+laptop running other apps can be several times slower (a busy 4-core Windows
+laptop measured payment p95 from 0.7 s to 3 s). The correctness checks below
+always fail the test.
 
 - **Concurrent customers.** 40 customers (10 per account) each sign in, then
   25 times read their account and send a payment, across all three banks and
