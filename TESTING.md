@@ -10,13 +10,13 @@ down (scores, balances, the director replay) come from
 | Kind | What it answers | Where | Count | Time |
 | --- | --- | --- | --- | --- |
 | **Unit and regression** | Do the rules still give the answers we agreed? | `demo-banks/*_test.go`, tests named `TestRegression_…` | 39 | 11 s |
-| **Smoke** | Does it start, and do the main journeys work at all? | `TestSmoke_…`, `scripts/smoke.mjs` | 5 + live script | 1 s |
-| **Security** | Can someone read, change or break what they should not? | `TestSecurity_…`, `demo-banks/web/common.test.mjs`, `npm audit`, `govulncheck` | 14 + 7 | 2 s |
+| **Smoke** | Does it start, and do the main journeys work at all? | `TestSmoke_…`, `scripts/smoke.mjs` | 8 + live script | 1 s |
+| **Security** | Can someone read, change or break what they should not? | `TestSecurity_…`, `demo-banks/web/common.test.mjs`, `npm audit`, `govulncheck` | 15 + 7 | 2 s |
 | **Load and performance** | Does it stay correct and fast with many users? | `TestLoad_…`, `BenchmarkScore`, `load/k6-banks.js` | 3 + k6 | 3 s |
 | **Integration** (existing) | Does the Kifaru API work against a real PostgreSQL? | `backend/*_test.go` (`TestPostgres…`) | 4 | needs a database |
 | **Unit** (existing) | Kifaru's validation, policy and the web app's logic | `backend/*_test.go`, `src/domain.test.ts` | 16 + 11 | under 1 s |
 
-The 61 Go tests in `demo-banks` expand to 133 checks with their sub-cases.
+The 65 Go tests in `demo-banks` expand to 137 checks with their sub-cases.
 None of them needs a database or Kifaru, because the banks keep their state in
 memory and the tests start the real banks, switch and director in the same
 process on free ports.
@@ -98,7 +98,9 @@ In-process: every customer, operations and director page returns HTML with its
 `#app` root, and every stylesheet and script a page names, including the
 modules those scripts import, exists and has the right content type. Then the
 config endpoints, a sign-in, a payment between banks, the director's first step
-and the operations actions.
+and the operations actions. The hosted layout (`go run . hosted`) gets its own
+checks: every page under `/demo-banks/`, the redirects, a payment through the
+switch on the shared port, and the director resetting the banks.
 
 Against the live demo, with the banks running:
 
@@ -114,7 +116,9 @@ In PowerShell, run the second one as `npm.cmd run smoke -- --kifaru` or
 It signs in once per bank from a device named `smoke-check` and makes no
 payments, so it is safe in the middle of a rehearsal. It exits with 1 if
 anything fails. Set `NCBA_URL`, `KCB_URL`, `EQUITY_URL`, `NETWORK_URL`,
-`KIFARU_API_URL` or `KIFARU_WEB_URL` for other ports.
+`KIFARU_API_URL` or `KIFARU_WEB_URL` for other ports. For the hosted layout,
+point them at the paths, for example `NCBA_URL=http://127.0.0.1:9300/demo-banks/ncba`
+and `NETWORK_URL=http://127.0.0.1:9300/demo-banks`.
 
 ### Security
 
@@ -132,9 +136,12 @@ anything fails. Set `NCBA_URL`, `KCB_URL`, `EQUITY_URL`, `NETWORK_URL`,
 - Markup in a payee name stays inert JSON and is never returned as HTML.
 - `/static/` cannot be used to read source files (`../`, encoded, double
   encoded).
+- Hosted, the routes the services use among themselves (switch, credits,
+  returns, mail and reset) refuse any request without the program's internal
+  key.
 - Only hashed identifiers leave a bank: reports and risk checks to Kifaru
   contain no account number, name or device ID.
-- Every service listens on `127.0.0.1` only.
+- Run locally, every service listens on `127.0.0.1` only.
 - In the browser code: `escapeHtml` leaves no `<`, `>` or quote characters, and
   the page header escapes a hostile bank name.
 - Dependencies: `npm audit --audit-level=high` blocks a pull request. The

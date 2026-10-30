@@ -21,6 +21,7 @@ export async function api(path, { method = "GET", body, token } = {}) {
 /**
  * A per-browser device ID, kept in a cookie. Cookies ignore the port, so all
  * three banks on 127.0.0.1 see the same browser, as Kifaru's device check needs.
+ * Hosted, they share one origin anyway.
  */
 export function deviceId() {
   const match = document.cookie.match(/(?:^|;\s*)demo-device-id=([^;]+)/);

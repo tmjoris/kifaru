@@ -1,4 +1,4 @@
-import { api, clock, escapeHtml, icon } from "/static/common.js";
+import { api, clock, escapeHtml, icon } from "./common.js";
 
 const root = document.querySelector("#app");
 const safe = escapeHtml;
@@ -89,7 +89,7 @@ async function mutate(path, body) {
 }
 
 async function refresh() {
-  try { state = await api("/api/state"); render(); }
+  try { state = await api("api/state"); render(); }
   catch (e) {
     root.innerHTML = `<main class="page"><div class="banner bad">${icon("error")}<span>${safe(e.message)}. Start all three banks and the interbank switch.</span></div></main>`;
     framesBuilt = "";
@@ -99,9 +99,9 @@ async function refresh() {
 
 root.addEventListener("click", (event) => {
   const mode = event.target.closest("[data-mode]");
-  if (mode) return mutate("/api/mode", { mode: mode.dataset.mode });
-  if (event.target.closest("#next")) return mutate("/api/autopilot/next", {});
-  if (event.target.closest("#prepare")) return mutate("/api/prepare", {});
+  if (mode) return mutate("api/mode", { mode: mode.dataset.mode });
+  if (event.target.closest("#next")) return mutate("api/autopilot/next", {});
+  if (event.target.closest("#prepare")) return mutate("api/prepare", {});
 });
 
 refresh();

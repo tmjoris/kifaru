@@ -86,6 +86,13 @@ func env(key, fallback string) string {
 	return fallback
 }
 
+// setDefault sets an environment variable unless it is already set.
+func setDefault(key, value string) {
+	if strings.TrimSpace(os.Getenv(key)) == "" {
+		_ = os.Setenv(key, value)
+	}
+}
+
 // sessionIdle is how long a customer stays signed in without a sign-in,
 // transfer or withdrawal. Set SESSION_IDLE_MINUTES to change it.
 func sessionIdle() time.Duration {

@@ -1,4 +1,4 @@
-import { api, clock, escapeHtml, header, icon, kes } from "/static/common.js";
+import { api, clock, escapeHtml, header, icon, kes } from "./common.js";
 
 const root = document.querySelector("#app");
 const safe = (value) => escapeHtml(value || "—");
@@ -8,7 +8,7 @@ let state;
 let lastSignature = "";
 
 async function refresh() {
-  state = await api("/api/ops/state");
+  state = await api("api/ops/state");
   const signature = JSON.stringify(state);
   if (signature === lastSignature) return;
   lastSignature = signature;
@@ -73,12 +73,12 @@ function render() {
     </main></div>`;
   window.scrollTo(0, scrollY);
 
-  root.querySelector("#connector").onchange = async (e) => { await api("/api/ops/connector", { method: "POST", body: { enabled: e.target.checked } }); await refresh(); };
-  root.querySelector("#hold").onclick = async () => { await api("/api/ops/hold", { method: "POST", body: { account: ACCOUNT } }); await refresh(); };
-  root.querySelector("#return").onclick = async () => { await api("/api/ops/return", { method: "POST", body: { account: ACCOUNT } }); await refresh(); };
+  root.querySelector("#connector").onchange = async (e) => { await api("api/ops/connector", { method: "POST", body: { enabled: e.target.checked } }); await refresh(); };
+  root.querySelector("#hold").onclick = async () => { await api("api/ops/hold", { method: "POST", body: { account: ACCOUNT } }); await refresh(); };
+  root.querySelector("#return").onclick = async () => { await api("api/ops/return", { method: "POST", body: { account: ACCOUNT } }); await refresh(); };
 }
 
-api("/api/config").then(v => { config = v; return refresh(); }).catch(e => {
+api("api/config").then(v => { config = v; return refresh(); }).catch(e => {
   root.innerHTML = `<main class="page"><div class="banner bad">${icon("error")}<span>${escapeHtml(e.message)}</span></div></main>`;
 });
 setInterval(() => refresh().catch(() => {}), 1500);

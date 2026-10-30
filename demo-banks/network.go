@@ -34,6 +34,9 @@ func sendJSON(method, url, token string, in, out any) error {
 	if token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
+	if internalKey != "" && demoService(url) {
+		request.Header.Set(internalHeader, internalKey)
+	}
 	response, err := httpClient.Do(request)
 	if err != nil {
 		return err
@@ -274,7 +277,7 @@ func (n *Network) state(w http.ResponseWriter, _ *http.Request) {
 	links := []map[string]string{}
 	for _, bank := range banks {
 		links = append(links, map[string]string{
-			"id": bank.ID, "name": bank.Name, "url": bankURL(bank.ID), "accent": bank.Accent,
+			"id": bank.ID, "name": bank.Name, "url": publicBankURL(bank.ID), "accent": bank.Accent,
 			"kifaru_email": bank.KifaruEmail,
 		})
 	}
