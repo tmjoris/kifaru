@@ -130,7 +130,7 @@ func (n *Network) once(key string, deliver func() error) (bool, error) {
 	n.mu.Lock()
 	delete(n.inFlight, key)
 	if err == nil {
-		n.settled[key] = true
+		// Broken on purpose: settled references are no longer remembered.
 	}
 	n.mu.Unlock()
 	return false, err
