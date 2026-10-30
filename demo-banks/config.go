@@ -11,7 +11,7 @@ import (
 // synthetic.
 type Customer struct {
 	Username      string
-	Password      string `json:"-"` // never serialised: ops state embeds Account, which embeds Customer
+	Password      string // never serialised: ops state embeds Account, which embeds Customer
 	Name          string
 	Account       string
 	Balance       float64
