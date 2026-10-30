@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
@@ -51,3 +52,120 @@ jobs:
       - name: Test backend
         working-directory: backend
         run: go test ./...
+
+  # The demo banks have their own checks, one job per kind of test, so each
+  # shows up as its own line on a pull request.
+
+  regression:
+    name: Regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: demo-banks/go.mod
+      - name: Vet
+        working-directory: demo-banks
+        run: go vet ./...
+      - name: Scoring, ledger, switch, sessions, connector and director replay
+        working-directory: demo-banks
+        run: go test -race -count=1 -v -run '^TestRegression' ./...
+
+  smoke:
+    name: Smoke tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: demo-banks/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Pages, static files and main journeys, in-process
+        working-directory: demo-banks
+        run: go test -count=1 -v -run '^TestSmoke' ./...
+      - name: Start the real demo
+        working-directory: demo-banks
+        run: |
+          go build -o "$RUNNER_TEMP/demo-banks" .
+          "$RUNNER_TEMP/demo-banks" > "$RUNNER_TEMP/demo-banks.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:9100/api/state > /dev/null && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/demo-banks.log"
+          exit 1
+      - name: Smoke-test the running demo
+        run: node scripts/smoke.mjs
+
+  security:
+    name: Security tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: demo-banks/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Authentication, isolation, hostile input and protected identifiers
+        working-directory: demo-banks
+        run: go test -race -count=1 -v -run '^TestSecurity' ./...
+      - name: Escaping of untrusted text in the pages
+        run: node --test demo-banks/web/common.test.mjs
+      - name: Known vulnerabilities in npm packages
+        run: npm audit --audit-level=high
+      - name: Known vulnerabilities in Go code (report only)
+        # Reported but not blocking: the Go version pinned above has standard
+        # library fixes available in newer releases, and backend dependencies
+        # (pgx, x/text) have newer versions. See TESTING.md.
+        continue-on-error: true
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          for dir in demo-banks backend; do
+            echo "::group::govulncheck $dir"
+            (cd "$dir" && "$(go env GOPATH)/bin/govulncheck" ./...) || true
+            echo "::endgroup::"
+          done
+
+  load:
+    name: Load tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: demo-banks/go.mod
+      - name: Concurrent customers, polling dashboards and rapid clicks, in-process
+        working-directory: demo-banks
+        run: go test -race -count=1 -v -run '^TestLoad' ./...
+      - name: Benchmark the fraud score
+        working-directory: demo-banks
+        run: go test -run '^$' -bench BenchmarkScore -benchtime 20000x ./...
+      - name: Install k6
+        run: |
+          version=v2.3.0
+          curl -fsSLO "https://github.com/grafana/k6/releases/download/$version/k6-$version-linux-amd64.tar.gz"
+          curl -fsSLO "https://github.com/grafana/k6/releases/download/$version/k6-$version-checksums.txt"
+          sha256sum --check --ignore-missing "k6-$version-checksums.txt"
+          tar -xzf "k6-$version-linux-amd64.tar.gz"
+          echo "$PWD/k6-$version-linux-amd64" >> "$GITHUB_PATH"
+      - name: Start the real demo
+        working-directory: demo-banks
+        run: |
+          go build -o "$RUNNER_TEMP/demo-banks" .
+          "$RUNNER_TEMP/demo-banks" > "$RUNNER_TEMP/demo-banks.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:9100/api/state > /dev/null && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/demo-banks.log"
+          exit 1
+      - name: Load-test the running demo with k6
+        run: k6 run -e VUS=20 -e DURATION=15s load/k6-banks.js
