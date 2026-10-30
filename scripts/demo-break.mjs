@@ -18,8 +18,11 @@ const bank = join(root, "bank.go");
 
 const swap = (file, from, to) => {
   const text = readFileSync(file, "utf8");
-  if (!text.includes(from)) throw new Error(`${file} no longer contains the text this break replaces; it may already be applied`);
-  writeFileSync(file, text.replace(from, to));
+  // Git for Windows checks files out with CRLF endings, so match the file's own.
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const [find, replace] = [from, to].map((part) => part.replace(/\r?\n/g, eol));
+  if (!text.includes(find)) throw new Error(`${file} no longer contains the text this break replaces; it may already be applied`);
+  writeFileSync(file, text.replace(find, replace));
 };
 
 const breaks = {
