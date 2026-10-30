@@ -48,7 +48,7 @@ You need four tools:
 | --- | --- | --- |
 | Git | any | getting the code |
 | Go | 1.22 or later | the Kifaru API and the three demo banks |
-| Node.js | 22.18 or later, or 24 | the Kifaru web app |
+| Node.js | 22.18 or a later 22, or 24 and later | the Kifaru web app |
 | Docker | any recent | the PostgreSQL database |
 
 **Windows (PowerShell).** `winget` comes with Windows 11 and current Windows 10.
@@ -63,6 +63,14 @@ winget install --id Docker.DockerDesktop -e
 Close PowerShell and open a new window so the new tools are on your path. Then
 start **Docker Desktop** and wait until it says it is running. The first start
 may ask you to turn on WSL 2 and restart the PC.
+
+Windows PowerShell blocks scripts by default, and `npm` is a script there. Allow
+local scripts once for your user, or `npm` stops with "running scripts is
+disabled on this system":
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
 
 **Ubuntu.**
 
@@ -87,8 +95,9 @@ node --version
 docker --version
 ```
 
-Go must be 1.22 or later and Node v22.18 or later. If either is older, install
-a newer one before going on.
+Go must be 1.22 or later. Node must be v22.18 or a later 22 release, or v24 or
+later; `npm` warns on version 23. If either is older, install a newer one
+before going on.
 
 ### 2. Get the code
 
