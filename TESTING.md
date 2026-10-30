@@ -226,7 +226,7 @@ Open, and what to do about them:
 
 | Finding | Why it is open |
 | --- | --- |
-| Go standard library: `govulncheck` reports 29 issues for `demo-banks` and 23 for `backend` on Go 1.25.5, and more on the Go 1.22 that CI pins | Fixed by moving to a current Go patch release. The pinned version is a project decision, so the CI step reports and does not block. |
+| Go standard library: `govulncheck` in CI (Go 1.22) reports 42 findings for `demo-banks` and 37 for `backend`. On Go 1.25.5 it is 29 and 26 | Fixed by moving to a current Go patch release. The pinned version is a project decision, so the CI step reports and does not block. |
 | `backend` dependencies `github.com/jackc/pgx/v5` v5.5.5 (fixed in 5.9.2) and `golang.org/x/text` v0.14.0 (fixed in 0.41.0) | Newer versions may require a newer Go than `go 1.22` in `go.mod`. Needs the Go version decision above, then `go get` and the Postgres tests. |
 | `DEMO-GUIDE.md` contains the shared Kifaru demo password in a public repository | A deliberate choice made earlier. Rotate it, or move it to the git-ignored `demo-credentials.txt`, if the hosted demo should not be open. |
 
