@@ -316,7 +316,7 @@ func (b *Bank) sessionFor(r *http.Request) (session, *Account, bool) {
 		return session{}, nil, false
 	}
 	account := b.accounts[current.username]
-	if idle := sessionIdle(); time.Since(current.lastActive) > idle {
+	if idle := sessionIdle(); time.Since(current.lastActive) > idle*60 {
 		minutes := fmt.Sprintf("%d minutes", int(idle.Minutes()))
 		if idle == time.Minute {
 			minutes = "1 minute"
