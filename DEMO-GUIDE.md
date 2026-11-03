@@ -29,6 +29,11 @@ that is `http://127.0.0.1:5173`.
   institution from the **Institution** menu, then select **Sign in**. For
   example, use `anthonyjordan@ncba.co.ke` with **NCBA** selected.
 
+Both workspaces open on the **Overview**: today against yesterday, this month
+against last month, a 30-day chart and, for staff, institutions ranked by
+activity. **Workspace** (or **Exchange** for staff) in the menu holds the
+detailed lists.
+
 For the hosted demo, replace `http://127.0.0.1:5173` with the deployed frontend
 URL. The password for these Kifaru accounts is `KifaruDemo2026!`.
 Leave time for a new deploy to finish first: the replay needs migration `009`.
@@ -221,7 +226,10 @@ The defaults suit a single machine. Set a variable in the terminal before `go ru
 
 ### 6. Run the demo from start to finish
 
-1. Complete steps 1 to 4 and sign in to the staff page once.
+1. Complete steps 1 to 4 and sign in to the staff page once. On its Overview,
+   select **Seed 60 days of history** so the charts have something to show.
+   It replaces any earlier seeded history, and **Remove seeded history** takes
+   it out again. Real reports are never touched.
 2. Open the director at <http://127.0.0.1:9100> and, in other tabs, the three
    customer pages listed under **Independent bank apps**.
 3. In the director, select **Prepare reporter history**. It is safe to repeat.
@@ -425,11 +433,28 @@ own path:
 
 The site root redirects to the director.
 
-`render.yaml` sets this up as the `kifaru-demo-banks` service. It builds
-`demo-banks/`, starts it with `hosted`, and points the banks at the hosted
-Kifaru API. Once Render has deployed it, open
-`https://kifaru-demo-banks.onrender.com/demo-banks/`. Check the service's
-address in the Render dashboard; Render adds a suffix when the name is taken.
+The banks need a web service of their own, because the Kifaru frontend
+(`kifarulive`) is a static site and cannot run them. `render.yaml` describes it
+as `kifaru-demo-banks`, but Render only reads that file for services created
+from a Blueprint. If the existing services were made by hand in the dashboard,
+create this one by hand too: **New** > **Web Service**, repository
+`tmjoris/kifaru`, branch `main`, then:
+
+| Setting | Value |
+| --- | --- |
+| Name | `kifaru-demo-banks` |
+| Root directory | `demo-banks` |
+| Runtime | Go |
+| Build command | `go build -o bin/demo-banks .` |
+| Start command | `./bin/demo-banks hosted` |
+| Health check path | `/demo-banks/api/state` |
+| `KIFARU_API_URL` | `https://kifaru-api.onrender.com` |
+| `KIFARU_WEB_URL` | `https://kifarulive.onrender.com` |
+
+Once it is live, open `https://kifaru-demo-banks.onrender.com/demo-banks/`.
+Check the address in the dashboard; Render adds a suffix when a name is taken.
+Until the service exists, that address answers 404 with the header
+`x-render-routing: no-server`.
 
 To try the hosted layout on your own machine, start the Kifaru API, then:
 
@@ -459,6 +484,22 @@ Things to know before you present from the hosted copy:
 - The banks sign in to the hosted Kifaru API with the analyst logins at the top
   of this guide and send it synthetic reports. Select **Prepare reporter
   history** once there too.
+
+## Check on a phone
+
+With the demo running (steps 1 to 4), run:
+
+```
+npm run mobile
+```
+
+It opens the bank sign-in, customer and `/ops` pages, the director, and the
+Kifaru sign-in and Overview pages on an iPhone 13 and a Pixel 7 screen. It
+fails if any page scrolls sideways, and saves a screenshot of each page to
+`docs/screenshots/mobile/`. It uses the Chrome already installed on the
+computer. To check the hosted copies, set `NCBA_URL`, `NETWORK_URL` and
+`KIFARU_WEB_URL` first, for example
+`NCBA_URL=https://kifaru-demo-banks.onrender.com/demo-banks/ncba`.
 
 ## Screen setup
 
