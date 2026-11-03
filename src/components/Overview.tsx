@@ -94,7 +94,8 @@ function TrendChart({ series, title }: { series: TrendDay[]; title: string }) {
           <text x={left - 6} y={y(tick * step) + 4} textAnchor="end">{tick * step}</text>
         </g>)}
         {series.map((day, index) => (index % (wide ? 7 : 10) === (series.length - 1) % (wide ? 7 : 10))
-          && <text key={day.day} className="trend-axis" x={x(index)} y={height - 6} textAnchor="middle">{shortDay(day.day)}</text>)}
+          && <text key={day.day} className="trend-axis" x={x(index)} y={height - 6}
+            textAnchor={index === series.length - 1 && !wide ? "end" : "middle"}>{shortDay(day.day)}</text>)}
         {SERIES.map((line) => <polyline key={line.key} className={`trend-line ${line.className}`}
           points={series.map((day, index) => `${x(index)},${y(day[line.key])}`).join(" ")} />)}
         {wide && ends.map(({ line, y: labelY }) =>

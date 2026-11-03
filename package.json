@@ -11,19 +11,21 @@
     "test": "node --experimental-strip-types --test src/domain.test.ts demo-banks/web/common.test.mjs",
     "test:banks": "cd demo-banks && go test -race ./...",
     "smoke": "node scripts/smoke.mjs",
-    "audit": "npm audit --audit-level=high"
+    "audit": "npm audit --audit-level=high",
+    "mobile": "node scripts/mobile.mjs"
   },
   "dependencies": {
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "playwright-core": "1.49.1",
     "typescript": "~5.9.2",
-    "vite": "^7.1.0",
-    "@types/node": "^22.0.0"
+    "vite": "^7.1.0"
   },
   "engines": {
     "node": "^22.18.0 || >=24.0.0"
