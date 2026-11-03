@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -295,36 +296,83 @@ func trendRanking(ctx context.Context, store dbRunner, from time.Time) ([]map[st
 	return ranking, nil
 }
 
-// seedTrendHistory answers POST /v1/admin/trend-history/seed. It replaces any
-// earlier seeded history with about 60 days of synthetic reports, alerts and
-// receiver outcomes, written through the normal pipeline and then moved back
-// to the day they stand for.
+// historyJob tracks the history seed, which runs in the background: on a
+// hosted database it takes longer than a proxy keeps a request open.
+type historyJob struct {
+	mu      sync.Mutex
+	running bool
+	last    map[string]any
+	err     string
+}
+
+func (job *historyJob) snapshot() map[string]any {
+	job.mu.Lock()
+	defer job.mu.Unlock()
+	return map[string]any{"running": job.running, "last": job.last, "error": job.err}
+}
+
+// seedTrendHistory answers POST /v1/admin/trend-history/seed. It starts
+// replacing any earlier seeded history with about 60 days of synthetic
+// reports, alerts and receiver outcomes, written through the normal pipeline
+// and then moved back to the day they stand for. GET
+// /v1/admin/trend-history reports when it has finished.
 func (a *App) seedTrendHistory(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	a.seedJob.mu.Lock()
+	if a.seedJob.running {
+		a.seedJob.mu.Unlock()
+		writeError(w, http.StatusConflict, "seeded history is already being written")
+		return
+	}
+	a.seedJob.running, a.seedJob.err = true, ""
+	a.seedJob.mu.Unlock()
+
+	// The seed outlives the request, but keeps its signed-in user for the audit.
+	ctx := context.WithoutCancel(r.Context())
+	go func() {
+		summary, err := a.runTrendSeed(ctx)
+		a.seedJob.mu.Lock()
+		defer a.seedJob.mu.Unlock()
+		a.seedJob.running = false
+		if err != nil {
+			a.seedJob.err = err.Error()
+			return
+		}
+		a.seedJob.last = summary
+	}()
+	writeJSON(w, http.StatusAccepted, a.seedJob.snapshot())
+}
+
+// trendHistoryStatus answers GET /v1/admin/trend-history.
+func (a *App) trendHistoryStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, a.seedJob.snapshot())
+}
+
+func (a *App) runTrendSeed(ctx context.Context) (map[string]any, error) {
 	removed, err := a.clearTrendHistory(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, err
 	}
 	summary, err := a.writeTrendHistory(ctx, time.Now(), seedHistoryDays)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, err
 	}
 	summary["removed_reports"] = removed
 	if err := a.audit(ctx, authUserFromContext(ctx).Email, "trend_history.seeded", "",
 		fmt.Sprintf(`{"reports":%d,"alerts":%d,"outcomes":%d}`,
 			summary["reports"], summary["alerts"], summary["outcomes"])); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, err
 	}
 	a.publishStreamEvent([]string{"*"}, "demo-event", "trend-history", map[string]any{"trend_history": "seeded"})
-	writeJSON(w, http.StatusOK, summary)
+	return summary, nil
 }
 
 // resetTrendHistory answers POST /v1/admin/trend-history/reset.
 func (a *App) resetTrendHistory(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	if a.seedJob.snapshot()["running"] == true {
+		writeError(w, http.StatusConflict, "wait for the seeded history to finish first")
+		return
+	}
 	removed, err := a.clearTrendHistory(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

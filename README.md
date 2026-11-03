@@ -111,7 +111,9 @@ user only ever gets its own institution, and asking for another one returns
 A fresh database has no history to chart, so staff can select **Seed 60 days of
 history** (`POST /v1/admin/trend-history/seed`). It runs about 290 synthetic
 reports across six institutions through the normal pipeline, records receiver
-decisions, then dates each record to the day it stands for. Seeded reports carry
+decisions, then dates each record to the day it stands for. It runs in the
+background, because on the hosted database it takes longer than Render keeps a
+request open; `GET /v1/admin/trend-history` says when it has finished. Seeded reports carry
 `evidence.seeded_history`, use hashed identifiers only, never count toward
 reporter standing, and leave no notifications behind. Only the seed may set that
 field. **Remove seeded history** (`POST /v1/admin/trend-history/reset`) deletes
@@ -524,6 +526,7 @@ GET    /v1/admin/attack-scenario
 POST   /v1/admin/attack-scenario/advance
 POST   /v1/admin/attack-scenario/reset    {"mode": "without" | "with"}
 
+GET    /v1/admin/trend-history
 POST   /v1/admin/trend-history/seed
 POST   /v1/admin/trend-history/reset
 ```

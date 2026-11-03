@@ -148,6 +148,7 @@ type App struct {
 	standard    Standard
 	streamsMu   sync.Mutex
 	streams     map[string]map[chan []byte]struct{}
+	seedJob     historyJob
 }
 
 type dbRunner interface {
