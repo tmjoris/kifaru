@@ -7,6 +7,16 @@ let config;
 let state;
 let lastSignature = "";
 
+// Each section is a tab with its own address after "#". The receiving bank
+// opens on its alerts, the sending banks on their fraud engine.
+const TABS = [
+  ["engine", "Fraud engine"], ["alerts", "Kifaru alerts"], ["credits", "Credits in"],
+  ["feed", "Operations feed"], ["mail", "Mailbox"],
+];
+const tabFromAddress = () => TABS.some(([id]) => id === location.hash.slice(1)) ? location.hash.slice(1) : "";
+let tab = tabFromAddress();
+window.addEventListener("hashchange", () => { tab = tabFromAddress() || tab; render(); });
+
 async function refresh() {
   state = await api("api/ops/state");
   const signature = JSON.stringify(state);
@@ -50,32 +60,36 @@ function render() {
   const events = (state.events || []).slice().reverse().map(e => `<li class="${safe(e.tone)}"><time>${clock(e.at)}</time><span>${safe(e.text)}</span></li>`).join("");
   const mail = (state.mail || []).map(m => `<article class="mail"><div><strong>${safe(m.subject)}</strong><small>${safe(m.from_bank)} · ${clock(m.at)}</small></div><p>${safe(m.body)}</p></article>`).join("");
 
+  const active = tab || (state.receives ? "alerts" : "engine");
+  const counts = { engine: transfers.length, alerts: alerts.length, credits: credits.length, feed: 0, mail: (state.mail || []).length };
+  const tabs = TABS.map(([id, label]) => `<a class="ops-tab ${id === active ? "active" : ""}" href="#${id}" ${id === active ? 'aria-current="page"' : ""}>${label}${counts[id] ? ` <b>${counts[id]}</b>` : ""}</a>`).join("");
+  const panels = {
+    engine: `<section class="panel"><div class="panel-head"><div><span class="eyebrow">Real-time scoring</span><h2>Bank fraud engine</h2></div><span class="threshold">Block at ${state.block_threshold.toFixed(2)}</span></div>
+            ${transfers.map(transferCard).join("") || empty("Waiting for simulated transfers.")}</section>`,
+    alerts: `<section class="panel"><div class="panel-head"><div><span class="eyebrow">From the network</span><h2>Incoming Kifaru alerts</h2></div></div>
+            ${alerts.map(alertCard).join("") || empty("No incoming Kifaru alerts.")}
+            <div class="actions"><button id="hold" class="btn btn-secondary">${icon("lock")} Place account hold</button><button id="return" class="btn btn-secondary">${icon("undo")} Return available funds</button></div></section>`,
+    credits: `<section class="panel"><div class="panel-head"><div><span class="eyebrow">Settlement</span><h2>Incoming interbank credits</h2></div></div>
+            ${credits.map(c => `<div class="credit"><span class="activity-icon incoming">${icon("south_west")}</span><span><strong>${safe(c.from_bank_name)}</strong><small>${safe(c.state)} · ${clock(c.at)}</small></span><strong class="credit-amount">${kes(c.amount)}</strong></div>`).join("") || empty("No incoming credits.")}</section>`,
+    feed: `<section class="panel"><div class="panel-head"><div><span class="eyebrow">Live</span><h2>Local operations feed</h2></div></div><ul class="events">${events || "<li>Waiting for activity.</li>"}</ul></section>`,
+    mail: `<section class="panel"><div class="panel-head"><div><span class="eyebrow">Shared</span><h2>Fraud-team mailbox</h2></div></div>${mail || empty("Mailbox is empty.")}</section>`,
+  };
+
   const scrollY = window.scrollY;
   root.innerHTML = `<div class="app dark bank-${safe(config.id)}">${header(config, "Operations console", connector)}
     <main class="ops">
       <div class="sim-banner">${icon("science")}<span><strong>Simulated operations</strong> Independent bank ledger and bank-specific fraud rules. Kifaru is an optional connector. Demo run key for Kifaru's risk check: <code>${safe(state.run_key || "")}</code></span></div>
       <div class="kpis">${kpi("account_tree", "Transfers scored", transfers.length)}${kpi("block", "Blocked", blocked, blocked ? "alert" : "")}${kpi("notifications_active", "Kifaru alerts", alerts.length, alerts.length ? "info" : "")}${kpi("south_west", "Credits in", credits.length)}</div>
-      <div class="ops-grid">
-        <div class="stack">
-          <section class="panel"><div class="panel-head"><div><span class="eyebrow">Real-time scoring</span><h2>Bank fraud engine</h2></div><span class="threshold">Block at ${state.block_threshold.toFixed(2)}</span></div>
-            ${transfers.map(transferCard).join("") || empty("Waiting for simulated transfers.")}</section>
-          <section class="panel"><div class="panel-head"><div><span class="eyebrow">Live</span><h2>Local operations feed</h2></div></div><ul class="events">${events || "<li>Waiting for activity.</li>"}</ul></section>
-        </div>
-        <div class="stack">
-          <section class="panel"><div class="panel-head"><div><span class="eyebrow">From the network</span><h2>Incoming Kifaru alerts</h2></div></div>
-            ${alerts.map(alertCard).join("") || empty("No incoming Kifaru alerts.")}
-            <div class="actions"><button id="hold" class="btn btn-secondary">${icon("lock")} Place account hold</button><button id="return" class="btn btn-secondary">${icon("undo")} Return available funds</button></div></section>
-          <section class="panel"><div class="panel-head"><div><span class="eyebrow">Settlement</span><h2>Incoming interbank credits</h2></div></div>
-            ${credits.map(c => `<div class="credit"><span class="activity-icon incoming">${icon("south_west")}</span><span><strong>${safe(c.from_bank_name)}</strong><small>${safe(c.state)} · ${clock(c.at)}</small></span><strong class="credit-amount">${kes(c.amount)}</strong></div>`).join("") || empty("No incoming credits.")}</section>
-          <section class="panel"><div class="panel-head"><div><span class="eyebrow">Shared</span><h2>Fraud-team mailbox</h2></div></div>${mail || empty("Mailbox is empty.")}</section>
-        </div>
-      </div>
+      <nav class="ops-tabs" aria-label="Operations sections">${tabs}</nav>
+      ${panels[active]}
     </main></div>`;
   window.scrollTo(0, scrollY);
 
   root.querySelector("#connector").onchange = async (e) => { await api("api/ops/connector", { method: "POST", body: { enabled: e.target.checked } }); await refresh(); };
-  root.querySelector("#hold").onclick = async () => { await api("api/ops/hold", { method: "POST", body: { account: ACCOUNT } }); await refresh(); };
-  root.querySelector("#return").onclick = async () => { await api("api/ops/return", { method: "POST", body: { account: ACCOUNT } }); await refresh(); };
+  const hold = root.querySelector("#hold");
+  if (hold) hold.onclick = async () => { await api("api/ops/hold", { method: "POST", body: { account: ACCOUNT } }); await refresh(); };
+  const giveBack = root.querySelector("#return");
+  if (giveBack) giveBack.onclick = async () => { await api("api/ops/return", { method: "POST", body: { account: ACCOUNT } }); await refresh(); };
 }
 
 api("api/config").then(v => { config = v; return refresh(); }).catch(e => {

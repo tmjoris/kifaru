@@ -85,6 +85,11 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		a.stats(w, r)
 	case r.Method == http.MethodGet && path == "/v1/stats/trends":
 		a.trends(w, r)
+	case r.Method == http.MethodGet && path == "/v1/admin/trend-history":
+		if !requireRole(w, user, "staff") {
+			return
+		}
+		a.trendHistoryStatus(w, r)
 	case r.Method == http.MethodPost && path == "/v1/admin/trend-history/seed":
 		if !requireRole(w, user, "staff") {
 			return

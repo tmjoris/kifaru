@@ -31,8 +31,12 @@ that is `http://127.0.0.1:5173`.
 
 Both workspaces open on the **Overview**: today against yesterday, this month
 against last month, a 30-day chart and, for staff, institutions ranked by
-activity. **Workspace** (or **Exchange** for staff) in the menu holds the
-detailed lists.
+activity. In the institution workspace, **Workspace** holds the detailed tabs.
+Staff have **Exchange**, **Guided**, **Events**, **Admissions** and **Attack
+replay** in the menu. Every menu item and tab has its own address, such as
+`/staff#guided` or `/#alerts`, so the back button and shared links work. Long
+lists open on their newest or strongest entries, with a button to show the
+rest.
 
 For the hosted demo, replace `http://127.0.0.1:5173` with the deployed frontend
 URL. The password for these Kifaru accounts is `KifaruDemo2026!`.
@@ -315,14 +319,18 @@ footer identify the synthetic portals. Sign in with the selected customer
 profile and password `bank1234`; this is separate from the Kifaru analyst
 password. Never enter real banking credentials.
 
-The `/ops` analyst pages use a dark console. They need no sign-in. Each shows:
+The `/ops` analyst pages use a dark console. They need no sign-in. Each shows
+a row of counters (transfers scored, blocked, Kifaru alerts and credits in) and
+these tabs, each with its own address such as `/ops#alerts`:
 
-- a row of counters: transfers scored, blocked, Kifaru alerts and credits in
-- the bank's fraud engine, with a score gauge and a marker at the block
-  threshold for every transfer
-- incoming Kifaru alerts, coloured by tier, with **Place account hold** and
-  **Return available funds**
-- incoming interbank credits, the local operations feed and the mailbox
+- **Fraud engine:** a score gauge and a marker at the block threshold for every
+  transfer
+- **Kifaru alerts:** incoming alerts, coloured by tier, with **Place account
+  hold** and **Return available funds**
+- **Credits in**, **Operations feed** and **Mailbox**
+
+Equity's page opens on its alerts, so the director's Equity frame shows them;
+NCBA and KCB open on their fraud engine. Each tab shows how many items it holds.
 
 The **Kifaru connector** switch in the page header turns report submission on
 or off for that bank.

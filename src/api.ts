@@ -857,9 +857,17 @@ export async function loadTrends(institution: string, days = 30, signal?: AbortS
   return parseTrends(await fetchJson(`/api/v1/stats/trends?${query}`, { signal }));
 }
 
+/** Starts the history seed, which runs on the server, and waits for it to finish. */
 export async function seedTrendHistory() {
-  const payload = await fetchJson("/api/v1/admin/trend-history/seed", { method: "POST" });
-  return isRecord(payload) ? count(payload.reports) : 0;
+  await fetchJson("/api/v1/admin/trend-history/seed", { method: "POST" });
+  for (let attempt = 0; attempt < 300; attempt++) {
+    await new Promise((resolve) => window.setTimeout(resolve, 2000));
+    const job = await fetchJson("/api/v1/admin/trend-history");
+    if (!isRecord(job) || job.running === true) continue;
+    if (typeof job.error === "string" && job.error) throw new Error(job.error);
+    return isRecord(job.last) ? count(job.last.reports) : 0;
+  }
+  throw new Error("The history seed is still running. Refresh the Overview in a minute.");
 }
 
 export async function resetTrendHistory() {

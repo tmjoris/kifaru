@@ -61,8 +61,8 @@ does not establish that the same human controlled every event.
 Institution staff sign in at `/`. The API binds every session to one
 institution and limits the workspace to related records.
 
-The workspace opens on an **Overview** of the institution's own numbers, then
-provides:
+The workspace opens on an **Overview** of the institution's own numbers. Each
+tab has its own address (`/#alerts`), and the workspace provides:
 
 - Signals submitted by the institution
 - Corroborated and single-source alerts received by the institution
@@ -78,7 +78,8 @@ provides:
 ### Kifaru staff workspace
 
 Kifaru staff sign in at `/staff`. The staff view opens on an ecosystem-wide
-**Overview** and provides:
+**Overview**. Its menu has Exchange, Guided, Events, Admissions and Attack
+replay, each with its own address (`/staff#guided`), and it provides:
 
 - Ecosystem-wide synthetic signal history
 - The protected-indicator relationship map
@@ -111,7 +112,9 @@ user only ever gets its own institution, and asking for another one returns
 A fresh database has no history to chart, so staff can select **Seed 60 days of
 history** (`POST /v1/admin/trend-history/seed`). It runs about 290 synthetic
 reports across six institutions through the normal pipeline, records receiver
-decisions, then dates each record to the day it stands for. Seeded reports carry
+decisions, then dates each record to the day it stands for. It runs in the
+background, because on the hosted database it takes longer than Render keeps a
+request open; `GET /v1/admin/trend-history` says when it has finished. Seeded reports carry
 `evidence.seeded_history`, use hashed identifiers only, never count toward
 reporter standing, and leave no notifications behind. Only the seed may set that
 field. **Remove seeded history** (`POST /v1/admin/trend-history/reset`) deletes
@@ -524,6 +527,7 @@ GET    /v1/admin/attack-scenario
 POST   /v1/admin/attack-scenario/advance
 POST   /v1/admin/attack-scenario/reset    {"mode": "without" | "with"}
 
+GET    /v1/admin/trend-history
 POST   /v1/admin/trend-history/seed
 POST   /v1/admin/trend-history/reset
 ```

@@ -224,10 +224,38 @@ func TestPostgresTrends(t *testing.T) {
 	for _, code := range seedHistoryInstitutions {
 		standingBefore[code], _ = reporterStanding(ctx, db, code)
 	}
-	status, seeded := call(staff, http.MethodPost, "/v1/admin/trend-history/seed")
-	if status != http.StatusOK {
-		t.Fatalf("seed: %d %v", status, seeded)
+	if status, _ := call(ncba, http.MethodGet, "/v1/admin/trend-history"); status != http.StatusForbidden {
+		t.Fatalf("an institution reading the seed status: status %d, want 403", status)
 	}
+	// The seed runs in the background: it answers 202 at once, refuses a second
+	// seed or a reset until it finishes, and its status then holds the summary.
+	seed := func(checkBusy bool) map[string]any {
+		t.Helper()
+		status, started := call(staff, http.MethodPost, "/v1/admin/trend-history/seed")
+		if status != http.StatusAccepted || started["running"] != true {
+			t.Fatalf("seed: %d %v", status, started)
+		}
+		if checkBusy {
+			if status, _ := call(staff, http.MethodPost, "/v1/admin/trend-history/seed"); status != http.StatusConflict {
+				t.Fatalf("a second seed while one runs: status %d, want 409", status)
+			}
+			if status, _ := call(staff, http.MethodPost, "/v1/admin/trend-history/reset"); status != http.StatusConflict {
+				t.Fatalf("a reset while the seed runs: status %d, want 409", status)
+			}
+		}
+		for deadline := time.Now().Add(5 * time.Minute); time.Now().Before(deadline); time.Sleep(200 * time.Millisecond) {
+			_, job := call(staff, http.MethodGet, "/v1/admin/trend-history")
+			if job["running"] == false {
+				if job["error"] != "" {
+					t.Fatalf("seed failed: %v", job["error"])
+				}
+				return job["last"].(map[string]any)
+			}
+		}
+		t.Fatal("the seed did not finish in five minutes")
+		return nil
+	}
+	seeded := seed(true)
 	reports, _ := numberValue(seeded["reports"])
 	alerts, _ := numberValue(seeded["alerts"])
 	outcomes, _ := numberValue(seeded["outcomes"])
@@ -280,7 +308,7 @@ func TestPostgresTrends(t *testing.T) {
 	}
 
 	// Seeding again replaces the history instead of adding to it.
-	_, again := call(staff, http.MethodPost, "/v1/admin/trend-history/seed")
+	again := seed(false)
 	if removed, _ := numberValue(again["removed_reports"]); removed != reports {
 		t.Fatalf("second seed removed %v reports, want %v", removed, reports)
 	}

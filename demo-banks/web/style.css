@@ -369,6 +369,12 @@ a { color: inherit; }
 .kpi.alert .kpi-icon { color: var(--bad); }
 .kpi.info strong { color: var(--info); }
 
+.ops-tabs { display: flex; gap: .25rem; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
+.ops-tab { flex: 0 0 auto; display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; padding: .5rem .9rem; color: var(--muted); font-weight: 600; text-decoration: none; border-bottom: 2px solid transparent; }
+.ops-tab:hover { color: var(--ink); }
+.ops-tab.active { color: var(--ink); border-bottom-color: var(--glow); }
+.ops-tab b { min-width: 1.4rem; padding: .05rem .4rem; border-radius: 999px; background: var(--soft); color: var(--ink); font-size: .75rem; text-align: center; }
+.ops-tab:focus-visible { outline: 2px solid var(--glow); outline-offset: -2px; }
 .ops-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
 .stack { display: grid; gap: 1rem; align-content: start; }
 .threshold { padding: .2rem .6rem; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; font-family: var(--font-mono); font-size: .7rem; white-space: nowrap; }
