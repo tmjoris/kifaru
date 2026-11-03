@@ -28,6 +28,26 @@ import { GuidedCampaign, SignalNotifications } from "./components/GuidedCampaign
 import { AttackReplay } from "./components/AttackReplay";
 import { RiskCheck } from "./components/RiskCheck";
 import { Overview } from "./components/Overview";
+import { useHashView } from "./navigation";
+
+// Each menu item has its own address after "#".
+const STAFF_VIEWS = ["overview", "exchange", "guided", "stream", "admissions", "attack"] as const;
+type StaffView = typeof STAFF_VIEWS[number];
+const STAFF_MENU: { view: StaffView; icon: string; label: string }[] = [
+  { view: "overview", icon: "monitoring", label: "Overview" },
+  { view: "exchange", icon: "hub", label: "Exchange" },
+  { view: "guided", icon: "route", label: "Guided" },
+  { view: "stream", icon: "stream", label: "Events" },
+  { view: "admissions", icon: "how_to_reg", label: "Admissions" },
+  { view: "attack", icon: "crisis_alert", label: "Attack replay" },
+];
+const INSTITUTION_VIEWS = ["overview", "signals", "alerts", "history", "risk-check", "reports", "knowledge", "governance"] as const;
+type InstitutionView = typeof INSTITUTION_VIEWS[number];
+const TAB_VIEWS: Record<Tab, InstitutionView> = {
+  outgoing: "signals", incoming: "alerts", history: "history", risk: "risk-check",
+  reports: "reports", knowledge: "knowledge", governance: "governance",
+};
+const VIEW_TABS = Object.fromEntries(Object.entries(TAB_VIEWS).map(([tab, view]) => [view, tab])) as Record<InstitutionView, Tab>;
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -36,7 +56,10 @@ export default function App() {
   const [sessionReady, setSessionReady] = useState(() => !hasStoredSession());
   const bankTemplates = useMemo<Bank[]>(() => initialBanks, []);
   const [banks, setBanks] = useState<Bank[]>(bankTemplates);
-  const [tab, setTab] = useState<Tab>("outgoing");
+  const [institutionView, openInstitutionView] = useHashView(INSTITUTION_VIEWS, "overview");
+  const [lastTab, setLastTab] = useState<Tab>("outgoing");
+  const tab: Tab = institutionView === "overview" ? lastTab : VIEW_TABS[institutionView];
+  const openTab = useCallback((next: Tab) => openInstitutionView(TAB_VIEWS[next]), [openInstitutionView]);
   const [collapsed, setCollapsed] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -54,8 +77,7 @@ export default function App() {
   const [demoStream, setDemoStream] = useState<DemoStreamStatus | null>(null);
   const [guidedDemo, setGuidedDemo] = useState<GuidedDemoStatus | null>(null);
   const [attackScenario, setAttackScenario] = useState<AttackScenarioStatus | null>(null);
-  const [staffView, setStaffView] = useState<"overview" | "exchange" | "attack">("overview");
-  const [workspaceView, setWorkspaceView] = useState<"overview" | "workspace">("overview");
+  const [staffView, openStaffView] = useHashView(STAFF_VIEWS, "overview");
   const [dataVersion, setDataVersion] = useState(0);
   const [demoBusy, setDemoBusy] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -119,7 +141,6 @@ export default function App() {
     setQuery("");
     setFilter("all");
     setReportView("all");
-    setTab("outgoing");
     setUploadError("");
     setUploadSummary(null);
     setRiskCodes(riskCodeCatalog);
@@ -127,8 +148,6 @@ export default function App() {
     setDemoStream(null);
     setGuidedDemo(null);
     setAttackScenario(null);
-    setStaffView("overview");
-    setWorkspaceView("overview");
     setNotifications([]);
     userRequestController.current?.abort();
     setUserAccessRequests([]);
@@ -141,6 +160,17 @@ export default function App() {
     setDataError("");
     setLoadingData(false);
   }, [bankTemplates]);
+
+  useEffect(() => {
+    if (institutionView !== "overview") setLastTab(VIEW_TABS[institutionView]);
+  }, [institutionView]);
+
+  useEffect(() => {
+    const item = document.querySelector<HTMLElement>(".nav-rail .rail-item.active");
+    if (item?.parentElement && item.parentElement.scrollWidth > item.parentElement.clientWidth) {
+      item.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }, [staffView, institutionView, session]);
 
   useEffect(() => {
     let active = true;
@@ -336,6 +366,8 @@ export default function App() {
     } finally {
       setSession(null);
       clearProtectedData();
+      openStaffView("overview", true);
+      openInstitutionView("overview", true);
     }
   }
 
@@ -534,34 +566,23 @@ export default function App() {
       <nav className="nav-rail" aria-label="Signed-in portal">
         <div className="nav-rail-brand"><Logo /></div>
         {isExchange
-          ? <>
-            <button className={`rail-item ${staffView === "overview" ? "active" : ""}`}
-              aria-current={staffView === "overview" ? "page" : undefined} onClick={() => setStaffView("overview")}>
-              <span className="rail-icon"><Icon name="monitoring" /></span>
-              <span className="rail-text">Overview</span>
-            </button>
-            <button className={`rail-item ${staffView === "exchange" ? "active" : ""}`}
-              aria-current={staffView === "exchange" ? "page" : undefined} onClick={() => setStaffView("exchange")}>
-              <span className="rail-icon"><Icon name={workspaceMeta.icon} /></span>
-              <span className="rail-text">{workspaceMeta.railLabel}</span>
-            </button>
-            <button className={`rail-item ${staffView === "attack" ? "active" : ""}`}
-              aria-current={staffView === "attack" ? "page" : undefined} onClick={() => {
-                setStaffView("attack");
-                setCollapsed(true);
+          ? STAFF_MENU.map((item) =>
+            <button key={item.view} className={`rail-item ${staffView === item.view ? "active" : ""}`}
+              aria-current={staffView === item.view ? "page" : undefined} onClick={() => {
+                openStaffView(item.view);
+                if (item.view === "attack") setCollapsed(true);
               }}>
-              <span className="rail-icon"><Icon name="crisis_alert" /></span>
-              <span className="rail-text">Attack replay</span>
-            </button>
-          </>
+              <span className="rail-icon"><Icon name={item.icon} /></span>
+              <span className="rail-text">{item.label}</span>
+            </button>)
           : <>
-            <button className={`rail-item ${workspaceView === "overview" ? "active" : ""}`}
-              aria-current={workspaceView === "overview" ? "page" : undefined} onClick={() => setWorkspaceView("overview")}>
+            <button className={`rail-item ${institutionView === "overview" ? "active" : ""}`}
+              aria-current={institutionView === "overview" ? "page" : undefined} onClick={() => openInstitutionView("overview")}>
               <span className="rail-icon"><Icon name="monitoring" /></span>
               <span className="rail-text">Overview</span>
             </button>
-            <button className={`rail-item ${workspaceView === "workspace" ? "active" : ""}`}
-              aria-current={workspaceView === "workspace" ? "page" : undefined} onClick={() => setWorkspaceView("workspace")}>
+            <button className={`rail-item ${institutionView !== "overview" ? "active" : ""}`}
+              aria-current={institutionView !== "overview" ? "page" : undefined} onClick={() => openTab(lastTab)}>
               <span className="rail-icon"><Icon name={workspaceMeta.icon} /></span>
               <span className="rail-text">{workspaceMeta.railLabel}</span>
             </button>
@@ -644,17 +665,20 @@ export default function App() {
               setToast("Data refreshed.");
             }).catch(() => undefined)}><Icon name="refresh" className="btn-icon" />{loadingData || userRequestsLoading ? "Loading..." : "Refresh data"}</button>
           </div></section>
-          {(isExchange ? staffView === "overview" : workspaceView === "overview")
+          {(isExchange ? staffView === "overview" : institutionView === "overview")
             ? <Overview institution={isExchange ? "" : bank.backendCode} staff={isExchange} version={dataVersion}
               title={isExchange ? "Ecosystem overview" : `${bank.name} overview`} notify={setToast} />
+            : isExchange && staffView === "admissions"
+            ? <StaffUserAdmissions requests={userAccessRequests} loading={userRequestsLoading}
+              error={userRequestsError} onDecision={reviewInstitutionUser} notify={setToast} />
+            : isExchange && staffView === "guided"
+            ? <GuidedCampaign campaign={guidedDemo} busy={demoBusy}
+              onAdvance={advanceGuidedCampaign} onReset={clearGuidedCampaign} />
+            : isExchange && staffView === "stream"
+            ? <DemoStream stream={demoStream} busy={demoBusy}
+              onToggle={controlDemoStream} onEmit={emitDemoEvent} onReset={clearDemoStream} />
             : isExchange
             ? <div className="stack">
-              <StaffUserAdmissions requests={userAccessRequests} loading={userRequestsLoading}
-                error={userRequestsError} onDecision={reviewInstitutionUser} notify={setToast} />
-              <GuidedCampaign campaign={guidedDemo} busy={demoBusy}
-                onAdvance={advanceGuidedCampaign} onReset={clearGuidedCampaign} />
-              <DemoStream stream={demoStream} busy={demoBusy}
-                onToggle={controlDemoStream} onEmit={emitDemoEvent} onReset={clearDemoStream} />
               {updateWaiting && <p className="update-waiting" role="status">New activity has arrived. The cards update when you move the pointer off them.</p>}
               <div onPointerEnter={() => pointerOverList(true)} onPointerLeave={() => pointerOverList(false)}>
                 <Exchange transactions={transactions} bankName={bankName} onOpen={setSelectedKey} />
@@ -668,7 +692,7 @@ export default function App() {
                 </div>,
               )}</section>
               <nav className="tabs" aria-label="Institution sections">{tabs.map((item) =>
-                <button key={item.id} className={`tab-btn ${tab === item.id ? "active" : ""}`} aria-pressed={tab === item.id} onClick={() => setTab(item.id)}>{item.label}</button>,
+                <button key={item.id} className={`tab-btn ${tab === item.id ? "active" : ""}`} aria-pressed={tab === item.id} onClick={() => openTab(item.id)}>{item.label}</button>,
               )}</nav>
               {(tab === "incoming" || tab === "outgoing" || tab === "history") && <>
                 <div className="transaction-controls">
