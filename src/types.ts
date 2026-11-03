@@ -251,3 +251,22 @@ export interface AttackScenarioStatus {
   secondAmount: number;
   signals: AttackSignal[];
 }
+
+export interface TrendCounts {
+  reports: number; alerts: number; corroborated: number; single_source_review: number;
+  single_source_notice: number; held: number; released: number; recovered: number;
+  blocked: number; allowed: number; incidents: number;
+}
+export interface TrendDay { day: string; reports: number; alerts: number; blocked: number; released: number }
+export interface TrendRank { institution: string; name: string; reports: number; alerts: number }
+export interface TrendSummary {
+  scope: "institution" | "ecosystem";
+  institution: string;
+  days: number;
+  today: string;
+  periods: { this_month: string; last_month: string };
+  comparison: Record<"today" | "yesterday" | "this_month" | "last_month", TrendCounts>;
+  series: TrendDay[];
+  ranking: TrendRank[];
+  seededReports: number;
+}
