@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   advanceAttackScenario, advanceGuidedDemo, createUserAccessRequest, decideUserAccessRequest, emitDemoStreamEvent,
-  loadAttackScenario, loadDashboardData, loadDemoStream, loadGuidedDemo, loadUserAccessRequests, login,
+  hasStoredSession, loadAttackScenario, loadDashboardData, loadDemoStream, loadGuidedDemo, loadUserAccessRequests, login,
   logout as logoutSession, resetAttackScenario, resetDemoStream, resetGuidedDemo, restoreSession, setDemoStreamState,
   subscribeToAlerts, updateAlertState, updateInstitutionThreshold, updateReportLifecycle, validateCsv,
 } from "./api";
@@ -27,10 +27,13 @@ import { StaffUserAdmissions } from "./components/UserAccess";
 import { GuidedCampaign, SignalNotifications } from "./components/GuidedCampaign";
 import { AttackReplay } from "./components/AttackReplay";
 import { RiskCheck } from "./components/RiskCheck";
+import { Overview } from "./components/Overview";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
-  const [sessionReady, setSessionReady] = useState(false);
+  // Without a stored token the sign-in page shows at once, while the session
+  // check (which also wakes a sleeping hosted API) runs in the background.
+  const [sessionReady, setSessionReady] = useState(() => !hasStoredSession());
   const bankTemplates = useMemo<Bank[]>(() => initialBanks, []);
   const [banks, setBanks] = useState<Bank[]>(bankTemplates);
   const [tab, setTab] = useState<Tab>("outgoing");
@@ -51,7 +54,9 @@ export default function App() {
   const [demoStream, setDemoStream] = useState<DemoStreamStatus | null>(null);
   const [guidedDemo, setGuidedDemo] = useState<GuidedDemoStatus | null>(null);
   const [attackScenario, setAttackScenario] = useState<AttackScenarioStatus | null>(null);
-  const [staffView, setStaffView] = useState<"exchange" | "attack">("exchange");
+  const [staffView, setStaffView] = useState<"overview" | "exchange" | "attack">("overview");
+  const [workspaceView, setWorkspaceView] = useState<"overview" | "workspace">("overview");
+  const [dataVersion, setDataVersion] = useState(0);
   const [demoBusy, setDemoBusy] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [userAccessRequests, setUserAccessRequests] = useState<UserAccessRequest[]>([]);
@@ -122,7 +127,8 @@ export default function App() {
     setDemoStream(null);
     setGuidedDemo(null);
     setAttackScenario(null);
-    setStaffView("exchange");
+    setStaffView("overview");
+    setWorkspaceView("overview");
     setNotifications([]);
     userRequestController.current?.abort();
     setUserAccessRequests([]);
@@ -181,6 +187,7 @@ export default function App() {
     setRiskCodes(data.riskCodes);
     setKnowledgeBaseEntries(data.knowledgeBaseEntries);
     setNotifications(data.notifications);
+    setDataVersion((version) => version + 1);
   }, []);
 
   // Live updates wait while the pointer is over a list, so rows do not move under the cursor.
@@ -528,6 +535,11 @@ export default function App() {
         <div className="nav-rail-brand"><Logo /></div>
         {isExchange
           ? <>
+            <button className={`rail-item ${staffView === "overview" ? "active" : ""}`}
+              aria-current={staffView === "overview" ? "page" : undefined} onClick={() => setStaffView("overview")}>
+              <span className="rail-icon"><Icon name="monitoring" /></span>
+              <span className="rail-text">Overview</span>
+            </button>
             <button className={`rail-item ${staffView === "exchange" ? "active" : ""}`}
               aria-current={staffView === "exchange" ? "page" : undefined} onClick={() => setStaffView("exchange")}>
               <span className="rail-icon"><Icon name={workspaceMeta.icon} /></span>
@@ -542,10 +554,18 @@ export default function App() {
               <span className="rail-text">Attack replay</span>
             </button>
           </>
-          : <div className="rail-item active" aria-current="page">
-            <span className="rail-icon"><Icon name={workspaceMeta.icon} /></span>
-            <span className="rail-text">{workspaceMeta.railLabel}</span>
-          </div>}
+          : <>
+            <button className={`rail-item ${workspaceView === "overview" ? "active" : ""}`}
+              aria-current={workspaceView === "overview" ? "page" : undefined} onClick={() => setWorkspaceView("overview")}>
+              <span className="rail-icon"><Icon name="monitoring" /></span>
+              <span className="rail-text">Overview</span>
+            </button>
+            <button className={`rail-item ${workspaceView === "workspace" ? "active" : ""}`}
+              aria-current={workspaceView === "workspace" ? "page" : undefined} onClick={() => setWorkspaceView("workspace")}>
+              <span className="rail-icon"><Icon name={workspaceMeta.icon} /></span>
+              <span className="rail-text">{workspaceMeta.railLabel}</span>
+            </button>
+          </>}
         <button className="rail-item rail-signout" aria-label="Sign out" title="Sign out"
           onClick={() => void switchPortal()}>
           <span className="rail-icon"><Icon name="logout" /></span>
@@ -624,7 +644,10 @@ export default function App() {
               setToast("Data refreshed.");
             }).catch(() => undefined)}><Icon name="refresh" className="btn-icon" />{loadingData || userRequestsLoading ? "Loading..." : "Refresh data"}</button>
           </div></section>
-          {isExchange
+          {(isExchange ? staffView === "overview" : workspaceView === "overview")
+            ? <Overview institution={isExchange ? "" : bank.backendCode} staff={isExchange} version={dataVersion}
+              title={isExchange ? "Ecosystem overview" : `${bank.name} overview`} notify={setToast} />
+            : isExchange
             ? <div className="stack">
               <StaffUserAdmissions requests={userAccessRequests} loading={userRequestsLoading}
                 error={userRequestsError} onDecision={reviewInstitutionUser} notify={setToast} />

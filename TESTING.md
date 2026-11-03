@@ -13,8 +13,9 @@ down (scores, balances, the director replay) come from
 | **Smoke** | Does it start, and do the main journeys work at all? | `TestSmoke_…`, `scripts/smoke.mjs` | 8 + live script | 1 s |
 | **Security** | Can someone read, change or break what they should not? | `TestSecurity_…`, `demo-banks/web/common.test.mjs`, `npm audit`, `govulncheck` | 15 + 7 | 2 s |
 | **Load and performance** | Does it stay correct and fast with many users? | `TestLoad_…`, `BenchmarkScore`, `load/k6-banks.js` | 3 + k6 | 3 s |
-| **Integration** (existing) | Does the Kifaru API work against a real PostgreSQL? | `backend/*_test.go` (`TestPostgres…`) | 4 | needs a database |
-| **Unit** (existing) | Kifaru's validation, policy and the web app's logic | `backend/*_test.go`, `src/domain.test.ts` | 16 + 11 | under 1 s |
+| **Integration** | Does the Kifaru API work against a real PostgreSQL? | `backend/*_test.go` (`TestPostgres…`) | 5 | needs a database |
+| **Unit** | Kifaru's validation, policy and the web app's logic | `backend/*_test.go`, `src/domain.test.ts` | 19 + 11 | under 1 s |
+| **Mobile** | Does every main page fit a phone without scrolling sideways? | `scripts/mobile.mjs` | 7 pages × 2 phones | 1 min, needs the demo running |
 
 The 65 Go tests in `demo-banks` expand to 137 checks with their sub-cases.
 None of them needs a database or Kifaru, because the banks keep their state in
@@ -177,6 +178,32 @@ k6 run -e VUS=40 -e DURATION=60s load/k6-banks.js
 **It resets the demo first**, so use it on a throwaway instance, or pass
 `-e RESET=0`. A typical local result at 20 virtual customers: 0% failed
 requests, p95 about 70 ms for payments, about 75 requests per second.
+
+### Trends
+
+`backend/trends_test.go` checks the Overview's numbers. An institution sees
+only itself: asking for another institution or for the whole ecosystem returns
+403. Staff get the ecosystem view with a ranking. A report one minute before
+midnight in Nairobi counts as yesterday. Seeding writes history in all three
+alert tiers with hashed identifiers only, spread over 60 days, leaves every
+reporter's standing exactly as it was and leaves no notifications. Seeding
+again replaces the history, and reset removes it but keeps real reports. Only
+staff may seed, and every seed and reset is audited. A unit test checks the
+day buckets and counts without a database, and another that no caller outside
+the seed can set `seeded_history`.
+
+### Mobile
+
+With the demo running, `npm run mobile` opens seven pages on an iPhone 13
+(390 px) and a Pixel 7 (412 px) screen: the bank sign-in, customer and `/ops`
+pages, the director, and the Kifaru sign-in, institution Overview and staff
+Overview. Each check fails if the page is wider than the screen, and each saves
+a screenshot to `docs/screenshots/mobile/`. It drives the installed Chrome
+through `playwright-core`, so nothing else is downloaded. Set `NCBA_URL`,
+`NETWORK_URL` and `KIFARU_WEB_URL` to check the hosted copies.
+
+It is not part of CI yet, because it needs the API, the web app and the banks
+running together.
 
 ## What the checks on a pull request mean
 

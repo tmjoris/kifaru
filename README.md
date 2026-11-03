@@ -61,7 +61,8 @@ does not establish that the same human controlled every event.
 Institution staff sign in at `/`. The API binds every session to one
 institution and limits the workspace to related records.
 
-The workspace provides:
+The workspace opens on an **Overview** of the institution's own numbers, then
+provides:
 
 - Signals submitted by the institution
 - Corroborated and single-source alerts received by the institution
@@ -76,7 +77,8 @@ The workspace provides:
 
 ### Kifaru staff workspace
 
-Kifaru staff sign in at `/staff`. The staff view provides:
+Kifaru staff sign in at `/staff`. The staff view opens on an ecosystem-wide
+**Overview** and provides:
 
 - Ecosystem-wide synthetic signal history
 - The protected-indicator relationship map
@@ -90,6 +92,41 @@ Kifaru staff sign in at `/staff`. The staff view provides:
 The directory represents 37 commercial banks, HFC as the mortgage finance
 institution, M-Pesa, and Airtel Money. Representation in the directory does not
 mean operational participation.
+
+## Overview and trends
+
+Both workspaces open on an Overview. It shows reports, alerts by tier (with
+why each tier fires), receiver outcomes, blocked against allowed, and incidents
+(distinct accounts with a corroborated alert). Each figure compares today with
+yesterday, and this month so far with the same days last month. A 30-day line
+chart shows signals, alerts, blocked or held, and released; it has a text
+summary for screen readers and a table view. Staff also see institutions ranked
+by reports and alerts.
+
+The numbers come from `GET /v1/stats/trends?institution=&days=30`, counted in
+Nairobi time from the reports, alerts and alert outcome tables. An institution
+user only ever gets its own institution, and asking for another one returns
+403. Only staff get the whole ecosystem.
+
+A fresh database has no history to chart, so staff can select **Seed 60 days of
+history** (`POST /v1/admin/trend-history/seed`). It runs about 290 synthetic
+reports across six institutions through the normal pipeline, records receiver
+decisions, then dates each record to the day it stands for. Seeded reports carry
+`evidence.seeded_history`, use hashed identifiers only, never count toward
+reporter standing, and leave no notifications behind. Only the seed may set that
+field. **Remove seeded history** (`POST /v1/admin/trend-history/reset`) deletes
+them and nothing else. Both actions are audited.
+
+## Acting on the first report
+
+Kifaru does not wait for a second bank when the first report is strong. A
+victim-confirmed report from a reporter in good standing raises a single-source
+review at once, so the receiving bank can hold the account before the money
+moves on. The pre-payment risk check then lets other banks block the next
+payment to that account. Waiting for two reports would protect against false
+accusations at the cost of more losses, and once money has left a mule account
+it is rarely recovered. The tiers and scores stay as described below; the
+receiving bank still makes its own decision.
 
 ## Guided campaign
 
@@ -463,6 +500,7 @@ POST   /v1/user-requests
 GET    /v1/institutions
 GET    /v1/standard
 GET    /v1/stats
+GET    /v1/stats/trends?institution=&days=
 
 GET    /v1/admin/config
 PATCH  /v1/admin/config
@@ -485,6 +523,9 @@ POST   /v1/admin/guided-demo/reset
 GET    /v1/admin/attack-scenario
 POST   /v1/admin/attack-scenario/advance
 POST   /v1/admin/attack-scenario/reset    {"mode": "without" | "with"}
+
+POST   /v1/admin/trend-history/seed
+POST   /v1/admin/trend-history/reset
 ```
 
 ## Migrations and audit integrity
@@ -595,9 +636,15 @@ Coverage includes:
 - Institution notifications
 - Guided campaign completion, release, and reset
 - Attack replay in both modes, scenario-scoped standing, and reset
+- Trends: tenant isolation, staff-only ecosystem view, Nairobi day buckets, and
+  history seeding and reset without any effect on reporter standing
 - Sentinel-shaped event processing and retention
 - Device/network switching
 - All 40 represented institutions
+
+With the demo running, `npm run mobile` opens the main Kifaru and demo bank
+pages on an iPhone 13 and a Pixel 7 screen, fails if any page scrolls sideways,
+and saves screenshots to `docs/screenshots/mobile/`. See [TESTING.md](TESTING.md).
 
 GitHub Actions builds and tests the frontend, starts PostgreSQL 16, and runs the
 Go integration suite on every push to `main` and every pull request.

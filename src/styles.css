@@ -4356,3 +4356,355 @@ html[data-theme="dark"] .attack-replay {
     flex-wrap: wrap;
   }
 }
+
+/* Overview: trends in the existing card and table styles. Series colours are
+   the validated categorical slots 1 to 4, stepped for each theme. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.overview {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  display: grid;
+  gap: 1rem;
+}
+
+html[data-theme="dark"] .overview {
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) .overview {
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+  }
+}
+
+.overview-tiles {
+  margin: 0;
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.overview-tiles .metric {
+  border-color: var(--cp-border);
+}
+
+.overview-message {
+  padding: 1rem 1.25rem;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.trend-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  color: var(--cp-text-muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.trend-change .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+.metric-value .trend-change {
+  margin-left: 0.35rem;
+  vertical-align: middle;
+}
+
+.overview-column {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.overview table {
+  min-width: 0;
+}
+
+.overview th,
+.overview td {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.overview thead th {
+  white-space: nowrap;
+}
+
+.overview .trend-compare {
+  min-width: 22rem;
+}
+
+.trend-compared {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.45rem;
+}
+
+.trend-from {
+  color: var(--cp-text-soft);
+  font-size: 0.8rem;
+}
+
+.trend-compare th[scope="row"] {
+  width: 48%;
+  text-align: left;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--cp-text);
+}
+
+.trend-compare td,
+.trend-rank td + td {
+  font-variant-numeric: tabular-nums;
+}
+
+.trend-why {
+  display: block;
+  color: var(--cp-text-soft);
+  font-size: 0.8rem;
+}
+
+.trend-figure {
+  margin: 0;
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+  color: var(--cp-text-muted);
+  font-size: 0.85rem;
+}
+
+.trend-legend i,
+.trend-tooltip i {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.2rem;
+  margin-right: 0.35rem;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+.trend-plot {
+  position: relative;
+}
+
+.trend-plot svg {
+  display: block;
+  max-width: 100%;
+  touch-action: pan-y;
+}
+
+.trend-grid line {
+  stroke: var(--cp-border);
+  stroke-width: 1;
+}
+
+.trend-grid text,
+.trend-axis,
+.trend-end {
+  fill: var(--cp-text-soft);
+  font-size: 13px;
+}
+
+.trend-end {
+  fill: var(--cp-text-muted);
+}
+
+.trend-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.trend-line.series-1 { stroke: var(--series-1); }
+.trend-line.series-2 { stroke: var(--series-2); }
+.trend-line.series-3 { stroke: var(--series-3); }
+.trend-line.series-4 { stroke: var(--series-4); stroke-dasharray: 5 4; }
+
+i.series-1, circle.series-1 { background: var(--series-1); fill: var(--series-1); }
+i.series-2, circle.series-2 { background: var(--series-2); fill: var(--series-2); }
+i.series-3, circle.series-3 { background: var(--series-3); fill: var(--series-3); }
+i.series-4, circle.series-4 { background: var(--series-4); fill: var(--series-4); }
+
+.trend-hover line {
+  stroke: var(--cp-border-strong);
+  stroke-width: 1;
+}
+
+.trend-hover circle {
+  stroke: var(--cp-surface);
+  stroke-width: 2;
+}
+
+.trend-tooltip {
+  position: absolute;
+  top: 0;
+  display: grid;
+  gap: 0.15rem;
+  min-width: 9rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--cp-border);
+  border-radius: 8px;
+  background: var(--cp-panel-strong);
+  box-shadow: var(--cp-shadow);
+  color: var(--cp-text);
+  font-size: 0.8rem;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.trend-tooltip b {
+  float: right;
+  margin-left: 0.75rem;
+}
+
+.trend-table {
+  margin-top: 0.75rem;
+  color: var(--cp-text-muted);
+  font-size: 0.875rem;
+}
+
+.trend-table summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+.trend-table table {
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .overview-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .overview .card-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .overview .card-header .btn {
+    white-space: nowrap;
+  }
+
+  .overview-tiles {
+    padding: 0.75rem;
+  }
+
+  .overview .trend-compare {
+    min-width: 0;
+  }
+
+  .overview th,
+  .overview td {
+    padding-inline: 0.5rem;
+  }
+
+  .trend-figure {
+    padding: 0.75rem;
+  }
+}
+
+/* Small screens. Nothing here applies above 1100px, so the desktop layout is
+   unchanged. Icons are clipped to one glyph so their ligature names cannot
+   push the page sideways while the icon font is still loading. */
+.material-symbols-outlined {
+  width: 1em;
+  overflow: hidden;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 1100px) {
+  .nav-rail {
+    gap: 0.25rem;
+    padding: 0.35rem 0.5rem;
+  }
+
+  .nav-rail-brand {
+    margin: 0 0.25rem 0 0;
+  }
+
+  .rail-item {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+    max-width: 6rem;
+    min-height: 44px;
+  }
+
+  .rail-item.rail-signout {
+    margin-top: 0;
+  }
+
+  /* The sidebar always shows on small screens, so collapsing it does nothing. */
+  .rail-item.rail-toggle {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .btn,
+  .mini-btn,
+  .tab-btn,
+  .input,
+  .select,
+  .pill[for],
+  .portal-submit,
+  .portal-route-link,
+  .portal-theme-toggle {
+    min-height: 44px;
+  }
+
+  .portal-theme-toggle,
+  .portal-password button {
+    min-width: 44px;
+  }
+
+  .portal-password button,
+  .portal-form-meta label,
+  .mode-option,
+  .file-input {
+    min-height: 44px;
+  }
+
+  .portal-form-meta label {
+    display: inline-flex;
+    align-items: center;
+  }
+}

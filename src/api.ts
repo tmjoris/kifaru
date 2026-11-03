@@ -1,7 +1,7 @@
 import type {
   AttackScenarioStatus, AttackSignal, AuthSession, Bank, DashboardData, DemoStreamEvent,
   DemoStreamStatus, GuidedDemoStatus, KnowledgeBaseEntry, Notification, PortalScope, RiskCheckResult,
-  RiskCodeReference, RiskSignal, Transaction, UploadSummary, UserAccessRequest, Validation,
+  RiskCodeReference, RiskSignal, Transaction, TrendCounts, TrendSummary, UploadSummary, UserAccessRequest, Validation,
 } from "./types";
 import { riskCodeInfo } from "./explain";
 import { isAlerting } from "./domain";
@@ -135,7 +135,16 @@ export async function restoreSession(): Promise<AuthSession | null> {
       ? payload.detail : `Session restore failed (HTTP ${response.status}).`;
     throw new Error(detail);
   }
+  if (isRecord(payload) && payload.authenticated === false) {
+    clearAuthState();
+    return null;
+  }
   return parseAuthSession(payload);
+}
+
+/** Whether this browser kept a sign-in token from an earlier visit. */
+export function hasStoredSession() {
+  return accessToken !== "";
 }
 
 export async function logout() {
@@ -798,4 +807,62 @@ export async function validateCsv(csv: string, signal?: AbortSignal) {
     throw new Error("The validation API returned an unexpected response.");
   }
   return { validations: payload.validations, summary: payload.summary };
+}
+
+const TREND_KEYS: (keyof TrendCounts)[] = [
+  "reports", "alerts", "corroborated", "single_source_review", "single_source_notice",
+  "held", "released", "recovered", "blocked", "allowed", "incidents",
+];
+
+function count(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function parseTrendCounts(value: unknown): TrendCounts {
+  const record = isRecord(value) ? value : {};
+  return Object.fromEntries(TREND_KEYS.map((key) => [key, count(record[key])])) as unknown as TrendCounts;
+}
+
+function parseTrends(payload: unknown): TrendSummary {
+  if (!isRecord(payload) || !isRecord(payload.comparison) || !Array.isArray(payload.series)) {
+    throw new Error("The trends API returned an unexpected response.");
+  }
+  const comparison = payload.comparison;
+  const periods = isRecord(payload.periods) ? payload.periods : {};
+  return {
+    scope: payload.scope === "ecosystem" ? "ecosystem" : "institution",
+    institution: String(payload.institution ?? ""),
+    days: count(payload.days),
+    today: String(payload.today ?? ""),
+    periods: { this_month: String(periods.this_month ?? ""), last_month: String(periods.last_month ?? "") },
+    comparison: {
+      today: parseTrendCounts(comparison.today), yesterday: parseTrendCounts(comparison.yesterday),
+      this_month: parseTrendCounts(comparison.this_month), last_month: parseTrendCounts(comparison.last_month),
+    },
+    series: payload.series.filter(isRecord).map((day) => ({
+      day: String(day.day ?? ""), reports: count(day.reports), alerts: count(day.alerts),
+      blocked: count(day.blocked), released: count(day.released),
+    })),
+    ranking: (Array.isArray(payload.ranking) ? payload.ranking : []).filter(isRecord).map((row) => ({
+      institution: String(row.institution ?? ""), name: String(row.name ?? row.institution ?? ""),
+      reports: count(row.reports), alerts: count(row.alerts),
+    })),
+    seededReports: count(payload.seeded_reports),
+  };
+}
+
+export async function loadTrends(institution: string, days = 30, signal?: AbortSignal) {
+  const query = new URLSearchParams({ days: String(days) });
+  if (institution) query.set("institution", institution);
+  return parseTrends(await fetchJson(`/api/v1/stats/trends?${query}`, { signal }));
+}
+
+export async function seedTrendHistory() {
+  const payload = await fetchJson("/api/v1/admin/trend-history/seed", { method: "POST" });
+  return isRecord(payload) ? count(payload.reports) : 0;
+}
+
+export async function resetTrendHistory() {
+  const payload = await fetchJson("/api/v1/admin/trend-history/reset", { method: "POST" });
+  return isRecord(payload) ? count(payload.removed_reports) : 0;
 }

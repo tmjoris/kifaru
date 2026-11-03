@@ -75,6 +75,10 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 		return nil, &apiError{http.StatusUnprocessableEntity,
 			"evidence field attack_scenario is reserved for the attack scenario"}
 	}
+	if truthy(report.Evidence["seeded_history"]) && !fromSeedHistory(ctx) {
+		return nil, &apiError{http.StatusUnprocessableEntity,
+			"evidence field seeded_history is reserved for the history seed"}
+	}
 	if err := validateReport(report); err != nil {
 		return nil, &apiError{http.StatusUnprocessableEntity, err.Error()}
 	}
@@ -759,8 +763,8 @@ func (a *App) score(
 }
 
 // reporterStanding summarises receiver decisions on an institution's recent
-// alerts. Retracted alerts are neutral, and scripted guided and attack
-// scenario outcomes are ignored because no receiver made them.
+// alerts. Retracted alerts are neutral, and scripted guided, attack scenario
+// and seeded history outcomes are ignored because no receiver made them.
 func reporterStanding(ctx context.Context, store dbRunner, institution string) (ReporterStanding, error) {
 	var standing ReporterStanding
 	err := store.QueryRow(ctx, `SELECT
@@ -771,7 +775,8 @@ func reporterStanding(ctx context.Context, store dbRunner, institution string) (
 		WHERE a.reporting_institution=$1
 		  AND a.updated_at >= NOW() - make_interval(days => $2::int)
 		  AND COALESCE(r.evidence,'') NOT LIKE '%"guided_demo":true%'
-		  AND COALESCE(r.evidence,'') NOT LIKE '%"attack_scenario":%'`,
+		  AND COALESCE(r.evidence,'') NOT LIKE '%"attack_scenario":%'
+		  AND COALESCE(r.evidence,'') NOT LIKE '%"seeded_history":true%'`,
 		institution, standingWindowDays).Scan(&standing.Upheld, &standing.Adverse)
 	if err != nil {
 		return ReporterStanding{}, err
