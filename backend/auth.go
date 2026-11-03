@@ -306,6 +306,13 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) session(w http.ResponseWriter, r *http.Request) {
+	// A first visit carries no session at all. That is not an error, so it gets
+	// a plain answer instead of a 401 in the browser console. A token that is
+	// sent but invalid or expired still gets 401.
+	if sessionToken(r) == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
+		return
+	}
 	user, err := a.authenticatedUser(r)
 	if err != nil {
 		clearAuthCookie(w, r)

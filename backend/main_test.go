@@ -759,6 +759,13 @@ func TestPostgresPipeline(t *testing.T) {
 	if loggedOutSessionRecorder.Code != http.StatusUnauthorized {
 		t.Fatalf("logged-out bearer token should be invalid, got %d", loggedOutSessionRecorder.Code)
 	}
+	firstVisitRecorder := httptest.NewRecorder()
+	app.serveHTTP(firstVisitRecorder, httptest.NewRequest(http.MethodGet, "/v1/auth/session", nil))
+	if firstVisitRecorder.Code != http.StatusOK ||
+		!strings.Contains(firstVisitRecorder.Body.String(), `"authenticated":false`) {
+		t.Fatalf("a first visit should be told it is signed out without an error, got %d %s",
+			firstVisitRecorder.Code, firstVisitRecorder.Body.String())
+	}
 
 	hash := "sha256:" + strings.Repeat("a", 64)
 	first := ReportIn{

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   advanceAttackScenario, advanceGuidedDemo, createUserAccessRequest, decideUserAccessRequest, emitDemoStreamEvent,
-  loadAttackScenario, loadDashboardData, loadDemoStream, loadGuidedDemo, loadUserAccessRequests, login,
+  hasStoredSession, loadAttackScenario, loadDashboardData, loadDemoStream, loadGuidedDemo, loadUserAccessRequests, login,
   logout as logoutSession, resetAttackScenario, resetDemoStream, resetGuidedDemo, restoreSession, setDemoStreamState,
   subscribeToAlerts, updateAlertState, updateInstitutionThreshold, updateReportLifecycle, validateCsv,
 } from "./api";
@@ -31,7 +31,9 @@ import { Overview } from "./components/Overview";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
-  const [sessionReady, setSessionReady] = useState(false);
+  // Without a stored token the sign-in page shows at once, while the session
+  // check (which also wakes a sleeping hosted API) runs in the background.
+  const [sessionReady, setSessionReady] = useState(() => !hasStoredSession());
   const bankTemplates = useMemo<Bank[]>(() => initialBanks, []);
   const [banks, setBanks] = useState<Bank[]>(bankTemplates);
   const [tab, setTab] = useState<Tab>("outgoing");

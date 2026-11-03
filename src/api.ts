@@ -135,7 +135,16 @@ export async function restoreSession(): Promise<AuthSession | null> {
       ? payload.detail : `Session restore failed (HTTP ${response.status}).`;
     throw new Error(detail);
   }
+  if (isRecord(payload) && payload.authenticated === false) {
+    clearAuthState();
+    return null;
+  }
   return parseAuthSession(payload);
+}
+
+/** Whether this browser kept a sign-in token from an earlier visit. */
+export function hasStoredSession() {
+  return accessToken !== "";
 }
 
 export async function logout() {
