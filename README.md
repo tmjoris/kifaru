@@ -61,8 +61,8 @@ does not establish that the same human controlled every event.
 Institution staff sign in at `/`. The API binds every session to one
 institution and limits the workspace to related records.
 
-The workspace opens on an **Overview** of the institution's own numbers, then
-provides:
+The workspace opens on an **Overview** of the institution's own numbers. Each
+tab has its own address (`/#alerts`), and the workspace provides:
 
 - Signals submitted by the institution
 - Corroborated and single-source alerts received by the institution
@@ -78,7 +78,8 @@ provides:
 ### Kifaru staff workspace
 
 Kifaru staff sign in at `/staff`. The staff view opens on an ecosystem-wide
-**Overview** and provides:
+**Overview**. Its menu has Exchange, Guided, Events, Admissions and Attack
+replay, each with its own address (`/staff#guided`), and it provides:
 
 - Ecosystem-wide synthetic signal history
 - The protected-indicator relationship map
