@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import {
   campaignChain, counterpartyBankId, displayTransactionId, maskedFingerprint, moneyDirection, pipelineSteps,
   reportingBankId, transactionDirection,
@@ -11,6 +11,9 @@ function matchesLabel(count: number) {
   return count === 1 ? "1 institution" : `${count} institutions`;
 }
 
+// Lists open on the newest records; the rest are one click away.
+const ROWS_SHOWN = 10;
+
 export function TransactionTable({ records, bank, bankName, bankRef, history, title, subtitle, onOpen }: {
   records: Transaction[]; bank: Bank; bankName: (id: string) => string; bankRef: (id: string) => string;
   history?: boolean; title: string; subtitle: string; onOpen: (key: string) => void;
@@ -18,6 +21,9 @@ export function TransactionTable({ records, bank, bankName, bankRef, history, ti
   const headings = history
     ? ["Report ID", "Role", "Reported by", "Customer ref", "Amount", "Main risk", "Matched by", "Status", ""]
     : ["Report ID", "Reported by", "Direction", "Customer ref", "Amount", "Score", "Main risk", "Matched by", "Status", "Checked by", ""];
+  const [showAll, setShowAll] = useState(false);
+  useEffect(() => setShowAll(false), [title]);
+  const shown = showAll ? records : records.slice(0, ROWS_SHOWN);
   const openOnKey = (event: KeyboardEvent<HTMLTableRowElement>, key: string) => {
     if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
     event.preventDefault();
@@ -28,7 +34,7 @@ export function TransactionTable({ records, bank, bankName, bankRef, history, ti
       className={heading === "Customer ref" ? "table-secondary"
         : heading === "Checked by" ? "table-provenance"
           : heading === "Direction" || heading === "Role" ? "table-direction" : undefined}>{heading}</th>)}</tr></thead>
-      <tbody>{records.length ? records.map((transaction) => {
+      <tbody>{records.length ? shown.map((transaction) => {
         const risk = riskCodeInfo(transaction.riskCode.code, transaction.riskCode.label);
         const reporter = reportingBankId(transaction);
         return <tr key={transaction.key} className="clickable-row" tabIndex={0}
@@ -55,7 +61,12 @@ export function TransactionTable({ records, bank, bankName, bankRef, history, ti
         </tr>;
       }) : <tr className="transaction-empty"><td colSpan={headings.length} className="muted">No {title.toLowerCase()} match this institution and the current filters.</td></tr>}</tbody>
     </table>
-  </div></Card>;
+  </div>
+  {records.length > ROWS_SHOWN && <div className="indicator-more">
+    <button className="btn" onClick={() => setShowAll(!showAll)}>
+      {showAll ? `Show the newest ${ROWS_SHOWN}` : `Show all ${records.length} records`}
+    </button>
+  </div>}</Card>;
 }
 
 export function Investigation({

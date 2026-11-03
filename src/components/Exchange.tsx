@@ -30,6 +30,8 @@ function outcomeCopy(transaction: Transaction) {
 /**
  * Staff view of the synthetic protected-indicator exchange.
  */
+const INDICATORS_SHOWN = 12;
+
 export function Exchange({ transactions, bankName, onOpen }: {
   transactions: Transaction[]; bankName: (id: string) => string; onOpen: (key: string) => void;
 }) {
@@ -54,6 +56,9 @@ export function Exchange({ transactions, bankName, onOpen }: {
   }, [transactions]);
   const matched = indicators.filter((item) => item.transaction.corroborationCount > 0);
   const [focusKey, setFocusKey] = useState("");
+  // The strongest indicators come first, so a short list keeps the page short.
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? indicators : indicators.slice(0, INDICATORS_SHOWN);
   useEffect(() => {
     if (!indicators.length) {
       setFocusKey("");
@@ -129,7 +134,7 @@ export function Exchange({ transactions, bankName, onOpen }: {
       </> : <p className="stream-empty">No protected indicators are available yet.</p>}
     </Card>
     <Card title="Protected indicators" subtitle="Each card represents a receiving account as a protected code. Open one to inspect the evidence and policy result.">
-      {indicators.length ? <div className="fingerprint-grid">{indicators.map(({ key, transaction: item }) =>
+      {indicators.length ? <><div className="fingerprint-grid">{shown.map(({ key, transaction: item }) =>
         <button key={key} className="fingerprint-card" onClick={() => onOpen(item.key)}>
         <div className="fingerprint-head">
           <span className="mono fp-hash">{maskedFingerprint(item.destinationHash)}</span>
@@ -142,7 +147,12 @@ export function Exchange({ transactions, bankName, onOpen }: {
             ? <span className="pill fraud">Matched by {item.corroborationCount} institution{item.corroborationCount === 1 ? "" : "s"}</span>
             : <span className="pill review">Awaiting a match</span>}
         </div>
-      </button>)}</div> : <p className="muted">No protected indicators have been published yet. Upload a CSV log or refresh backend data.</p>}
+      </button>)}</div>
+        {indicators.length > INDICATORS_SHOWN && <div className="indicator-more">
+          <button className="btn" onClick={() => setShowAll(!showAll)}>
+            {showAll ? `Show the first ${INDICATORS_SHOWN}` : `Show all ${indicators.length} indicators`}
+          </button>
+        </div>}</> : <p className="muted">No protected indicators have been published yet. Upload a CSV log or refresh backend data.</p>}
     </Card>
   </div>;
 }
