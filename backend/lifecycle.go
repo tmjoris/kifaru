@@ -254,6 +254,7 @@ func (a *App) reportLifecycle(w http.ResponseWriter, r *http.Request, reportID s
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	a.hub.markDirty(reportID)
 	for _, alert := range changedAlerts {
 		a.publishAlert(fmt.Sprint(alert["receiving_institution"]), alert)
 	}

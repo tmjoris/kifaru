@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -91,12 +92,14 @@ func (a *App) trends(w http.ResponseWriter, r *http.Request) {
 		}
 		days = parsed
 	}
-	out, err := a.trendSummary(r.Context(), institution, days, time.Now())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, out)
+	a.cache.serve(w, r, fmt.Sprintf("trends|%s|%d", institution, days), 10*time.Second,
+		func(ctx context.Context) ([]byte, error) {
+			out, err := a.trendSummary(ctx, institution, days, time.Now())
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(out)
+		})
 }
 
 func dayStart(t time.Time) time.Time {

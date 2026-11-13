@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -146,9 +145,10 @@ type App struct {
 	db          *pgxpool.Pool
 	standardRaw map[string]any
 	standard    Standard
-	streamsMu   sync.Mutex
-	streams     map[string]map[chan []byte]struct{}
+	hub         streamHub
 	seedJob     historyJob
+	sessions    sessionCache
+	cache       responseCache
 }
 
 type dbRunner interface {

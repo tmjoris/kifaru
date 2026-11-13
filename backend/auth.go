@@ -326,6 +326,7 @@ func (a *App) logout(w http.ResponseWriter, r *http.Request) {
 	user := authUserFromContext(r.Context())
 	token := sessionToken(r)
 	if token != "" {
+		a.sessions.drop(hashSessionToken(token))
 		tx, beginErr := a.db.Begin(r.Context())
 		if beginErr != nil {
 			writeError(w, http.StatusInternalServerError, beginErr.Error())
@@ -356,6 +357,11 @@ func (a *App) authenticatedUser(r *http.Request) (AuthUser, error) {
 	if token == "" {
 		return AuthUser{}, errors.New("session token is missing")
 	}
+	hash := hashSessionToken(token)
+	now := time.Now()
+	if user, ok := a.sessions.get(hash, now); ok {
+		return user, nil
+	}
 	var user AuthUser
 	err := a.db.QueryRow(r.Context(), `SELECT u.user_id,u.email,u.display_name,u.role,
 		COALESCE(u.institution_code,''),COALESCE(i.name,''),s.csrf_token,s.expires_at
@@ -363,22 +369,26 @@ func (a *App) authenticatedUser(r *http.Request) (AuthUser, error) {
 		JOIN auth_users u ON u.user_id=s.user_id
 		LEFT JOIN institutions i ON i.code=u.institution_code
 		WHERE s.token_hash=$1 AND s.expires_at>NOW() AND u.active=TRUE`,
-		hashSessionToken(token)).Scan(
+		hash).Scan(
 		&user.UserID, &user.Email, &user.DisplayName, &user.Role,
 		&user.InstitutionCode, &user.InstitutionName, &user.CSRFToken, &user.ExpiresAt)
 	if err != nil {
 		return AuthUser{}, err
 	}
-	if _, err := a.db.Exec(r.Context(), `UPDATE auth_sessions SET last_seen_at=NOW()
-		WHERE token_hash=$1`, hashSessionToken(token)); err != nil {
-		return AuthUser{}, err
-	}
+	a.sessions.put(hash, user, now)
 	return user, nil
 }
 
 func (a *App) authenticate(w http.ResponseWriter, r *http.Request) (*http.Request, AuthUser, bool) {
 	user, err := a.authenticatedUser(r)
 	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) && sessionToken(r) != "" {
+			// The database is slow or waking up. That is not a bad session, so
+			// keep the cookie and ask the client to try again.
+			w.Header().Set("Retry-After", "2")
+			writeError(w, http.StatusServiceUnavailable, "the service is busy, please retry")
+			return r, AuthUser{}, false
+		}
 		clearAuthCookie(w, r)
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return r, AuthUser{}, false

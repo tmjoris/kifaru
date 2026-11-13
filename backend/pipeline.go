@@ -232,6 +232,7 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 	if err := tx.Commit(ctx); err != nil {
 		return nil, &apiError{http.StatusInternalServerError, err.Error()}
 	}
+	a.hub.markDirty(reportID)
 	for _, issuedAlert := range publishedAlerts {
 		a.publishAlert(fmt.Sprint(issuedAlert["receiving_institution"]), issuedAlert)
 	}

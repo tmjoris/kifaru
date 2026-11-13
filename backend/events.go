@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"net/http"
 	"strconv"
 	"time"
@@ -20,70 +21,86 @@ func (a *App) streamAlerts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	flusher, ok := w.(http.Flusher)
-	if !ok {
+	controller := http.NewResponseController(w)
+	if _, ok := w.(http.Flusher); !ok {
 		writeError(w, 500, "streaming is unavailable")
 		return
 	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	channel := make(chan []byte, 16)
-	a.streamsMu.Lock()
-	if a.streams[institution] == nil {
-		a.streams[institution] = map[chan []byte]struct{}{}
+	// Turn new streams away, politely, before the server runs out of room.
+	// Holding a stream open costs memory, and an out-of-memory kill would drop
+	// every connected user at once. The client retries after the delay given.
+	if a.hub.audience() >= maxStreams() || memoryPressure() {
+		a.hub.rejected.Add(1)
+		w.Header().Set("Retry-After", strconv.Itoa(5+rand.IntN(25)))
+		writeError(w, http.StatusServiceUnavailable, "too many live connections right now, retrying shortly")
+		return
 	}
-	a.streams[institution][channel] = struct{}{}
-	a.streamsMu.Unlock()
-	defer func() {
-		a.streamsMu.Lock()
-		delete(a.streams[institution], channel)
-		if len(a.streams[institution]) == 0 {
-			delete(a.streams, institution)
+	since := r.URL.Query().Get("since")
+	if since == "" {
+		since = r.Header.Get("Last-Event-ID")
+	}
+	sub, replay, reset, cursor := a.hub.subscribe(institution, since)
+	defer a.hub.unsubscribe(sub)
+
+	header := w.Header()
+	header.Set("Content-Type", "text/event-stream")
+	header.Set("Cache-Control", "no-cache")
+	header.Set("X-Accel-Buffering", "no")
+	write := func(chunk []byte) bool {
+		// A client that stops reading must not hold a goroutine and its buffers forever.
+		_ = controller.SetWriteDeadline(time.Now().Add(30 * time.Second))
+		if _, err := w.Write(chunk); err != nil {
+			return false
 		}
-		a.streamsMu.Unlock()
-	}()
-	_, _ = fmt.Fprint(w, "event: ready\ndata: {}\n\n")
-	flusher.Flush()
-	keepAlive := time.NewTicker(20 * time.Second)
-	defer keepAlive.Stop()
+		return controller.Flush() == nil
+	}
+	ready, _ := json.Marshal(map[string]any{"cursor": cursor, "reset": reset})
+	if !write([]byte(fmt.Sprintf("retry: %d\nevent: ready\ndata: %s\n\n", 3000+rand.IntN(4000), ready))) {
+		return
+	}
+	for _, frame := range replay {
+		if !write(frame) {
+			return
+		}
+	}
+	user := authUserFromContext(r.Context())
+	// Heartbeats are spread out so 10,000 streams do not all write in the same instant.
+	heartbeat := time.NewTimer(time.Duration(rand.Int64N(int64(heartbeatEvery))))
+	defer heartbeat.Stop()
 	for {
 		select {
 		case <-r.Context().Done():
 			return
-		case payload := <-channel:
-			_, _ = w.Write(payload)
-			flusher.Flush()
-		case <-keepAlive.C:
-			if _, err := a.authenticatedUser(r); err != nil {
+		case <-sub.done:
+			return // fell behind: the client reconnects and is replayed or reset
+		case frame := <-sub.ch:
+			if !write(frame) {
 				return
 			}
-			_, _ = fmt.Fprint(w, ": keep-alive\n\n")
-			flusher.Flush()
-		}
-	}
-}
-
-func (a *App) publishAlert(institution string, alert map[string]any) {
-	a.publishStreamEvent([]string{institution, "*"}, "alert", fmt.Sprint(alert["alert_id"]), alert)
-}
-
-func (a *App) publishStreamEvent(keys []string, eventName, eventID string, payload any) {
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-	event := []byte(fmt.Sprintf("id: %s\nevent: %s\ndata: %s\n\n", eventID, eventName, encoded))
-	a.streamsMu.Lock()
-	defer a.streamsMu.Unlock()
-	for _, key := range keys {
-		for channel := range a.streams[key] {
-			select {
-			case channel <- event:
-			default:
+		case <-heartbeat.C:
+			heartbeat.Reset(heartbeatEvery)
+			// No database call here. It used to re-verify the session with two
+			// queries per stream every 20 seconds, about 1,000 queries a second at 10,000 tabs.
+			if !user.ExpiresAt.IsZero() && time.Now().After(user.ExpiresAt) {
+				return
+			}
+			if !write([]byte(": keep-alive\n\n")) {
+				return
 			}
 		}
 	}
+}
+
+// publishAlert pushes an alert to its receiving institution and to staff, and
+// marks the alert's report as changed so its row is pushed with the next batch.
+func (a *App) publishAlert(institution string, alert map[string]any) {
+	a.hub.publish([]string{institution, "*"}, "alert", alert)
+	a.hub.markDirty(fmt.Sprint(alert["report_id"]))
+}
+
+// publishStreamEvent sends a small event to the named topics.
+func (a *App) publishStreamEvent(keys []string, eventName, _ string, payload any) {
+	a.hub.publish(keys, eventName, payload)
 }
 
 // recordBankDemoEvent keeps reports from the independent classroom bank apps
@@ -159,6 +176,7 @@ func (a *App) recordBankDemoEvent(ctx context.Context, report ReportIn, result m
 		"reporting_institution":   report.ReportingInstitution,
 		"destination_institution": report.DestinationInstitution,
 	}
+	a.hub.markDirty(reportID)
 	a.publishStreamEvent([]string{"*"}, "demo-event", fmt.Sprint(offset), event)
 	return nil
 }
@@ -267,6 +285,9 @@ func (a *App) produceDemoEvent(ctx context.Context, force bool) (map[string]any,
 			WHERE event_offset=$3`, reportID, outcome, offset); err != nil {
 			return nil, true, err
 		}
+	}
+	if id, ok := event["report_id"]; ok {
+		a.hub.markDirty(fmt.Sprint(id))
 	}
 	a.publishStreamEvent([]string{"*"}, "demo-event", strconv.FormatInt(offset, 10), event)
 	return event, true, nil

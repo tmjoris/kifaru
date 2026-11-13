@@ -96,7 +96,6 @@ func TestPostgresTrends(t *testing.T) {
 	}
 	app := &App{
 		db: db, standardRaw: raw, standard: standard,
-		streams: map[string]map[chan []byte]struct{}{},
 	}
 	if err := app.initDB(ctx); err != nil {
 		t.Fatal(err)
