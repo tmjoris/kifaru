@@ -1,4 +1,4 @@
-import { api, clock, escapeHtml, header, icon, kes } from "./common.js";
+import { api, clock, escapeHtml, header, icon, isTheme, kes, saveTheme, startingTheme, themeButton } from "./common.js";
 
 const root = document.querySelector("#app");
 const safe = (value) => escapeHtml(value || "—");
@@ -16,6 +16,16 @@ const TABS = [
 const tabFromAddress = () => TABS.some(([id]) => id === location.hash.slice(1)) ? location.hash.slice(1) : "";
 let tab = tabFromAddress();
 window.addEventListener("hashchange", () => { tab = tabFromAddress() || tab; render(); });
+
+// Inside the director the frame follows the director's theme toggle;
+// opened on its own, the page has its own toggle.
+const embedded = window.parent !== window;
+let theme = startingTheme();
+window.addEventListener("message", (event) => {
+  if (!embedded || event.source !== window.parent || event.data?.type !== "demo-theme" || !isTheme(event.data.theme)) return;
+  theme = event.data.theme;
+  if (state) render();
+});
 
 async function refresh() {
   state = await api("api/ops/state");
@@ -76,7 +86,7 @@ function render() {
   };
 
   const scrollY = window.scrollY;
-  root.innerHTML = `<div class="app dark bank-${safe(config.id)}">${header(config, "Operations console", connector)}
+  root.innerHTML = `<div class="app ${theme} bank-${safe(config.id)}">${header(config, "Operations console", embedded ? connector : connector + themeButton(theme))}
     <main class="ops">
       <div class="sim-banner">${icon("science")}<span><strong>Simulated operations</strong> Independent bank ledger and bank-specific fraud rules. Kifaru is an optional connector. Demo run key for Kifaru's risk check: <code>${safe(state.run_key || "")}</code></span></div>
       <div class="kpis">${kpi("account_tree", "Transfers scored", transfers.length)}${kpi("block", "Blocked", blocked, blocked ? "alert" : "")}${kpi("notifications_active", "Kifaru alerts", alerts.length, alerts.length ? "info" : "")}${kpi("south_west", "Credits in", credits.length)}</div>
@@ -86,6 +96,13 @@ function render() {
   window.scrollTo(0, scrollY);
 
   root.querySelector("#connector").onchange = async (e) => { await api("api/ops/connector", { method: "POST", body: { enabled: e.target.checked } }); await refresh(); };
+  const toggle = root.querySelector("#theme");
+  if (toggle) toggle.onclick = () => {
+    theme = theme === "dark" ? "light" : "dark";
+    saveTheme(theme);
+    render();
+    root.querySelector("#theme").focus();
+  };
   const hold = root.querySelector("#hold");
   if (hold) hold.onclick = async () => { await api("api/ops/hold", { method: "POST", body: { account: ACCOUNT } }); await refresh(); };
   const giveBack = root.querySelector("#return");

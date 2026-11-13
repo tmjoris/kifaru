@@ -1,4 +1,4 @@
-import { api, clock, escapeHtml, icon } from "./common.js";
+import { api, clock, escapeHtml, icon, saveTheme, startingTheme, themeButton } from "./common.js";
 
 const root = document.querySelector("#app");
 const safe = escapeHtml;
@@ -7,15 +7,16 @@ let problem = "";
 let framesBuilt = "";
 let shellBuilt = false;
 const painted = { stage: "", live: "" };
+let theme = startingTheme();
 
 const KIFARU_MARK = `<span class="logo logo-kifaru" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M9 7v18M9 17l11-10M9 17l11 8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
 
 function shell() {
   shellBuilt = true;
   painted.stage = painted.live = "";
-  root.innerHTML = `<div class="app dark kifaru">
+  root.innerHTML = `<div class="app ${theme} kifaru">
     <header class="topbar"><div class="brand">${KIFARU_MARK}<span class="brand-text"><strong>Kifaru class demo</strong><small>Three independent simulated bank platforms · local classroom environment</small></span></div>
-      <div class="topbar-right"><a class="btn btn-ghost" id="staff-link" target="_blank" rel="noopener">Open Kifaru staff ${icon("open_in_new")}</a></div></header>
+      <div class="topbar-right"><span id="theme-slot">${themeButton(theme)}</span><a class="btn btn-ghost" id="staff-link" target="_blank" rel="noopener"><span class="wide-only">Open </span>Kifaru staff ${icon("open_in_new")}</a></div></header>
     <main class="director">
       <div class="sim-banner">${icon("science")}<span><strong>Simulation only</strong> Synthetic customers, logins, accounts and transfers. The interbank switch is local and no real money moves.</span></div>
       <section class="stage" id="stage"></section>
@@ -55,7 +56,7 @@ function frames() {
   return state.banks.map(bank => `<section class="frame" style="--frame:${safe(bank.accent)}">
     <header><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><strong>${safe(bank.name)} <small>independent platform</small></strong>
       <nav><a href="${safe(bank.url)}/" target="_blank" rel="noopener">Customer ${icon("north_east")}</a><a href="${safe(bank.url)}/ops" target="_blank" rel="noopener">Operations ${icon("north_east")}</a></nav></header>
-    <iframe title="${safe(bank.name)} simulated operations" src="${safe(bank.url)}/ops"></iframe></section>`).join("");
+    <iframe title="${safe(bank.name)} simulated operations" src="${safe(bank.url)}/ops?theme=${theme}"></iframe></section>`).join("");
 }
 
 function paint(id, html) {
@@ -97,7 +98,22 @@ async function refresh() {
   }
 }
 
+// Switches the director and its bank frames without reloading the frames.
+function switchTheme() {
+  theme = theme === "dark" ? "light" : "dark";
+  saveTheme(theme);
+  const app = root.querySelector(".app");
+  app.classList.remove("dark", "light");
+  app.classList.add(theme);
+  root.querySelector("#theme-slot").innerHTML = themeButton(theme);
+  root.querySelector("#theme").focus();
+  for (const frame of root.querySelectorAll(".frame iframe")) {
+    frame.contentWindow?.postMessage({ type: "demo-theme", theme }, "*");
+  }
+}
+
 root.addEventListener("click", (event) => {
+  if (event.target.closest("#theme")) return switchTheme();
   const mode = event.target.closest("[data-mode]");
   if (mode) return mutate("api/mode", { mode: mode.dataset.mode });
   if (event.target.closest("#next")) return mutate("api/autopilot/next", {});

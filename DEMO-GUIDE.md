@@ -346,6 +346,12 @@ With Kifaru, step 4 ends at KCB: its pre-payment check finds NCBA's flag on
 Equity 0114417 and blocks Faith's KES 150,000 before it leaves, so only NCBA's
 KES 85,000 reaches the mule account, and Equity returns it.
 
+The director and the `/ops` pages are dark by default. **Light** in the
+director's header switches it and its three bank frames to a light theme, and
+**Dark** switches back. The browser remembers the choice. An `/ops` page opened
+on its own tab has the same button, and `?theme=light` in any of these
+addresses opens it light.
+
 For a manual run, sign in to a customer tab and make a transfer. Each bank
 blocks a transfer whose score reaches its block threshold. On NCBA, a first
 payment from a new device to a new beneficiary scores 0.60 and goes through. A

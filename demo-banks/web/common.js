@@ -34,6 +34,36 @@ export function deviceId() {
   return id;
 }
 
+/**
+ * The control-room pages (director and operations) are dark unless the
+ * presenter picks light. A ?theme= address wins over the saved choice, so the
+ * director can hand its theme to the bank frames on other ports.
+ */
+const THEME_KEY = "demo-theme";
+const THEMES = ["dark", "light"];
+export const isTheme = (value) => THEMES.includes(value);
+
+export function pickTheme(search, saved) {
+  const asked = new URLSearchParams(search).get("theme");
+  if (isTheme(asked)) return asked;
+  return isTheme(saved) ? saved : "dark";
+}
+
+export function startingTheme() {
+  let saved = "";
+  try { saved = localStorage.getItem(THEME_KEY) || ""; } catch { saved = ""; }
+  return pickTheme(location.search, saved);
+}
+
+export function saveTheme(theme) {
+  try { localStorage.setItem(THEME_KEY, theme); } catch { /* private window: the choice lasts for this page only */ }
+}
+
+export function themeButton(theme) {
+  const next = theme === "dark" ? "light" : "dark";
+  return `<button id="theme" class="btn btn-ghost theme-toggle" type="button" aria-label="Switch to ${next} theme" title="Switch to ${next} theme">${icon(next === "light" ? "light_mode" : "dark_mode")}<span class="theme-label">${next === "light" ? "Light" : "Dark"}</span></button>`;
+}
+
 /** A Material Symbols glyph. The name is always a literal from our own code. */
 export const icon = (name, extra = "") => `<span class="material-symbols-outlined ${extra}" aria-hidden="true">${name}</span>`;
 

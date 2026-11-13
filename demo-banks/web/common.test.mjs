@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 // common.js touches the DOM only inside functions, so it can be imported here.
-const { escapeHtml, kes, clock, icon, logoMark, header } = await import("./common.js");
+const { escapeHtml, kes, clock, icon, logoMark, header, pickTheme, themeButton } = await import("./common.js");
 
 const attacks = [
   `<script>alert(1)</script>`,
@@ -60,4 +60,17 @@ test("every page script parses", async () => {
   for (const file of readdirSync(here).filter((name) => name.endsWith(".js"))) {
     execFileSync(process.execPath, ["--check", join(here, file)]);
   }
+});
+
+test("pickTheme prefers the address, then the saved choice, then dark", () => {
+  assert.equal(pickTheme("", ""), "dark");
+  assert.equal(pickTheme("", "light"), "light");
+  assert.equal(pickTheme("?theme=light", "dark"), "light");
+  assert.equal(pickTheme("?theme=dark", "light"), "dark");
+  assert.equal(pickTheme("?theme=<script>", "neon"), "dark");
+});
+
+test("themeButton offers the other theme", () => {
+  assert.match(themeButton("dark"), /Switch to light theme/);
+  assert.match(themeButton("light"), /Switch to dark theme/);
 });

@@ -41,6 +41,9 @@
   --shadow: 0 0 0 1px rgba(255, 255, 255, .015), 0 22px 44px -26px rgba(0, 0, 0, .9);
   color-scheme: dark;
 }
+/* Light control-room theme: the base tokens, with the accents that were tuned
+   for a dark background swapped for the brand colour. */
+.light { color-scheme: light; }
 
 /* 2. Base ------------------------------------------------------------------ */
 * { box-sizing: border-box; }
@@ -433,6 +436,17 @@ a { color: inherit; }
 .mail small { color: var(--muted); font-size: .72rem; }
 .mail p { margin-top: .4rem; color: var(--muted); }
 
+.light .switch b, .light .kpi-icon { color: var(--brand); }
+.light .switch input:checked + .switch-track { background: color-mix(in srgb, var(--brand) 20%, var(--card)); border-color: var(--brand); }
+.light .switch input:checked + .switch-track::after { background: var(--brand); }
+.light .switch input:focus-visible + .switch-track, .light .ops-tab:focus-visible { outline-color: var(--brand); }
+.light .ops-tab.active { border-bottom-color: var(--brand); }
+.light .kpi::after { background: radial-gradient(closest-side, color-mix(in srgb, var(--brand) 12%, transparent), transparent); }
+.light .track i { background: linear-gradient(90deg, color-mix(in srgb, var(--brand) 55%, transparent), var(--brand)); }
+.light .blocked .track i { background: linear-gradient(90deg, color-mix(in srgb, var(--bad) 55%, transparent), var(--bad)); }
+.theme-toggle .material-symbols-outlined { font-size: 1.1rem; }
+.topbar-right .btn { white-space: nowrap; }
+
 /* 7. Director -------------------------------------------------------------- */
 .director { display: grid; gap: 1rem; max-width: 1640px; margin: 0 auto; padding: 1.25rem clamp(.9rem, 2.5vw, 1.75rem) 3rem; }
 .stage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 1rem; align-items: stretch; }
@@ -456,6 +470,7 @@ a { color: inherit; }
 .step-dot .material-symbols-outlined { font-size: .95rem; }
 .steps li.done { color: var(--ink); }
 .steps li.done .step-dot { color: #06210f; background: var(--ok); border-color: var(--ok); }
+.light .steps li.done .step-dot { color: #fff; }
 .steps li.next { color: var(--ink); font-weight: 700; background: color-mix(in srgb, var(--info) 11%, transparent); }
 .steps li.next .step-dot { color: #fff; background: var(--info); border-color: var(--info); box-shadow: 0 0 0 4px color-mix(in srgb, var(--info) 22%, transparent); }
 .step-actor { font-size: .72rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
@@ -522,6 +537,8 @@ a { color: inherit; }
   .btn, .nav-item, .text-button, .mode button, nav a, .switch { min-height: 44px; }
   nav a, .text-button { display: inline-flex; align-items: center; }
   .eye { width: 44px; height: 44px; }
+  .theme-label, .wide-only { display: none; }
+  .theme-toggle { min-width: 44px; padding-inline: .6rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
