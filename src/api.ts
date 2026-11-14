@@ -379,6 +379,7 @@ function transactionFromHistory(
 
   return {
     key: requiredString(row, "report_id"),
+    submittedAt: requiredString(row, "submitted_at") || undefined,
     id: requiredString(row, "transaction_ref") || requiredString(row, "report_id"),
     sourceBank: codeToBankId.get(reportingCode) ?? `unknown:${reportingCode}`,
     destinationBank: codeToBankId.get(destinationCode) ?? "external",
@@ -419,6 +420,10 @@ function transactionFromHistory(
   };
 }
 
+/** Rows the first dashboard load asks for. Older reports are fetched on demand. */
+export const INITIAL_HISTORY_ROWS = 300;
+const OLDER_PAGE_ROWS = 300;
+
 export async function loadDashboardData(
   bankTemplates: Bank[],
   access: { scope: PortalScope; institutionCode: string },
@@ -451,7 +456,7 @@ export async function loadDashboardData(
     throw new Error("The authenticated institution is not available in this workspace.");
   }
   const historyPayload = await fetchJson(
-    `/api/v1/history?institution=${institutionQuery}&limit=2000`,
+    `/api/v1/history?institution=${institutionQuery}&limit=${INITIAL_HISTORY_ROWS}`,
     { signal },
   );
   const rows = new Map<string, Record<string, unknown>>();
@@ -481,7 +486,7 @@ export async function loadDashboardData(
   };
 }
 
-const MAX_HELD_TRANSACTIONS = 2000;
+const MAX_HELD_TRANSACTIONS = 5000;
 
 /**
  * Merges rows pushed by the live stream into the transactions already on screen.
@@ -509,6 +514,38 @@ export function mergeHistoryRows(
   }
   const merged = [...fresh, ...existing.map((item) => replacements.get(item.key) ?? item)];
   return merged.length > MAX_HELD_TRANSACTIONS ? merged.slice(0, MAX_HELD_TRANSACTIONS) : merged;
+}
+
+/**
+ * Fetches the next page of older reports, before the oldest one already shown, and
+ * appends them. Reports already held are skipped. `more` is false when the server
+ * returned a short page, meaning there is nothing older left.
+ */
+export async function loadOlderHistory(
+  existing: Transaction[],
+  access: { scope: PortalScope; institutionCode: string },
+  banks: Bank[],
+  riskCodes: RiskCodeReference[],
+  signal?: AbortSignal,
+): Promise<{ transactions: Transaction[]; more: boolean }> {
+  const oldest = existing.reduce<string>((min, item) => (item.submittedAt && (!min || item.submittedAt < min) ? item.submittedAt : min), "");
+  if (!oldest) return { transactions: existing, more: false };
+  const institution = encodeURIComponent(access.scope === "exchange" ? "*" : access.institutionCode);
+  const payload = await fetchJson(
+    `/api/v1/history?institution=${institution}&limit=${OLDER_PAGE_ROWS}&before=${encodeURIComponent(oldest)}`, { signal });
+  if (!isRecord(payload) || !Array.isArray(payload.history)) {
+    throw new Error("The backend returned invalid institution history.");
+  }
+  const riskCodeNames = new Map(riskCodes.map((item) => [item.code, item.label]));
+  const codeToBankId = new Map(banks.map((bank) => [bank.backendCode, bank.id]));
+  const known = new Set(existing.map((item) => item.key));
+  const older = payload.history.filter(isRecord).filter((row) => requiredString(row, "report_id") && !known.has(requiredString(row, "report_id")))
+    .map((row) => transactionFromHistory(row, codeToBankId, riskCodeNames));
+  const merged = [...existing, ...older];
+  return {
+    transactions: merged.length > MAX_HELD_TRANSACTIONS ? merged.slice(0, MAX_HELD_TRANSACTIONS) : merged,
+    more: payload.history.length >= OLDER_PAGE_ROWS,
+  };
 }
 
 /** Reloads only the notification list, for when an alert arrives on the stream. */

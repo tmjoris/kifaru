@@ -18,6 +18,7 @@ import { SharedArray } from 'k6/data';
 const tokens = new SharedArray('tokens', () => JSON.parse(open(__ENV.TOKENS || './tokens.json')));
 const BASE = (__ENV.BASE || 'http://127.0.0.1:8000').replace(/\/$/, '');
 const VUS = Number(__ENV.VUS || 100);
+const LIMIT = Number(__ENV.LIMIT || 500); // rows per history response; smaller means fewer bytes per user
 const shed = new Counter('shed_503');
 
 export const options = {
@@ -47,7 +48,7 @@ export default function () {
   const inst = encodeURIComponent(user.inst);
   if (__ITER === 0) sleep(between(0, 10)); // spread VUs that start in the same tick
 
-  const snapshot = http.get(`${BASE}/v1/history?institution=${inst}&limit=500`, params('history'));
+  const snapshot = http.get(`${BASE}/v1/history?institution=${inst}&limit=${LIMIT}`, params('history'));
   if (snapshot.status === 503) { shed.add(1); sleep(Number(snapshot.headers['Retry-After'] || 5) + between(0, 5)); return; }
   check(snapshot, { 'history 200': (r) => r.status === 200 });
   sleep(between(5, 15));
