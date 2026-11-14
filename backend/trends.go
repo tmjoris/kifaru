@@ -537,6 +537,7 @@ func (a *App) writeTrendHistory(ctx context.Context, now time.Time, days int) (m
 	for sequence, incident := range planTrendHistory(now, days) {
 		if incident.kind == "notice" {
 			mule := demoHash(fmt.Sprintf("seeded-mule:%s:%d", run, sequence))
+			a.cache.invalidate()
 			if err := kbAddWith(ctx, a.db, mule, "known_bad", seedHistoryLabel, seedHistoryActor); err != nil {
 				return nil, err
 			}

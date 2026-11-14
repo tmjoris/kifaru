@@ -20,6 +20,7 @@ type refData struct {
 	cfg        map[string]any
 	thresholds map[string]float64
 	active     map[string]bool
+	kb         map[string]map[string]bool
 	gen        uint64
 	at         time.Time
 }
@@ -37,9 +38,10 @@ func (a *App) reference(ctx context.Context) (*refData, error) {
 	batch := &pgx.Batch{}
 	batch.Queue("SELECT key,value FROM config")
 	batch.Queue("SELECT code,threshold,active FROM institutions")
+	batch.Queue("SELECT artefact_hash,list_name FROM knowledge_base")
 	results := a.db.SendBatch(ctx, batch)
 	defer results.Close()
-	ref := &refData{cfg: map[string]any{}, thresholds: map[string]float64{}, active: map[string]bool{}, gen: gen, at: time.Now()}
+	ref := &refData{cfg: map[string]any{}, thresholds: map[string]float64{}, active: map[string]bool{}, kb: map[string]map[string]bool{"known_good": {}, "known_bad": {}}, gen: gen, at: time.Now()}
 	configRows, err := results.Query()
 	if err != nil {
 		return nil, err
@@ -76,6 +78,25 @@ func (a *App) reference(ctx context.Context) (*refData, error) {
 		ref.thresholds[code], ref.active[code] = threshold, active == 1
 	}
 	if err := institutionRows.Err(); err != nil {
+		return nil, err
+	}
+	institutionRows.Close()
+	kbRows, err := results.Query()
+	if err != nil {
+		return nil, err
+	}
+	defer kbRows.Close()
+	for kbRows.Next() {
+		var hash, list string
+		if err := kbRows.Scan(&hash, &list); err != nil {
+			return nil, err
+		}
+		if ref.kb[list] == nil {
+			ref.kb[list] = map[string]bool{}
+		}
+		ref.kb[list][hash] = true
+	}
+	if err := kbRows.Err(); err != nil {
 		return nil, err
 	}
 	a.ref = ref

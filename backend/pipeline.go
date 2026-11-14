@@ -380,6 +380,92 @@ func reportEvidencePresent(report ReportIn, field string) bool {
 	}
 }
 
+// corroborationSQL finds the other institutions that reported the same
+// destination or device.
+const corroborationSQL = `SELECT DISTINCT a.institution_code,a.artefact_type
+		FROM artefacts a
+		JOIN reports prior_report ON prior_report.report_id=a.report_id
+		JOIN validations prior_validation ON prior_validation.report_id=a.report_id
+			AND prior_validation.is_current=1
+		WHERE a.institution_code != $1
+		  AND prior_report.lifecycle_state=$6
+		  AND prior_report.expires_at>NOW()
+		  AND prior_validation.status = ANY($7)
+		  AND (
+		    (a.artefact_type='destination_account' AND a.artefact_hash=$2 AND a.match_scope=$5) OR
+		    (a.artefact_type='destination_msisdn' AND a.artefact_hash=$3 AND a.match_scope=$5) OR
+		    (a.artefact_type='device_profile' AND a.artefact_hash=$4 AND a.match_scope='')
+		  )
+		  AND a.observed_at >= $8
+		ORDER BY a.institution_code`
+
+const standingSQL = `SELECT
+		COUNT(*) FILTER (WHERE a.state='actioned' AND a.outcome IN ('held','recovered')),
+		COUNT(*) FILTER (WHERE a.state='disputed' OR (a.state='actioned' AND a.outcome='released'))
+		FROM alerts a
+		JOIN reports r ON r.report_id=a.report_id
+		WHERE a.reporting_institution=$1
+		  AND a.updated_at >= NOW() - make_interval(days => $2::int)
+		  AND COALESCE(r.evidence,'') NOT LIKE '%"guided_demo":true%'
+		  AND COALESCE(r.evidence,'') NOT LIKE '%"attack_scenario":%'
+		  AND COALESCE(r.evidence,'') NOT LIKE '%"seeded_history":true%'`
+
+type corroborationMatch struct{ institution, artefactType string }
+
+// batcher is anything that can send several statements in one round trip.
+type batcher interface {
+	SendBatch(context.Context, *pgx.Batch) pgx.BatchResults
+}
+
+// corroborationAndStanding runs the corroboration lookup and, when it can, the
+// reporter-standing lookup in the same round trip. It returns a nil standing when
+// the caller must read it separately (attack-scenario reports have their own).
+func (a *App) corroborationAndStanding(
+	ctx context.Context, store dbRunner, report ReportIn, device, since string,
+) ([]corroborationMatch, *ReporterStanding, error) {
+	args := []any{report.ReportingInstitution, report.DestinationAccountHash, report.DestinationMSISDNHash,
+		device, report.DestinationInstitution, lifecycleActive, qualifyingStatuses, since}
+	var matches []corroborationMatch
+	scan := func(rows pgx.Rows) error {
+		defer rows.Close()
+		for rows.Next() {
+			var match corroborationMatch
+			if err := rows.Scan(&match.institution, &match.artefactType); err != nil {
+				return err
+			}
+			matches = append(matches, match)
+		}
+		return rows.Err()
+	}
+	if b, ok := store.(batcher); ok && attackScenarioRun(report.Evidence) == "" {
+		batch := &pgx.Batch{}
+		batch.Queue(corroborationSQL, args...)
+		batch.Queue(standingSQL, report.ReportingInstitution, standingWindowDays)
+		results := b.SendBatch(ctx, batch)
+		rows, err := results.Query()
+		if err == nil {
+			err = scan(rows)
+		}
+		var standing ReporterStanding
+		if err == nil {
+			err = results.QueryRow().Scan(&standing.Upheld, &standing.Adverse)
+		}
+		if closeErr := results.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		standing = standing.evaluated()
+		return matches, &standing, nil
+	}
+	rows, err := store.Query(ctx, corroborationSQL, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	return matches, nil, scan(rows)
+}
+
 func (a *App) score(
 	ctx context.Context,
 	store dbRunner,
@@ -401,49 +487,23 @@ func (a *App) score(
 		device = ""
 	}
 	since := time.Now().UTC().Add(-30 * 24 * time.Hour).Format("2006-01-02T15:04:05Z")
-	rows, err := store.Query(ctx, `SELECT DISTINCT a.institution_code,a.artefact_type
-		FROM artefacts a
-		JOIN reports prior_report ON prior_report.report_id=a.report_id
-		JOIN validations prior_validation ON prior_validation.report_id=a.report_id
-			AND prior_validation.is_current=1
-		WHERE a.institution_code != $1
-		  AND prior_report.lifecycle_state=$6
-		  AND prior_report.expires_at>NOW()
-		  AND prior_validation.status = ANY($7)
-		  AND (
-		    (a.artefact_type='destination_account' AND a.artefact_hash=$2 AND a.match_scope=$5) OR
-		    (a.artefact_type='destination_msisdn' AND a.artefact_hash=$3 AND a.match_scope=$5) OR
-		    (a.artefact_type='device_profile' AND a.artefact_hash=$4 AND a.match_scope='')
-		  )
-		  AND a.observed_at >= $8
-		ORDER BY a.institution_code`,
-		report.ReportingInstitution, report.DestinationAccountHash, report.DestinationMSISDNHash,
-		device, report.DestinationInstitution, lifecycleActive, qualifyingStatuses, since)
+	matches, batchedStanding, err := a.corroborationAndStanding(ctx, store, report, device, since)
 	if err != nil {
 		return Validation{}, err
 	}
-	defer rows.Close()
 	corro := map[string]bool{}
-	for rows.Next() {
-		var institution, artefactType string
-		if err := rows.Scan(&institution, &artefactType); err != nil {
-			return Validation{}, err
-		}
-		switch artefactType {
+	for _, match := range matches {
+		switch match.artefactType {
 		case "destination_account":
-			corro[institution] = true
+			corro[match.institution] = true
 			reasons = append(reasons, "CORRO:destination")
 		case "destination_msisdn":
-			corro[institution] = true
+			corro[match.institution] = true
 			reasons = append(reasons, "CORRO:msisdn")
 		case "device_profile":
-			corro[institution] = true
+			corro[match.institution] = true
 			reasons = append(reasons, "CORRO:device_profile")
 		}
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return Validation{}, err
 	}
 	score += float64(min(len(corro), corroborationCap)) * weightCorroboration
 
@@ -477,9 +537,20 @@ func (a *App) score(
 		}
 	}
 
-	kb, err := kbListsFrom(ctx, store)
-	if err != nil {
-		return Validation{}, err
+	var kb map[string]map[string]bool
+	if !fromSeedHistory(ctx) && attackScenarioRun(report.Evidence) == "" {
+		// The lists change only when an administrator edits them, which moves the
+		// cache generation, so they are read once and reused.
+		ref, refErr := a.reference(ctx)
+		if refErr != nil {
+			return Validation{}, refErr
+		}
+		kb = ref.kb
+	} else {
+		kb, err = kbListsFrom(ctx, store)
+		if err != nil {
+			return Validation{}, err
+		}
 	}
 	knownBad := kb["known_bad"][report.DestinationAccountHash] || kb["known_bad"][report.DestinationMSISDNHash]
 	knownGood := kb["known_good"][report.DestinationAccountHash] || kb["known_good"][report.DestinationMSISDNHash]
@@ -504,7 +575,9 @@ func (a *App) score(
 	validated := numberOr(cfg["validated_threshold"], defaultValidated)
 	insufficient := numberOr(cfg["insufficient_threshold"], defaultInsufficient)
 	var standing ReporterStanding
-	if run := attackScenarioRun(report.Evidence); run != "" {
+	if batchedStanding != nil {
+		standing = *batchedStanding
+	} else if run := attackScenarioRun(report.Evidence); run != "" {
 		standing, err = attackScenarioStanding(ctx, store, run, report.ReportingInstitution)
 	} else {
 		standing, err = reporterStanding(ctx, store, report.ReportingInstitution)
@@ -561,17 +634,7 @@ func (a *App) score(
 // and seeded history outcomes are ignored because no receiver made them.
 func reporterStanding(ctx context.Context, store dbRunner, institution string) (ReporterStanding, error) {
 	var standing ReporterStanding
-	err := store.QueryRow(ctx, `SELECT
-		COUNT(*) FILTER (WHERE a.state='actioned' AND a.outcome IN ('held','recovered')),
-		COUNT(*) FILTER (WHERE a.state='disputed' OR (a.state='actioned' AND a.outcome='released'))
-		FROM alerts a
-		JOIN reports r ON r.report_id=a.report_id
-		WHERE a.reporting_institution=$1
-		  AND a.updated_at >= NOW() - make_interval(days => $2::int)
-		  AND COALESCE(r.evidence,'') NOT LIKE '%"guided_demo":true%'
-		  AND COALESCE(r.evidence,'') NOT LIKE '%"attack_scenario":%'
-		  AND COALESCE(r.evidence,'') NOT LIKE '%"seeded_history":true%'`,
-		institution, standingWindowDays).Scan(&standing.Upheld, &standing.Adverse)
+	err := store.QueryRow(ctx, standingSQL, institution, standingWindowDays).Scan(&standing.Upheld, &standing.Adverse)
 	if err != nil {
 		return ReporterStanding{}, err
 	}

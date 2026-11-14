@@ -98,6 +98,11 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		a.queryRows(w, r, "SELECT * FROM institutions ORDER BY name")
 	case path == "/v1/user-requests":
 		a.userAccessRequests(w, r)
+	case r.Method == http.MethodGet && path == "/v1/admin/metrics":
+		if !requireRole(w, user, "staff") {
+			return
+		}
+		a.metricsHandler(w, r)
 	case r.Method == http.MethodGet && path == "/v1/stats":
 		if !requireRole(w, user, "staff") {
 			return

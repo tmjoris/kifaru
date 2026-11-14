@@ -155,6 +155,7 @@ func TestPostgresSingleSourceAlertTiers(t *testing.T) {
 	if err := kbAddWith(ctx, db, knownBadHash, "known_bad", "confirmed mule", "staff@kifaru.test"); err != nil {
 		t.Fatal(err)
 	}
+	app.cache.invalidate() // what the admin endpoint does after editing the lists
 	noticeID, notice := submit(signal("bank_a", knownBadHash, nil))
 	if notice.Status != statusSingleSourceNotice || notice.AlertID == nil {
 		t.Fatalf("a known-bad destination should issue a single-source notice, got %s", notice.Status)
@@ -245,6 +246,7 @@ func TestPostgresSingleSourceAlertTiers(t *testing.T) {
 	if err := kbAddWith(ctx, db, knownGoodHash, "known_good", "payroll account", "staff@kifaru.test"); err != nil {
 		t.Fatal(err)
 	}
+	app.cache.invalidate() // what the admin endpoint does after editing the lists
 	_, suppressed := submit(signal("sacco_d", knownGoodHash, map[string]any{"victim_confirmed": true}))
 	if suppressed.AlertID != nil || alertTierFor(suppressed.Status) != "" {
 		t.Fatalf("a known-good destination must not alert on a single source, got %s", suppressed.Status)

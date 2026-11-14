@@ -22,6 +22,7 @@ func admitIngest(w http.ResponseWriter) (release func(), ok bool) {
 	case ingestSlots <- struct{}{}:
 		return func() { <-ingestSlots }, true
 	default:
+		metrics.shed.Add(1)
 		w.Header().Set("Retry-After", "2")
 		writeError(w, http.StatusServiceUnavailable, "the service is at capacity, retry shortly")
 		return nil, false
