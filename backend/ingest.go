@@ -194,7 +194,23 @@ func artefactRows(report ReportIn) (kinds, hashes, scopes []string) {
 // In the common case (no alert, no corroboration) this is two round trips: the
 // corroboration lookup, then one batch holding the insert and the follow-up
 // re-validation lookup.
+// errSlowPath means the report needs an explicit transaction (an alert to issue, or
+// earlier reports to re-score), so the caller must retry it with one.
+var errSlowPath = &apiError{0, "needs a transaction"}
+
+// processIn handles one report. With tx == nil it runs on the pool without an
+// explicit transaction, which is enough, and two round trips instead of four,
+// when the report needs no alert and corroborates nothing earlier: the insert is
+// one statement, which the database applies atomically. Anything else returns
+// errSlowPath so the caller can run it again inside a transaction.
 func (a *App) processIn(ctx context.Context, tx pgx.Tx, report ReportIn, channel string) (processed, *apiError) {
+	var store dbRunner = tx
+	var pre *preCandidates
+	if tx == nil {
+		store = a.db
+		pre = &preCandidates{}
+		ctx = context.WithValue(ctx, preCandidatesKey{}, pre)
+	}
 	start := time.Now()
 	ref, err := a.reference(ctx)
 	if err != nil {
@@ -235,12 +251,16 @@ func (a *App) processIn(ctx context.Context, tx pgx.Tx, report ReportIn, channel
 	}
 	reportID := "rpt-" + randomHex(6)
 	submittedAt := utcNow()
-	validation, err := a.score(ctx, tx, report, reportID, codes, cfg, start)
+	validation, err := a.score(ctx, store, report, reportID, codes, cfg, start)
 	if err != nil {
 		return processed{}, &apiError{http.StatusInternalServerError, err.Error()}
 	}
 	validation.Explanation = a.explain(report, validation, codes)
 	newAlert := assignAlertID(&validation, "")
+	qualifies := containsString(qualifyingStatuses, validation.Status)
+	if tx == nil && (validation.AlertID != nil || (qualifies && len(pre.ids) > 0) || !pre.ok) {
+		return processed{}, errSlowPath
+	}
 
 	riskJSON, _ := json.Marshal(codes)
 	evidenceJSON, _ := json.Marshal(report.Evidence)
@@ -265,12 +285,14 @@ func (a *App) processIn(ctx context.Context, tx pgx.Tx, report ReportIn, channel
 		validation.ValidationScore, validation.Status, string(reasonsJSON), string(corroJSON),
 		validation.CorroborationCount, validation.Explanation, validation.LatencyMS,
 		validation.AlertID, configVersion, utcNow(), string(validationAudit))
-	batch.Queue(revalidateCandidatesSQL, revalidateArgs(reportID)...)
-	results := tx.SendBatch(ctx, batch)
+	if tx != nil {
+		batch.Queue(revalidateCandidatesSQL, revalidateArgs(reportID)...)
+	}
+	results := store.(batcher).SendBatch(ctx, batch)
 	var inserted string
 	insertErr := results.QueryRow().Scan(&inserted)
 	var candidates []string
-	if insertErr == nil {
+	if insertErr == nil && tx != nil {
 		candidateRows, err := results.Query()
 		if err != nil {
 			_ = results.Close()
@@ -295,12 +317,12 @@ func (a *App) processIn(ctx context.Context, tx pgx.Tx, report ReportIn, channel
 	if errors.Is(insertErr, pgx.ErrNoRows) {
 		// A report with this reference already exists: answer with it, change nothing.
 		var existingReportID string
-		if err := tx.QueryRow(ctx, `SELECT report_id FROM reports
+		if err := store.QueryRow(ctx, `SELECT report_id FROM reports
 			WHERE reporting_institution=$1 AND transaction_ref=$2`,
 			report.ReportingInstitution, report.TransactionRef).Scan(&existingReportID); err != nil {
 			return processed{}, &apiError{http.StatusInternalServerError, err.Error()}
 		}
-		result, resultErr := existingReportResult(ctx, tx, existingReportID)
+		result, resultErr := existingReportResult(ctx, store, existingReportID)
 		if resultErr != nil {
 			return processed{}, &apiError{http.StatusInternalServerError, resultErr.Error()}
 		}
@@ -314,6 +336,17 @@ func (a *App) processIn(ctx context.Context, tx pgx.Tx, report ReportIn, channel
 		return processed{}, &apiError{http.StatusInternalServerError, closeErr.Error()}
 	}
 
+	if tx == nil {
+		described := make([]map[string]any, 0, len(codes))
+		for _, code := range codes {
+			item := a.standard.Codes[code]
+			described = append(described, map[string]any{"code": code, "family": item.Family, "name": item.Name})
+		}
+		return processed{
+			result:   map[string]any{"report_id": reportID, "risk_codes": described, "validation": validation, "alert": nil},
+			reportID: reportID,
+		}, nil
+	}
 	var alert map[string]any
 	publishedAlerts, err := reconcileAlert(ctx, tx, report, reportID, codes, validation, "", newAlert,
 		"policy-engine", "report validation")
@@ -418,3 +451,28 @@ func (a *App) processChunk(ctx context.Context, reports []ReportIn, offset int, 
 	}
 	return results, errs
 }
+
+// preCandidates carries the pre-insert re-validation check out of scoring, so it
+// shares the scoring reads' round trip.
+type preCandidates struct {
+	ids []string
+	ok  bool
+}
+
+type preCandidatesKey struct{}
+
+// candidatesBeforeInsertSQL is revalidateCandidatesSQL for a report that has not
+// been inserted yet: it matches earlier reports against the new report's own
+// artefacts, given by value.
+const candidatesBeforeInsertSQL = `SELECT DISTINCT v.report_id
+		FROM validations v
+		JOIN reports prior_report ON prior_report.report_id=v.report_id
+		JOIN artefacts prior ON prior.report_id=v.report_id
+		JOIN unnest($5::text[],$6::text[],$7::text[]) AS cur(kind,hash,scope)
+			ON cur.kind=prior.artefact_type AND cur.hash=prior.artefact_hash AND cur.scope=prior.match_scope
+		WHERE v.is_current=1
+		  AND v.status = ANY($3)
+		  AND prior_report.lifecycle_state=$4
+		  AND prior_report.expires_at>NOW()
+		  AND prior.institution_code<>$1
+		  AND prior.observed_at >= $2`

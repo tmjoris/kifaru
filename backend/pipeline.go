@@ -64,12 +64,22 @@ func (a *App) process(ctx context.Context, report ReportIn, channel string) (map
 	if apiErr := preflight(ctx, report); apiErr != nil {
 		return nil, apiErr
 	}
+	// Most reports need neither an alert nor a re-score of earlier reports. Those
+	// are handled without a transaction, in two round trips.
+	done, apiErr := a.processIn(ctx, nil, report, channel)
+	if apiErr == nil {
+		a.publishProcessed(done)
+		return done.result, nil
+	}
+	if apiErr != errSlowPath {
+		return nil, apiErr
+	}
 	tx, err := a.db.Begin(ctx)
 	if err != nil {
 		return nil, &apiError{http.StatusInternalServerError, err.Error()}
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	done, apiErr := a.processIn(ctx, tx, report, channel)
+	done, apiErr = a.processIn(ctx, tx, report, channel)
 	if apiErr != nil {
 		return nil, apiErr
 	}
@@ -441,6 +451,13 @@ func (a *App) corroborationAndStanding(
 		batch := &pgx.Batch{}
 		batch.Queue(corroborationSQL, args...)
 		batch.Queue(standingSQL, report.ReportingInstitution, standingWindowDays)
+		pre, wantCandidates := ctx.Value(preCandidatesKey{}).(*preCandidates)
+		if wantCandidates {
+			kinds, hashes, scopes := artefactRows(report)
+			batch.Queue(candidatesBeforeInsertSQL, report.ReportingInstitution, args[7],
+				[]string{statusAwaiting, statusSingleSourceReview, statusSingleSourceNotice},
+				lifecycleActive, kinds, hashes, scopes)
+		}
 		results := b.SendBatch(ctx, batch)
 		rows, err := results.Query()
 		if err == nil {
@@ -449,6 +466,23 @@ func (a *App) corroborationAndStanding(
 		var standing ReporterStanding
 		if err == nil {
 			err = results.QueryRow().Scan(&standing.Upheld, &standing.Adverse)
+		}
+		if err == nil && wantCandidates {
+			var candidateRows pgx.Rows
+			if candidateRows, err = results.Query(); err == nil {
+				for candidateRows.Next() {
+					var id string
+					if err = candidateRows.Scan(&id); err != nil {
+						break
+					}
+					pre.ids = append(pre.ids, id)
+				}
+				candidateRows.Close()
+				if err == nil {
+					err = candidateRows.Err()
+				}
+				pre.ok = err == nil
+			}
 		}
 		if closeErr := results.Close(); err == nil {
 			err = closeErr
