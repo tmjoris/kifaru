@@ -11,6 +11,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -21,8 +22,8 @@ func (a *App) streamAlerts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	controller := http.NewResponseController(w)
-	if _, ok := w.(http.Flusher); !ok {
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
 		writeError(w, 500, "streaming is unavailable")
 		return
 	}
@@ -39,55 +40,46 @@ func (a *App) streamAlerts(w http.ResponseWriter, r *http.Request) {
 	if since == "" {
 		since = r.Header.Get("Last-Event-ID")
 	}
-	sub, replay, reset, cursor := a.hub.subscribe(institution, since)
-	defer a.hub.unsubscribe(sub)
+	user := authUserFromContext(r.Context())
+	sub, replay, reset, cursor, through := a.hub.subscribe(institution, since, user.ExpiresAt)
 
-	header := w.Header()
-	header.Set("Content-Type", "text/event-stream")
-	header.Set("Cache-Control", "no-cache")
-	header.Set("X-Accel-Buffering", "no")
-	write := func(chunk []byte) bool {
-		// A client that stops reading must not hold a goroutine and its buffers forever.
-		_ = controller.SetWriteDeadline(time.Now().Add(30 * time.Second))
-		if _, err := w.Write(chunk); err != nil {
-			return false
-		}
-		return controller.Flush() == nil
-	}
-	ready, _ := json.Marshal(map[string]any{"cursor": cursor, "reset": reset})
-	if !write([]byte(fmt.Sprintf("retry: %d\nevent: ready\ndata: %s\n\n", 3000+rand.IntN(4000), ready))) {
+	// Take over the connection. From here the stream is a bare net.Conn: no
+	// goroutine, no buffered reader or writer, no ResponseWriter. That is what
+	// lets 10,000 of them fit in 512 MB.
+	conn, _, err := hijacker.Hijack()
+	if err != nil {
+		writeError(w, 500, "streaming is unavailable")
 		return
 	}
-	for _, frame := range replay {
-		if !write(frame) {
-			return
+	sub.conn = conn
+	write := func(chunk []byte) bool {
+		_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+		_, err := conn.Write(chunk)
+		return err == nil
+	}
+	// The response head, by hand. Headers other middleware already set (CORS)
+	// are carried over.
+	head := []byte("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\n" +
+		"X-Accel-Buffering: no\r\nTransfer-Encoding: chunked\r\n")
+	for name, values := range w.Header() {
+		for _, value := range values {
+			if !strings.ContainsAny(name+value, "\r\n") {
+				head = append(head, name+": "+value+"\r\n"...)
+			}
 		}
 	}
-	user := authUserFromContext(r.Context())
-	// Heartbeats are spread out so 10,000 streams do not all write in the same instant.
-	heartbeat := time.NewTimer(time.Duration(rand.Int64N(int64(heartbeatEvery))))
-	defer heartbeat.Stop()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-sub.done:
-			return // fell behind: the client reconnects and is replayed or reset
-		case frame := <-sub.ch:
-			if !write(frame) {
-				return
-			}
-		case <-heartbeat.C:
-			heartbeat.Reset(heartbeatEvery)
-			// No database call here. It used to re-verify the session with two
-			// queries per stream every 20 seconds, about 1,000 queries a second at 10,000 tabs.
-			if !user.ExpiresAt.IsZero() && time.Now().After(user.ExpiresAt) {
-				return
-			}
-			if !write([]byte(": keep-alive\n\n")) {
-				return
-			}
+	head = append(head, '\r', '\n')
+	ready, _ := json.Marshal(map[string]any{"cursor": cursor, "reset": reset})
+	readyFrame := []byte(fmt.Sprintf("retry: %d\nevent: ready\ndata: %s\n\n", 3000+rand.IntN(4000), ready))
+	ok = write(head) && write(chunked(readyFrame))
+	for _, frame := range replay {
+		if !ok {
+			break
 		}
+		ok = write(chunked(frame))
+	}
+	if !ok || !a.hub.attach(sub, through, write) {
+		_ = conn.Close()
 	}
 }
 
@@ -709,6 +701,7 @@ func (a *App) resetDemoStream(w http.ResponseWriter, r *http.Request) {
 	}
 	payload := map[string]any{"status": "reset", "removed_events": eventCount}
 	a.publishStreamEvent([]string{"*"}, "demo-event", "reset", payload)
+	a.hub.publishDirty() // many rows changed at once: tabs reload their snapshot
 	snapshot, err := a.demoStreamSnapshot(r.Context())
 	if err != nil {
 		writeError(w, 500, err.Error())

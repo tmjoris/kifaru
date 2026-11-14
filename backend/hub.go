@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand/v2"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +34,14 @@ import (
 //     a random moment, so a burst of reports cannot turn into a refetch storm.
 //   - A tab that reconnects is replayed from a ring of recent frames. If it has
 //     been away longer than the ring remembers, it is told to reload.
+//
+// Holding a stream open must cost almost nothing, because 10,000 of them have to
+// fit in 512 MB. Served by net/http, each cost about 36 KB (a goroutine, a
+// buffered reader and writer, and the response state): 360 MB at 10,000. So a
+// stream takes over its connection (Hijack) and keeps only the net.Conn. There
+// is no goroutine and no buffer per stream; a few delivery workers write each
+// shared frame to every connection, and a dead tab is noticed when a write or
+// a heartbeat to it fails.
 type streamHub struct {
 	mu       sync.Mutex
 	epoch    string
@@ -43,15 +53,23 @@ type streamHub struct {
 	ringSize int
 	dirty    map[string]struct{}
 	overflow bool
+	outbox   chan deliveryJob
 	rejected atomic.Uint64
 	dropped  atomic.Uint64
 }
 
+// subscriber is one open stream. It is just a connection and a few fields.
 type subscriber struct {
-	topic string
-	ch    chan []byte
-	done  chan struct{}
-	once  sync.Once
+	topic   string
+	conn    net.Conn
+	expires time.Time // when the user's session ends
+	slot    int       // which second of the heartbeat cycle this stream is pinged in
+	closed  atomic.Bool
+}
+
+type deliveryJob struct {
+	targets []*subscriber
+	payload []byte // already chunk-encoded, shared by every target
 }
 
 type ringFrame struct {
@@ -66,8 +84,11 @@ const (
 	baseTick         = time.Second
 	perSubscriberTax = 400 * time.Microsecond
 	maxTick          = 10 * time.Second
-	subscriberBuffer = 8
 	heartbeatEvery   = 25 * time.Second
+	writeTimeout     = 2 * time.Second
+	deliveryWorkers  = 4
+	deliveryChunk    = 256
+	outboxCapacity   = 2048
 )
 
 func (h *streamHub) init() {
@@ -76,6 +97,9 @@ func (h *streamHub) init() {
 		h.dirty = map[string]struct{}{}
 		h.ring = make([]ringFrame, ringCapacity)
 		h.epoch = randomHex(4)
+		h.outbox = make(chan deliveryJob, outboxCapacity)
+		go h.deliverLoop()
+		go h.heartbeatLoop()
 	}
 }
 
@@ -89,7 +113,8 @@ func (h *streamHub) cursor() string {
 
 func (h *streamHub) frameID() string { return h.epoch + "-" + strconv.FormatUint(h.seq, 10) }
 
-// emitLocked stores a frame in the replay ring and hands it to the topic's subscribers.
+// emitLocked stores a frame in the replay ring and queues it for delivery to
+// the topic's subscribers. Nothing is written to a socket while the lock is held.
 func (h *streamHub) emitLocked(topic, event string, payload []byte) {
 	h.seq++
 	frame := []byte(fmt.Sprintf("id: %s\nevent: %s\ndata: %s\n\n", h.frameID(), event, payload))
@@ -98,19 +123,106 @@ func (h *streamHub) emitLocked(topic, event string, payload []byte) {
 	if h.ringSize < ringCapacity {
 		h.ringSize++
 	}
+	if len(h.subs[topic]) == 0 {
+		return
+	}
+	targets := make([]*subscriber, 0, len(h.subs[topic]))
 	for sub := range h.subs[topic] {
-		select {
-		case sub.ch <- frame:
-		default:
-			// This tab cannot keep up. Cut it loose rather than skip frames
-			// silently: it reconnects with its last cursor and is replayed or reset.
-			h.dropped.Add(1)
-			sub.close()
+		targets = append(targets, sub)
+	}
+	select {
+	case h.outbox <- deliveryJob{targets: targets, payload: chunked(frame)}:
+	default:
+		// Delivery cannot keep up at all. Cut these tabs loose; they reconnect
+		// with their last cursor and are replayed or told to reload.
+		h.dropped.Add(uint64(len(targets)))
+		for _, sub := range targets {
+			go h.detach(sub)
 		}
 	}
 }
 
-func (s *subscriber) close() { s.once.Do(func() { close(s.done) }) }
+// chunked wraps data as one HTTP/1.1 chunk. It is computed once per frame and
+// shared by every subscriber.
+func chunked(data []byte) []byte {
+	out := make([]byte, 0, len(data)+12)
+	out = strconv.AppendInt(out, int64(len(data)), 16)
+	out = append(out, '\r', '\n')
+	out = append(out, data...)
+	return append(out, '\r', '\n')
+}
+
+// deliverLoop writes queued frames to connections, in order, a few workers wide.
+func (h *streamHub) deliverLoop() {
+	for job := range h.outbox {
+		h.writeAll(job.targets, job.payload)
+	}
+}
+
+// writeAll writes one payload to every target, split across workers so one slow
+// client delays only its own shard. A connection that cannot take a write
+// within the timeout is closed: its tab reconnects and is replayed.
+func (h *streamHub) writeAll(targets []*subscriber, payload []byte) {
+	shards := min(deliveryWorkers, (len(targets)+deliveryChunk-1)/deliveryChunk)
+	if shards <= 1 {
+		h.writeShard(targets, payload)
+		return
+	}
+	var wg sync.WaitGroup
+	per := (len(targets) + shards - 1) / shards
+	for start := 0; start < len(targets); start += per {
+		wg.Add(1)
+		go func(part []*subscriber) {
+			defer wg.Done()
+			h.writeShard(part, payload)
+		}(targets[start:min(start+per, len(targets))])
+	}
+	wg.Wait()
+}
+
+func (h *streamHub) writeShard(targets []*subscriber, payload []byte) {
+	for _, sub := range targets {
+		if sub.closed.Load() {
+			continue
+		}
+		_ = sub.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+		if _, err := sub.conn.Write(payload); err != nil {
+			h.detach(sub)
+		}
+	}
+}
+
+// heartbeatLoop pings each stream every heartbeatEvery, a slice of them each
+// second, so 10,000 streams never write in the same instant. It also ends
+// streams whose session has expired, and finds tabs that have gone away.
+func (h *streamHub) heartbeatLoop() {
+	ping := chunked([]byte(": keep-alive\n\n"))
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		slot := int(time.Now().Unix() % int64(heartbeatEvery/time.Second))
+		now := time.Now()
+		var due, expired []*subscriber
+		h.mu.Lock()
+		for _, group := range h.subs {
+			for sub := range group {
+				switch {
+				case !sub.expires.IsZero() && now.After(sub.expires):
+					expired = append(expired, sub)
+				case sub.slot == slot:
+					due = append(due, sub)
+				}
+			}
+		}
+		h.mu.Unlock()
+		for _, sub := range expired {
+			h.detach(sub)
+		}
+		if len(due) > 0 {
+			h.writeAll(due, ping)
+		}
+	}
+}
 
 // publish sends a small event (an alert, a demo event) to the named topics.
 func (h *streamHub) publish(topics []string, event string, payload any) {
@@ -166,12 +278,14 @@ func (h *streamHub) tick() time.Duration {
 	return min(baseTick+time.Duration(h.total)*perSubscriberTax, maxTick)
 }
 
-// subscribe registers a stream and returns what it missed since `since`.
-func (h *streamHub) subscribe(topic, since string) (sub *subscriber, replay [][]byte, reset bool, cursor string) {
+// subscribe prepares a stream: it works out what the tab missed since `since`
+// and returns it, but does not make the stream live yet. The caller writes the
+// ready event and the replay to the connection, then calls attach.
+func (h *streamHub) subscribe(topic, since string, expires time.Time) (sub *subscriber, replay [][]byte, reset bool, cursor string, through uint64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.init()
-	sub = &subscriber{topic: topic, ch: make(chan []byte, subscriberBuffer), done: make(chan struct{})}
+	sub = &subscriber{topic: topic, expires: expires, slot: rand.IntN(int(heartbeatEvery / time.Second))}
 	if since != "" {
 		epoch, seqText, ok := strings.Cut(since, "-")
 		seq, err := strconv.ParseUint(seqText, 10, 64)
@@ -179,28 +293,65 @@ func (h *streamHub) subscribe(topic, since string) (sub *subscriber, replay [][]
 		case !ok || err != nil || epoch != h.epoch:
 			reset = true // a different server run, or nonsense: start over
 		case seq < h.seq:
-			oldest := h.seq - uint64(h.ringSize) // frames older than this have been overwritten
-			if seq < oldest {
+			if seq < h.seq-uint64(h.ringSize) { // the frames it needs have been overwritten
 				reset = true
 			} else {
-				for i := 0; i < h.ringSize; i++ {
-					entry := h.ring[(h.ringNext-h.ringSize+i+ringCapacity)%ringCapacity]
-					if entry.seq > seq && entry.topic == topic {
-						replay = append(replay, entry.frame)
-					}
-				}
+				replay, _ = h.framesAfterLocked(topic, seq)
 			}
 		}
 	}
-	if h.subs[topic] == nil {
-		h.subs[topic] = map[*subscriber]struct{}{}
-	}
-	h.subs[topic][sub] = struct{}{}
-	h.total++
-	return sub, replay, reset, h.epoch + "-" + strconv.FormatUint(h.seq, 10)
+	return sub, replay, reset, h.epoch + "-" + strconv.FormatUint(h.seq, 10), h.seq
 }
 
-func (h *streamHub) unsubscribe(sub *subscriber) {
+// framesAfterLocked returns the ring frames for a topic newer than seq, and the
+// newest sequence number in the ring.
+func (h *streamHub) framesAfterLocked(topic string, seq uint64) ([][]byte, uint64) {
+	var frames [][]byte
+	for i := 0; i < h.ringSize; i++ {
+		entry := h.ring[(h.ringNext-h.ringSize+i+ringCapacity)%ringCapacity]
+		if entry.seq > seq && entry.topic == topic {
+			frames = append(frames, entry.frame)
+		}
+	}
+	return frames, h.seq
+}
+
+// attach makes a prepared stream live. Frames emitted while the ready event and
+// replay were being written are written first, so the tab never sees frames out
+// of order or misses one. It returns false if the connection failed.
+func (h *streamHub) attach(sub *subscriber, writtenThrough uint64, write func([]byte) bool) bool {
+	for {
+		h.mu.Lock()
+		if h.seq-writtenThrough > uint64(h.ringSize) {
+			h.mu.Unlock()
+			return false // the ring wrapped while we were catching up: reconnect and reset
+		}
+		frames, latest := h.framesAfterLocked(sub.topic, writtenThrough)
+		if len(frames) == 0 {
+			if h.subs[sub.topic] == nil {
+				h.subs[sub.topic] = map[*subscriber]struct{}{}
+			}
+			h.subs[sub.topic][sub] = struct{}{}
+			h.total++
+			h.mu.Unlock()
+			return true
+		}
+		h.mu.Unlock()
+		for _, frame := range frames {
+			if !write(chunked(frame)) {
+				return false
+			}
+		}
+		writtenThrough = latest
+	}
+}
+
+// detach removes a stream and closes its connection. It is safe to call twice.
+func (h *streamHub) detach(sub *subscriber) {
+	if !sub.closed.CompareAndSwap(false, true) {
+		return
+	}
+	_ = sub.conn.Close()
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if _, ok := h.subs[sub.topic][sub]; !ok {

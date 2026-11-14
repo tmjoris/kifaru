@@ -211,6 +211,8 @@ export interface GuidedDemoStatus {
   receivingInstitutionName: string;
 }
 export interface DashboardData {
+  /** Stream position this snapshot is consistent with; the live stream starts here. */
+  cursor: string;
   banks: Bank[];
   transactions: Transaction[];
   riskCodes: RiskCodeReference[];

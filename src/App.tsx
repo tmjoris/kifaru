@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   advanceAttackScenario, advanceGuidedDemo, createUserAccessRequest, decideUserAccessRequest, emitDemoStreamEvent,
-  hasStoredSession, loadAttackScenario, loadDashboardData, loadDemoStream, loadGuidedDemo, loadUserAccessRequests, login,
+  hasStoredSession, loadAttackScenario, loadDashboardData, loadDemoStream, loadNotifications, mergeHistoryRows, loadGuidedDemo, loadUserAccessRequests, login,
   logout as logoutSession, resetAttackScenario, resetDemoStream, resetGuidedDemo, restoreSession, setDemoStreamState,
-  subscribeToAlerts, updateAlertState, updateInstitutionThreshold, updateReportLifecycle, validateCsv,
+  subscribeToAlerts, updateAlertState, updateInstitutionThreshold, updateReportLifecycle, validateCsv, type StreamHandlers,
 } from "./api";
 import { initialBanks, riskCodeCatalog } from "./data";
 import { protectIdentifiers } from "./identifiers";
@@ -90,6 +90,14 @@ export default function App() {
   const userRequestController = useRef<AbortController | null>(null);
   const pointerOnList = useRef(false);
   const heldUpdate = useRef<DashboardData | null>(null);
+  // Live rows that arrived while the pointer was over the list, applied when it leaves.
+  const heldRows = useRef<unknown[]>([]);
+  const reloadTimer = useRef<number | undefined>(undefined);
+  const notificationTimer = useRef<number | undefined>(undefined);
+  // Where the live stream starts: the cursor of the first snapshot of this session.
+  const [streamCursor, setStreamCursor] = useState("");
+  const streamCursorRef = useRef("");
+  streamCursorRef.current = streamCursor;
   const [updateWaiting, setUpdateWaiting] = useState(false);
 
   const staffRoute = window.location.pathname === "/staff";
@@ -156,6 +164,10 @@ export default function App() {
     setUserRequestsError("");
     pointerOnList.current = false;
     heldUpdate.current = null;
+    heldRows.current = [];
+    setStreamCursor("");
+    window.clearTimeout(reloadTimer.current);
+    reloadTimer.current = undefined;
     setUpdateWaiting(false);
     setDataError("");
     setLoadingData(false);
@@ -217,18 +229,35 @@ export default function App() {
     setRiskCodes(data.riskCodes);
     setKnowledgeBaseEntries(data.knowledgeBaseEntries);
     setNotifications(data.notifications);
+    // A full snapshot replaces anything held back, and starts the live stream
+    // (once per session) from the position the snapshot was read at.
+    heldRows.current = [];
+    setStreamCursor((current) => current || data.cursor);
     setDataVersion((version) => version + 1);
+  }, []);
+
+  // Merges rows pushed by the server into what is on screen. No request is made.
+  // Overview's trends are not reloaded for these: only a full snapshot bumps dataVersion.
+  const latestLists = useRef({ banks, riskCodes });
+  latestLists.current = { banks, riskCodes };
+  const applyRows = useCallback((rows: unknown[]) => {
+    setTransactions((current) => mergeHistoryRows(current, rows, latestLists.current.banks, latestLists.current.riskCodes));
   }, []);
 
   // Live updates wait while the pointer is over a list, so rows do not move under the cursor.
   const pointerOverList = useCallback((over: boolean) => {
     pointerOnList.current = over;
-    if (!over && heldUpdate.current) {
+    if (over) return;
+    if (heldUpdate.current) {
       applyData(heldUpdate.current);
       heldUpdate.current = null;
-      setUpdateWaiting(false);
     }
-  }, [applyData]);
+    if (heldRows.current.length) {
+      applyRows(heldRows.current);
+      heldRows.current = [];
+    }
+    setUpdateWaiting(false);
+  }, [applyData, applyRows]);
 
   const refreshData = useCallback(async (showLoading = true, live = false) => {
     if (!activeSession) return;
@@ -328,21 +357,63 @@ export default function App() {
     void Promise.all([refreshDemoStream(), refreshGuidedDemo(), refreshAttackScenario()]).catch(() => undefined);
   }, [activeSession, isExchange, refreshAttackScenario, refreshDemoStream, refreshGuidedDemo]);
 
+  // The server asked for a full reload (too many changes to push, or this tab was
+  // away too long). Wait a random moment first, and never queue more than one, so
+  // a burst of reports cannot make every open tab ask for the snapshot at once.
+  const scheduleReload = useCallback(() => {
+    if (reloadTimer.current !== undefined) return;
+    reloadTimer.current = window.setTimeout(() => {
+      reloadTimer.current = undefined;
+      void refreshData(false, true).catch(() => undefined);
+    }, 500 + Math.random() * 8000);
+  }, [refreshData]);
+
+  // An alert changed: refresh just the notification list, at most once every few seconds.
+  const scheduleNotifications = useCallback(() => {
+    if (!activeSession || notificationTimer.current !== undefined) return;
+    notificationTimer.current = window.setTimeout(() => {
+      notificationTimer.current = undefined;
+      void loadNotifications({ scope: activeSession.scope, institutionCode: activeSession.institutionCode })
+        .then(setNotifications).catch(() => undefined);
+    }, 1000 + Math.random() * 3000);
+  }, [activeSession]);
+
+  // The stream is opened once, after the first snapshot, and never restarted just
+  // because a callback changed: the handlers it calls are read from this ref.
+  const streamHandlers = useRef<StreamHandlers | null>(null);
+  streamHandlers.current = {
+    rows: (rows) => {
+      if (pointerOnList.current) {
+        heldRows.current.push(...rows);
+        setUpdateWaiting(true);
+      } else {
+        applyRows(rows);
+      }
+    },
+    reload: scheduleReload,
+    alert: scheduleNotifications,
+    demoEvent: () => {
+      if (isExchange) void Promise.all([refreshDemoStream(), refreshGuidedDemo(), refreshAttackScenario()]).catch(() => undefined);
+    },
+  };
+  const streamReady = streamCursor !== "";
   useEffect(() => {
-    if (!activeSession) return;
+    if (!activeSession || !streamReady) return;
     const institution = isExchange ? "*" : bank.backendCode;
-    return subscribeToAlerts(institution, {
-      alert: () => {
-        void refreshData(false, true).catch(() => undefined);
-      },
-      demoEvent: () => {
-        void Promise.all([
-          refreshData(false, true),
-          ...(isExchange ? [refreshDemoStream(), refreshGuidedDemo(), refreshAttackScenario()] : []),
-        ]).catch(() => undefined);
-      },
+    const stop = subscribeToAlerts(institution, streamCursorRef.current, {
+      rows: (rows) => streamHandlers.current?.rows(rows),
+      reload: () => streamHandlers.current?.reload(),
+      alert: () => streamHandlers.current?.alert(),
+      demoEvent: (payload) => streamHandlers.current?.demoEvent(payload),
     });
-  }, [activeSession, bank.backendCode, isExchange, refreshAttackScenario, refreshData, refreshDemoStream, refreshGuidedDemo]);
+    return () => {
+      stop();
+      window.clearTimeout(reloadTimer.current);
+      window.clearTimeout(notificationTimer.current);
+      reloadTimer.current = undefined;
+      notificationTimer.current = undefined;
+    };
+  }, [activeSession, bank.backendCode, isExchange, streamReady]);
 
   async function authenticate(email: string, password: string, nextBankId: string | null, keepSignedIn: boolean) {
     const selectedBank = nextBankId ? bankTemplates.find((item) => item.id === nextBankId) : null;

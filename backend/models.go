@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -149,6 +150,8 @@ type App struct {
 	seedJob     historyJob
 	sessions    sessionCache
 	cache       responseCache
+	refMu       sync.Mutex
+	ref         *refData
 }
 
 type dbRunner interface {

@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	historyCacheTTL = 2 * time.Second
+	historyCacheTTL = 10 * time.Second
 	statsCacheTTL   = 5 * time.Second
 )
 

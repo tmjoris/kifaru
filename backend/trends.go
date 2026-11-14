@@ -366,6 +366,7 @@ func (a *App) runTrendSeed(ctx context.Context) (map[string]any, error) {
 		return nil, err
 	}
 	a.publishStreamEvent([]string{"*"}, "demo-event", "trend-history", map[string]any{"trend_history": "seeded"})
+	a.hub.publishDirty() // many rows changed at once: tabs reload their snapshot
 	return summary, nil
 }
 
@@ -387,6 +388,7 @@ func (a *App) resetTrendHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.publishStreamEvent([]string{"*"}, "demo-event", "trend-history", map[string]any{"trend_history": "reset"})
+	a.hub.publishDirty() // many rows changed at once: tabs reload their snapshot
 	writeJSON(w, http.StatusOK, map[string]any{"removed_reports": removed})
 }
 

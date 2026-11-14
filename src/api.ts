@@ -155,17 +155,35 @@ export async function logout() {
   }
 }
 
-export function subscribeToAlerts(
-  institution: string,
-  handlers: { alert: () => void; demoEvent: () => void },
-) {
+export interface StreamHandlers {
+  /** History rows that changed, pushed by the server: merge them, do not refetch. */
+  rows: (rows: unknown[]) => void;
+  /** Too much changed to push row by row, or the cursor is unusable: reload the snapshot (the caller adds jitter). */
+  reload: () => void;
+  /** An alert changed: refresh the notification list. */
+  alert: () => void;
+  demoEvent: (payload: Record<string, unknown>) => void;
+}
+
+/**
+ * Subscribes to live changes. `since` is the cursor of the snapshot already on
+ * screen; on reconnect the last event id seen is used instead, so the server
+ * replays only what was missed. Reconnects back off with jitter, and a server
+ * that is full (503) is waited out for as long as it asks.
+ */
+export function subscribeToAlerts(institution: string, since: string, handlers: StreamHandlers) {
   const controller = new AbortController();
   const decoder = new TextDecoder();
+  let lastId = since;
+  let failures = 0;
+  const pause = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
   async function connect() {
     while (!controller.signal.aborted) {
+      let wait = 0;
       try {
-        const response = await apiFetch(`/api/v1/stream?institution=${encodeURIComponent(institution)}`, {
+        const cursorQuery = lastId ? `&since=${encodeURIComponent(lastId)}` : "";
+        const response = await apiFetch(`/api/v1/stream?institution=${encodeURIComponent(institution)}${cursorQuery}`, {
           signal: controller.signal,
           headers: { Accept: "text/event-stream" },
         });
@@ -173,6 +191,13 @@ export function subscribeToAlerts(
           clearAuthState();
           window.dispatchEvent(new Event("kifaru-auth-expired"));
           return;
+        }
+        if (response.status === 503) {
+          // The server is full or short of memory. Wait as long as it says, plus
+          // a random extra so every tab does not return in the same second.
+          const asked = Number(response.headers.get("Retry-After")) || 10;
+          wait = asked * 1000 + Math.random() * 5000;
+          throw new Error("The live stream is at capacity.");
         }
         if (!response.ok || !response.body) {
           throw new Error(`Live stream failed (HTTP ${response.status}).`);
@@ -187,17 +212,33 @@ export function subscribeToAlerts(
           while (boundary >= 0) {
             const block = buffer.slice(0, boundary);
             buffer = buffer.slice(boundary + 2);
-            const eventName = block.split("\n")
-              .find((line) => line.startsWith("event:"))?.slice(6).trim();
-            if (eventName === "alert") handlers.alert();
-            if (eventName === "demo-event") handlers.demoEvent();
             boundary = buffer.indexOf("\n\n");
+            let eventName = "";
+            let data = "";
+            for (const line of block.split("\n")) {
+              if (line.startsWith("id:")) lastId = line.slice(3).trim();
+              else if (line.startsWith("event:")) eventName = line.slice(6).trim();
+              else if (line.startsWith("data:")) data += line.slice(5).trim();
+            }
+            let payload: unknown = {};
+            try { payload = data ? JSON.parse(data) : {}; } catch { payload = {}; }
+            const body = isRecord(payload) ? payload : {};
+            if (eventName === "ready") {
+              failures = 0;
+              if (body.reset === true) handlers.reload();
+            } else if (eventName === "batch" && Array.isArray(body.rows)) handlers.rows(body.rows);
+            else if (eventName === "dirty") handlers.reload();
+            else if (eventName === "alert") handlers.alert();
+            else if (eventName === "demo-event") handlers.demoEvent(body);
           }
         }
       } catch (error) {
         if (controller.signal.aborted) return;
-        await new Promise((resolve) => window.setTimeout(resolve, 1500));
       }
+      failures += 1;
+      // Exponential backoff with jitter, so a restart does not bring every tab back at once.
+      const backoff = Math.min(30000, 1500 * 2 ** Math.min(failures, 5)) + Math.random() * 3000;
+      await pause(Math.max(wait, backoff));
     }
   }
 
@@ -431,12 +472,52 @@ export async function loadDashboardData(
     .map((row) => transactionFromHistory(row, codeToBankId, riskCodeNames));
 
   return {
+    cursor: typeof historyPayload.cursor === "string" ? historyPayload.cursor : "",
     banks,
     transactions,
     riskCodes,
     knowledgeBaseEntries: parseKnowledgeBase(knowledgePayload),
     notifications: parseNotifications(notificationsPayload),
   };
+}
+
+const MAX_HELD_TRANSACTIONS = 2000;
+
+/**
+ * Merges rows pushed by the live stream into the transactions already on screen.
+ * A row for a report already shown replaces it in place; a new report goes to the
+ * top. Nothing is fetched, so a tab that has loaded once only ever receives what changed.
+ */
+export function mergeHistoryRows(
+  existing: Transaction[],
+  rows: unknown[],
+  banks: Bank[],
+  riskCodes: RiskCodeReference[],
+): Transaction[] {
+  const riskCodeNames = new Map(riskCodes.map((item) => [item.code, item.label]));
+  const codeToBankId = new Map(banks.map((bank) => [bank.backendCode, bank.id]));
+  const incoming = rows.filter(isRecord).filter((row) => requiredString(row, "report_id"))
+    .sort((a, b) => requiredString(b, "submitted_at").localeCompare(requiredString(a, "submitted_at")));
+  if (!incoming.length) return existing;
+  const replacements = new Map<string, Transaction>();
+  const fresh: Transaction[] = [];
+  const known = new Set(existing.map((item) => item.key));
+  for (const row of incoming) {
+    const transaction = transactionFromHistory(row, codeToBankId, riskCodeNames);
+    if (known.has(transaction.key)) replacements.set(transaction.key, transaction);
+    else if (!fresh.some((item) => item.key === transaction.key)) fresh.push(transaction);
+  }
+  const merged = [...fresh, ...existing.map((item) => replacements.get(item.key) ?? item)];
+  return merged.length > MAX_HELD_TRANSACTIONS ? merged.slice(0, MAX_HELD_TRANSACTIONS) : merged;
+}
+
+/** Reloads only the notification list, for when an alert arrives on the stream. */
+export async function loadNotifications(
+  access: { scope: PortalScope; institutionCode: string },
+  signal?: AbortSignal,
+): Promise<Notification[]> {
+  const institution = encodeURIComponent(access.scope === "exchange" ? "*" : access.institutionCode);
+  return parseNotifications(await fetchJson(`/api/v1/notifications?institution=${institution}&limit=20`, { signal }));
 }
 
 export async function updateInstitutionThreshold(
