@@ -146,9 +146,12 @@ type App struct {
 	db          *pgxpool.Pool
 	standardRaw map[string]any
 	standard    Standard
-	streamsMu   sync.Mutex
-	streams     map[string]map[chan []byte]struct{}
+	hub         streamHub
 	seedJob     historyJob
+	sessions    sessionCache
+	cache       responseCache
+	refMu       sync.Mutex
+	ref         *refData
 }
 
 type dbRunner interface {

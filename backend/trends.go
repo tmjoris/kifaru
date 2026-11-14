@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -91,12 +92,14 @@ func (a *App) trends(w http.ResponseWriter, r *http.Request) {
 		}
 		days = parsed
 	}
-	out, err := a.trendSummary(r.Context(), institution, days, time.Now())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, out)
+	a.cache.serve(w, r, fmt.Sprintf("trends|%s|%d", institution, days), 10*time.Second,
+		func(ctx context.Context) ([]byte, error) {
+			out, err := a.trendSummary(ctx, institution, days, time.Now())
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(out)
+		})
 }
 
 func dayStart(t time.Time) time.Time {
@@ -363,6 +366,7 @@ func (a *App) runTrendSeed(ctx context.Context) (map[string]any, error) {
 		return nil, err
 	}
 	a.publishStreamEvent([]string{"*"}, "demo-event", "trend-history", map[string]any{"trend_history": "seeded"})
+	a.hub.publishDirty() // many rows changed at once: tabs reload their snapshot
 	return summary, nil
 }
 
@@ -384,6 +388,7 @@ func (a *App) resetTrendHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.publishStreamEvent([]string{"*"}, "demo-event", "trend-history", map[string]any{"trend_history": "reset"})
+	a.hub.publishDirty() // many rows changed at once: tabs reload their snapshot
 	writeJSON(w, http.StatusOK, map[string]any{"removed_reports": removed})
 }
 

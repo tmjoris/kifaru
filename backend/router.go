@@ -55,6 +55,12 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && path == "/health":
 		a.health(w, r)
 		return
+	case r.Method == http.MethodGet && path == "/healthz":
+		// Liveness only, no database. Point Render's health check here so the
+		// check itself does not wake Neon or hold a pool connection.
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("ok"))
+		return
 	case r.Method == http.MethodPost && path == "/v1/auth/login":
 		a.login(w, r)
 		return
@@ -68,6 +74,20 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = authenticatedRequest
+	if isIngestPath(path) && r.Method == http.MethodPost && path != "/v1/risk-check" {
+		release, ok := admitIngest(w)
+		if !ok {
+			return
+		}
+		defer release()
+	}
+	if isMutation(r.Method) && !isIngestPath(path) {
+		// A person just changed something and expects to see it: drop cached
+		// responses once the handler finishes. Report ingestion is excluded on
+		// purpose, because at thousands of reports a minute it would empty the
+		// cache constantly; those responses age out by TTL.
+		defer a.cache.invalidate()
+	}
 
 	switch {
 	case r.Method == http.MethodPost && path == "/v1/auth/logout":
@@ -214,6 +234,16 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusNotFound, "not found")
 	}
+}
+
+// isIngestPath is true for the routes bank systems use to send data in, plus
+// the read-only risk check. None of them is a person editing what a dashboard shows.
+func isIngestPath(path string) bool {
+	switch path {
+	case "/v1/reports", "/v1/reports/batch", "/v1/reports/csv", "/validate-csv", "/v1/risk-check":
+		return true
+	}
+	return strings.HasPrefix(path, "/v1/hooks/")
 }
 
 func (a *App) health(w http.ResponseWriter, r *http.Request) {

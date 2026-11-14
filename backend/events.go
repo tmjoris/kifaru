@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -20,70 +22,77 @@ func (a *App) streamAlerts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	flusher, ok := w.(http.Flusher)
+	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		writeError(w, 500, "streaming is unavailable")
 		return
 	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	channel := make(chan []byte, 16)
-	a.streamsMu.Lock()
-	if a.streams[institution] == nil {
-		a.streams[institution] = map[chan []byte]struct{}{}
-	}
-	a.streams[institution][channel] = struct{}{}
-	a.streamsMu.Unlock()
-	defer func() {
-		a.streamsMu.Lock()
-		delete(a.streams[institution], channel)
-		if len(a.streams[institution]) == 0 {
-			delete(a.streams, institution)
-		}
-		a.streamsMu.Unlock()
-	}()
-	_, _ = fmt.Fprint(w, "event: ready\ndata: {}\n\n")
-	flusher.Flush()
-	keepAlive := time.NewTicker(20 * time.Second)
-	defer keepAlive.Stop()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case payload := <-channel:
-			_, _ = w.Write(payload)
-			flusher.Flush()
-		case <-keepAlive.C:
-			if _, err := a.authenticatedUser(r); err != nil {
-				return
-			}
-			_, _ = fmt.Fprint(w, ": keep-alive\n\n")
-			flusher.Flush()
-		}
-	}
-}
-
-func (a *App) publishAlert(institution string, alert map[string]any) {
-	a.publishStreamEvent([]string{institution, "*"}, "alert", fmt.Sprint(alert["alert_id"]), alert)
-}
-
-func (a *App) publishStreamEvent(keys []string, eventName, eventID string, payload any) {
-	encoded, err := json.Marshal(payload)
-	if err != nil {
+	// Turn new streams away, politely, before the server runs out of room.
+	// Holding a stream open costs memory, and an out-of-memory kill would drop
+	// every connected user at once. The client retries after the delay given.
+	if a.hub.audience() >= maxStreams() || memoryPressure() {
+		a.hub.rejected.Add(1)
+		w.Header().Set("Retry-After", strconv.Itoa(5+rand.IntN(25)))
+		writeError(w, http.StatusServiceUnavailable, "too many live connections right now, retrying shortly")
 		return
 	}
-	event := []byte(fmt.Sprintf("id: %s\nevent: %s\ndata: %s\n\n", eventID, eventName, encoded))
-	a.streamsMu.Lock()
-	defer a.streamsMu.Unlock()
-	for _, key := range keys {
-		for channel := range a.streams[key] {
-			select {
-			case channel <- event:
-			default:
+	since := r.URL.Query().Get("since")
+	if since == "" {
+		since = r.Header.Get("Last-Event-ID")
+	}
+	user := authUserFromContext(r.Context())
+	sub, replay, reset, cursor, through := a.hub.subscribe(institution, since, user.ExpiresAt)
+
+	// Take over the connection. From here the stream is a bare net.Conn: no
+	// goroutine, no buffered reader or writer, no ResponseWriter. That is what
+	// lets 10,000 of them fit in 512 MB.
+	conn, _, err := hijacker.Hijack()
+	if err != nil {
+		writeError(w, 500, "streaming is unavailable")
+		return
+	}
+	sub.conn = conn
+	write := func(chunk []byte) bool {
+		_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+		_, err := conn.Write(chunk)
+		return err == nil
+	}
+	// The response head, by hand. Headers other middleware already set (CORS)
+	// are carried over.
+	head := []byte("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\n" +
+		"X-Accel-Buffering: no\r\nTransfer-Encoding: chunked\r\n")
+	for name, values := range w.Header() {
+		for _, value := range values {
+			if !strings.ContainsAny(name+value, "\r\n") {
+				head = append(head, name+": "+value+"\r\n"...)
 			}
 		}
 	}
+	head = append(head, '\r', '\n')
+	ready, _ := json.Marshal(map[string]any{"cursor": cursor, "reset": reset})
+	readyFrame := []byte(fmt.Sprintf("retry: %d\nevent: ready\ndata: %s\n\n", 3000+rand.IntN(4000), ready))
+	ok = write(head) && write(chunked(readyFrame))
+	for _, frame := range replay {
+		if !ok {
+			break
+		}
+		ok = write(chunked(frame))
+	}
+	if !ok || !a.hub.attach(sub, through, write) {
+		_ = conn.Close()
+	}
+}
+
+// publishAlert pushes an alert to its receiving institution and to staff, and
+// marks the alert's report as changed so its row is pushed with the next batch.
+func (a *App) publishAlert(institution string, alert map[string]any) {
+	a.hub.publish([]string{institution, "*"}, "alert", alert)
+	a.hub.markDirty(fmt.Sprint(alert["report_id"]))
+}
+
+// publishStreamEvent sends a small event to the named topics.
+func (a *App) publishStreamEvent(keys []string, eventName, _ string, payload any) {
+	a.hub.publish(keys, eventName, payload)
 }
 
 // recordBankDemoEvent keeps reports from the independent classroom bank apps
@@ -159,6 +168,7 @@ func (a *App) recordBankDemoEvent(ctx context.Context, report ReportIn, result m
 		"reporting_institution":   report.ReportingInstitution,
 		"destination_institution": report.DestinationInstitution,
 	}
+	a.hub.markDirty(reportID)
 	a.publishStreamEvent([]string{"*"}, "demo-event", fmt.Sprint(offset), event)
 	return nil
 }
@@ -267,6 +277,9 @@ func (a *App) produceDemoEvent(ctx context.Context, force bool) (map[string]any,
 			WHERE event_offset=$3`, reportID, outcome, offset); err != nil {
 			return nil, true, err
 		}
+	}
+	if id, ok := event["report_id"]; ok {
+		a.hub.markDirty(fmt.Sprint(id))
 	}
 	a.publishStreamEvent([]string{"*"}, "demo-event", strconv.FormatInt(offset, 10), event)
 	return event, true, nil
@@ -688,6 +701,7 @@ func (a *App) resetDemoStream(w http.ResponseWriter, r *http.Request) {
 	}
 	payload := map[string]any{"status": "reset", "removed_events": eventCount}
 	a.publishStreamEvent([]string{"*"}, "demo-event", "reset", payload)
+	a.hub.publishDirty() // many rows changed at once: tabs reload their snapshot
 	snapshot, err := a.demoStreamSnapshot(r.Context())
 	if err != nil {
 		writeError(w, 500, err.Error())

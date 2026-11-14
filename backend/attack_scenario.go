@@ -391,5 +391,6 @@ func (a *App) resetAttackScenario(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.publishStreamEvent([]string{"*"}, "demo-event", "attack-reset", map[string]any{"attack_scenario": 0})
+	a.hub.publishDirty() // many rows changed at once: tabs reload their snapshot
 	writeJSON(w, http.StatusOK, snapshot)
 }
