@@ -76,6 +76,8 @@ export interface Bank {
 }
 export interface Transaction {
   key: string;
+  /** When the report was submitted (ISO), used to page back through older reports. */
+  submittedAt?: string;
   id: string;
   sourceBank: string;
   destinationBank: string;

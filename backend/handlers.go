@@ -23,10 +23,16 @@ func (a *App) history(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit := queryLimit(r, 500)
+	// "before" pages backwards: only reports submitted earlier than that time.
+	before := r.URL.Query().Get("before")
+	if len(before) > 40 {
+		writeError(w, http.StatusUnprocessableEntity, "before must be a timestamp")
+		return
+	}
 	// Everyone allowed to ask for this institution gets the same answer, so the
 	// query runs at most once per TTL however many tabs are open.
-	a.cache.serve(w, r, fmt.Sprintf("history|%s|%d", institution, limit), historyCacheTTL,
-		func(ctx context.Context) ([]byte, error) { return a.historyJSON(ctx, institution, limit) })
+	a.cache.serve(w, r, fmt.Sprintf("history|%s|%d|%s", institution, limit, before), historyCacheTTL,
+		func(ctx context.Context) ([]byte, error) { return a.historyJSON(ctx, institution, limit, before) })
 }
 
 // historySelect is the column list every history row has, whether it is sent as
@@ -54,15 +60,23 @@ func historySelect(subjectHash string) string {
 // writes the JSON itself: this server has a tenth of a CPU, the database does
 // not, and turning 2,000 rows into Go maps and back into JSON was most of the
 // CPU the dashboard cost.
-func (a *App) historyJSON(ctx context.Context, institution string, limit int) ([]byte, error) {
-	picked := `(SELECT * FROM reports ORDER BY submitted_at DESC LIMIT $2)`
+func (a *App) historyJSON(ctx context.Context, institution string, limit int, before string) ([]byte, error) {
+	// A page boundary is a plain extra condition on each index range scan, added only
+	// when asked for, so the ordinary query keeps its simple plan.
+	args := []any{institution, limit}
+	older, olderAnd := "", ""
+	if before != "" {
+		args = append(args, before)
+		older, olderAnd = "WHERE submitted_at < $3::text ", "AND submitted_at < $3::text "
+	}
+	picked := `(SELECT * FROM reports ` + older + `ORDER BY submitted_at DESC LIMIT $2)`
 	if institution != "*" {
 		picked = `(SELECT * FROM (
-			(SELECT * FROM reports WHERE reporting_institution=$1
+			(SELECT * FROM reports WHERE reporting_institution=$1 ` + olderAnd + `
 				ORDER BY submitted_at DESC LIMIT $2)
 			UNION ALL
 			(SELECT * FROM reports WHERE destination_institution=$1
-				AND reporting_institution IS DISTINCT FROM $1
+				AND reporting_institution IS DISTINCT FROM $1 ` + olderAnd + `
 				ORDER BY submitted_at DESC LIMIT $2)
 		) both_sides ORDER BY submitted_at DESC LIMIT $2)`
 	}
@@ -74,7 +88,7 @@ func (a *App) historyJSON(ctx context.Context, institution string, limit int) ([
 		FROM (`+historySelect("CASE WHEN $1='*' OR r.reporting_institution=$1 THEN r.subject_customer_hash ELSE '' END")+`
 		FROM `+picked+` r
 		LEFT JOIN validations v ON v.report_id=r.report_id AND v.is_current=1
-		LEFT JOIN alerts a ON a.alert_id=v.alert_id) h`, institution, limit).Scan(&rows)
+		LEFT JOIN alerts a ON a.alert_id=v.alert_id) h`, args...).Scan(&rows)
 	if err != nil {
 		return nil, err
 	}

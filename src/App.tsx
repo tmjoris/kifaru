@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   advanceAttackScenario, advanceGuidedDemo, createUserAccessRequest, decideUserAccessRequest, emitDemoStreamEvent,
-  hasStoredSession, loadAttackScenario, loadDashboardData, loadDemoStream, loadNotifications, mergeHistoryRows, loadGuidedDemo, loadUserAccessRequests, login,
+  hasStoredSession, loadAttackScenario, INITIAL_HISTORY_ROWS, loadDashboardData, loadDemoStream, loadNotifications, loadOlderHistory, mergeHistoryRows, loadGuidedDemo, loadUserAccessRequests, login,
   logout as logoutSession, resetAttackScenario, resetDemoStream, resetGuidedDemo, restoreSession, setDemoStreamState,
   subscribeToAlerts, updateAlertState, updateInstitutionThreshold, updateReportLifecycle, validateCsv, type StreamHandlers,
 } from "./api";
@@ -95,6 +95,8 @@ export default function App() {
   const reloadTimer = useRef<number | undefined>(undefined);
   const notificationTimer = useRef<number | undefined>(undefined);
   // Where the live stream starts: the cursor of the first snapshot of this session.
+  const [moreHistory, setMoreHistory] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [streamCursor, setStreamCursor] = useState("");
   const streamCursorRef = useRef("");
   streamCursorRef.current = streamCursor;
@@ -166,6 +168,7 @@ export default function App() {
     heldUpdate.current = null;
     heldRows.current = [];
     setStreamCursor("");
+    setMoreHistory(false);
     window.clearTimeout(reloadTimer.current);
     reloadTimer.current = undefined;
     setUpdateWaiting(false);
@@ -232,17 +235,36 @@ export default function App() {
     // A full snapshot replaces anything held back, and starts the live stream
     // (once per session) from the position the snapshot was read at.
     heldRows.current = [];
+    setMoreHistory(data.transactions.length >= INITIAL_HISTORY_ROWS);
     setStreamCursor((current) => current || data.cursor);
     setDataVersion((version) => version + 1);
   }, []);
 
   // Merges rows pushed by the server into what is on screen. No request is made.
   // Overview's trends are not reloaded for these: only a full snapshot bumps dataVersion.
+  const transactionsRef = useRef<Transaction[]>([]);
+  transactionsRef.current = transactions;
   const latestLists = useRef({ banks, riskCodes });
   latestLists.current = { banks, riskCodes };
   const applyRows = useCallback((rows: unknown[]) => {
     setTransactions((current) => mergeHistoryRows(current, rows, latestLists.current.banks, latestLists.current.riskCodes));
   }, []);
+
+  // Fetches the next page of older reports on request.
+  const loadOlder = useCallback(async () => {
+    if (!activeSession || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const page = await loadOlderHistory(transactionsRef.current, { scope: activeSession.scope, institutionCode: activeSession.institutionCode },
+        latestLists.current.banks, latestLists.current.riskCodes);
+      setTransactions(page.transactions);
+      setMoreHistory(page.more);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Unable to load older reports.");
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [activeSession, loadingOlder]);
 
   // Live updates wait while the pointer is over a list, so rows do not move under the cursor.
   const pointerOverList = useCallback((over: boolean) => {
@@ -787,6 +809,11 @@ export default function App() {
                     || (tab === "outgoing" ? reportingBankId(item) === bankId : counterpartyBankId(item) === bankId && item.alertId))}
                     bank={bank} bankName={bankName} bankRef={bankRef} history={tab === "history"} onOpen={setSelectedKey} />
                 </div>
+                {moreHistory && <p className="muted">
+                  <button className="btn" disabled={loadingOlder} onClick={() => void loadOlder()}>
+                    {loadingOlder ? "Loading..." : "Load older reports"}
+                  </button> Showing the newest {transactions.length.toLocaleString()} reports.
+                </p>}
               </>}
               {tab === "risk" && <RiskCheck bank={bank} banks={banks} />}
               {tab === "reports" && <Reports records={records} bank={bank} view={reportView} onView={setReportView} />}
