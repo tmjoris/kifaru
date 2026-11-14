@@ -74,7 +74,7 @@ func openPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg.MaxConns = int32(envInt("DB_MAX_CONNS", 40))
+	cfg.MaxConns = int32(envInt("DB_MAX_CONNS", 60))
 	cfg.MinConns = int32(envInt("DB_MIN_CONNS", 2))
 	cfg.MaxConnLifetime = 30 * time.Minute
 	cfg.MaxConnLifetimeJitter = 5 * time.Minute
