@@ -94,9 +94,12 @@ separate the client from the server.
 - The hosted 10,000 streams were held for about 4 minutes, not hours; heartbeats
   every 25 s are meant to keep Render's proxy from closing them, but a long hold is untested.
 - The new frontend has been typechecked but not run in a browser.
-- Ingestion still costs about six database round trips per report. At the 80 ms
-  round trip of a distant Neon region that is the ceiling, not the CPU. Fewer
-  round trips (a single stored procedure for scoring) is the next lever.
+- Ingestion now costs about four database round trips per report (it was six: the
+  knowledge base is cached, and the standing lookup shares a round trip with the
+  corroboration lookup). Measured at 15 reports a second and an 80 ms round trip,
+  the median fell from about 547 ms to about 383 ms, which is two round trips. Above
+  roughly 40 a second the 0.1 CPU is the limit, so fewer round trips no longer help
+  there. The simulated round trip is not Neon's real latency, so measure on the real region.
 
 ## Settings
 

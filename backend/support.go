@@ -73,6 +73,7 @@ func kbListsFrom(ctx context.Context, store dbRunner) (map[string]map[string]boo
 }
 
 func (a *App) kbAdd(ctx context.Context, hash, list, label, actor string) error {
+	defer a.cache.invalidate()
 	return kbAddWith(ctx, a.db, hash, list, label, actor)
 }
 
