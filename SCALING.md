@@ -65,24 +65,38 @@ tests ran against the old and the new code.
 | Report ingestion, 80 ms round trip, pool of 20 | not measured | 19 a second |
 | Report ingestion, 80 ms round trip, pool of 60 | not measured | about 37 a second |
 
-### Hosted results (Render and Neon, run 2026-11-14 from a home PC, after the merge)
+### Hosted results (Render and Neon, 2026-11-14, from one home PC with 2 cores)
 
-| Test | Result |
-| --- | --- |
-| 100 dashboard users, 90 s | no failures; p95 850 ms (984 ms on the old code). Most of that is the network trip: the median is 259 ms |
-| 2,000 live streams | 1,998 connected, none turned away, live batches delivered, `/healthz` steady at about 0.4 s |
-| **10,000 live streams** | **9,999 held** for the whole run, none turned away, 18,012 pushed batches delivered |
-| 10,000 streams + 1,000 dashboard users + ingestion at up to 20 a second | streams held; ingestion 13.8 a second, 98.9% accepted, p95 6.6 s; **dashboard users failed: 17.6% errors, p95 58 s**; `/healthz` slowed to 15-19 s at the peak and recovered |
-| 1,000 dashboard users alone (no streams) | **failed too: 15.7% errors, p95 58 s**, so the streams are not the cause |
-| Same 1,000-user script against the local 0.1 CPU rig, from the same PC | no failures; p95 2.6 s; container at 1.9% CPU |
+| Test | Client saw | Server saw (`/v1/admin/metrics`) |
+| --- | --- | --- |
+| 2,000 live streams | 1,998 connected, none turned away | n/a |
+| **10,000 live streams** | **9,999 held** for the whole run, 18,012 pushed batches delivered | n/a |
+| 300 dashboard users, 500-row snapshots | p95 1.14 s | 6% CPU, 0 throttling, 0 slow handlers |
+| 1,000 dashboard users, 500-row snapshots | **p95 41-58 s, 7-16% failed** | 10% CPU, 0 throttling, 0 handler calls over 1 s, no database waits, 46 MiB memory |
+| 1,000 dashboard users, 50-row snapshots | **p95 485 ms, 0% failed** | 13% CPU, 0 throttling, 0 slow handlers |
+| Same 1,000-user script against the local 0.1 CPU rig | p95 2.6 s, no failures | 1.9% CPU |
 
-What this shows: the hosted service holds 10,000 idle-ish live streams. It does **not**
-yet serve 1,000 simultaneously active dashboard users within the target, and the cause is
-not the code's CPU use (the rig passes at 1.9% CPU). The remaining suspects, none of
-them tested: Render's proxy or its CPU throttling on the free tier, Neon's latency or a
-cold compute, and the test PC's own downlink and uplink while 1,000 simulated browsers
-download at once. Running the same script from a cloud machine near Render would
-separate the client from the server.
+How the 1,000-user failure was traced, and what it does and does not prove:
+
+- **The Go process was not the bottleneck.** While clients saw p95 of 41 s, the server
+  handled 7,139 requests with no handler call over a second, 10% CPU and essentially no
+  CPU throttling or database waiting. The delay was outside it.
+- **The time was spent downloading.** Client-side, the body download averaged 7.8 s
+  (p95 52.8 s) while waiting for the first byte averaged 0.7 s.
+- **Fewer bytes fixed it.** Cutting response size (average 166 KB to 44 KB per request)
+  took the same 1,000 users from failing to a clean pass. The first run pulled 755 MB in
+  about two minutes (roughly 50 Mbps) through one home connection into a 2-core machine
+  at load average 2.7.
+- **What is not proven:** whether the limit was this PC's CPU, this PC's link, or Render's
+  outbound throughput to a single address. All three produce the same picture and the
+  test cannot separate them. Real users are separate browsers on separate links, so one
+  home connection concentrating 1,000 of them is a worse case than production. A load
+  generator on a cloud host near Render would settle it.
+- **The product implication holds either way.** The dashboard asks for 2,000 history rows
+  on every full load, and a staff snapshot of 500 rows is already 163 KB compressed. At
+  10,000 users, snapshot size is the dominant outbound cost on a free plan. Loading fewer
+  rows first and fetching older ones on demand (the live stream now keeps the top of the
+  list current) would cut that sharply. That change is not made.
 
 ### What these numbers do not say
 
@@ -158,13 +172,11 @@ by your own machine's file descriptors and uplink before it is limited by the se
 
 ## Still open
 
-1. Find why 1,000 simultaneously active dashboard users fail on the hosted service when
-   the rig passes: rerun from a cloud machine near Render, and check Render's CPU and
-   Neon's compute state during the run.
-2. Measure delivery with 10,000 streams and a steady flow of thousands of reports a minute.
-3. Cut ingestion round trips further (about six per report today); only a test against
-   the real Neon region can show how much that is worth.
-4. Click through the dashboard in a browser with the new live stream.
-5. Cross-check Render's and Neon's bandwidth and transfer allowances.
-6. The load test wrote about 2,000 'Load test report' rows into the hosted database.
-   Remove them, or turn on `RETENTION_DAYS`.
+1. Rerun the hosted 1,000-user test from a cloud machine near Render to settle whether
+   the earlier failure was the test PC or Render's outbound limit.
+2. Load fewer history rows on the first dashboard load (the app asks for 2,000) and
+   fetch older rows on demand, to cut outbound bytes.
+3. Measure delivery with 10,000 streams and a steady flow of thousands of reports a minute.
+4. Measure ingestion on the real Neon region; the rig only simulates its round-trip time.
+5. Click through the dashboard in a browser with the new live stream.
+6. Cross-check Render's and Neon's bandwidth and transfer allowances.
