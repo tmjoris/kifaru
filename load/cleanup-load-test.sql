@@ -3,6 +3,9 @@
 --
 --   psql "$DATABASE_URL" -f load/cleanup-load-test.sql
 --
+-- The audit log is append-only by design (a database trigger refuses deletes), so the
+-- load test's audit entries are left in place; nothing links them to the other tables.
+--
 -- It matches only reports whose reference starts with 'LOAD-' and whose narrative is
 -- 'Load test report', which is exactly what k6-ingest.js writes. It shows what it
 -- will delete first and runs in a transaction; change COMMIT to ROLLBACK to preview.
@@ -17,7 +20,6 @@ SELECT count(*) AS alerts_to_delete FROM alerts WHERE report_id IN (SELECT repor
 
 DELETE FROM notifications WHERE record_id IN (SELECT alert_id FROM alerts WHERE report_id IN (SELECT report_id FROM load_reports));
 DELETE FROM alerts        WHERE report_id IN (SELECT report_id FROM load_reports);  -- alert_actions cascade
-DELETE FROM audit_log     WHERE target IN (SELECT validation_id FROM validations WHERE report_id IN (SELECT report_id FROM load_reports));
 DELETE FROM validations   WHERE report_id IN (SELECT report_id FROM load_reports);
 DELETE FROM reports       WHERE report_id IN (SELECT report_id FROM load_reports);  -- artefacts cascade
 
