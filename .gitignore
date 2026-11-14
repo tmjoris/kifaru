@@ -4,3 +4,6 @@ dist/
 *.tsbuildinfo
 backend/backend
 demo-credentials.txt
+
+# Session tokens written by load/make-tokens.mjs
+load/tokens.json
