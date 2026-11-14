@@ -74,6 +74,13 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = authenticatedRequest
+	if isIngestPath(path) && r.Method == http.MethodPost && path != "/v1/risk-check" {
+		release, ok := admitIngest(w)
+		if !ok {
+			return
+		}
+		defer release()
+	}
 	if isMutation(r.Method) && !isIngestPath(path) {
 		// A person just changed something and expects to see it: drop cached
 		// responses once the handler finishes. Report ingestion is excluded on

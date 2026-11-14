@@ -43,6 +43,7 @@ func main() {
 	go app.runDemoProducer(context.Background())
 	go app.runSessionFlusher(context.Background())
 	go app.runHubFlusher(context.Background())
+	go app.runRetention(context.Background())
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -73,7 +74,7 @@ func openPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg.MaxConns = int32(envInt("DB_MAX_CONNS", 20))
+	cfg.MaxConns = int32(envInt("DB_MAX_CONNS", 40))
 	cfg.MinConns = int32(envInt("DB_MIN_CONNS", 2))
 	cfg.MaxConnLifetime = 30 * time.Minute
 	cfg.MaxConnLifetimeJitter = 5 * time.Minute
@@ -87,6 +88,13 @@ func openPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 		cfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 	}
 	return pgxpool.NewWithConfig(ctx, cfg)
+}
+
+func envString(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func envInt(name string, fallback int) int {

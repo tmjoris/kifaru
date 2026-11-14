@@ -175,7 +175,22 @@ func (a *App) upsertDemoInstitutionUser(
 	return err
 }
 
+// loginSlots bounds how many password checks run at once. A bcrypt check at cost
+// 12 is about 250 ms of CPU, which is about 2.5 s of wall time on Render's tenth
+// of a CPU. Without a bound, a burst of sign-ins queues behind each other, every
+// one of them times out, and the rest of the API starves. With it, the excess
+// gets a fast 503 and Retry-After, and a client retries a moment later.
+var loginSlots = make(chan struct{}, envInt("LOGIN_CONCURRENCY", 4))
+
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
+	select {
+	case loginSlots <- struct{}{}:
+		defer func() { <-loginSlots }()
+	default:
+		w.Header().Set("Retry-After", "3")
+		writeError(w, http.StatusServiceUnavailable, "many people are signing in right now, please retry in a few seconds")
+		return
+	}
 	var request struct {
 		Email           string `json:"email"`
 		Password        string `json:"password"`
