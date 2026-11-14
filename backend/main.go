@@ -51,7 +51,7 @@ func main() {
 	}
 	server := &http.Server{
 		Addr:              ":" + port,
-		Handler:           app.withCORS(http.HandlerFunc(app.serveHTTP)),
+		Handler:           observe(app.withCORS(http.HandlerFunc(app.serveHTTP))),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       20 * time.Second,
 		IdleTimeout:       120 * time.Second,

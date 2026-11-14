@@ -117,6 +117,24 @@ separate the client from the server.
 Point Render's health check at `/healthz`. It does not touch the database, so the
 check does not wake Neon.
 
+## Reading the server from the inside
+
+`GET /v1/admin/metrics` (staff sign-in) reports what the server itself experienced, so a
+slow load test can be explained instead of guessed at. Fetch it before and after a run
+and compare:
+
+| Field | What a climb means |
+| --- | --- |
+| `cpu.throttled_usec`, `cpu.throttled_periods` | the platform's CPU quota stopped the process: the limit is Render's CPU |
+| `database_pool.acquire_wait_seconds`, `acquires_that_waited` | requests queued for a database connection: raise `DB_MAX_CONNS` or cut round trips |
+| `requests.slow_over_1s` | the handler itself took over a second (time queued in front of the server is not counted) |
+| `requests.shed_503` | the server turned work away on purpose |
+| `memory.container_used_mib` against `container_limit_mib` | close to the limit means an out-of-memory kill is near |
+| `streams.turned_away`, `streams.cut_loose` | streams refused for capacity, or dropped for being too slow |
+
+If the client sees p95 of 58 s while these stay quiet, the delay is outside the process
+(Render's proxy, the network, or the load generator).
+
 ## Running the tests yourself
 
 Install [k6](https://grafana.com/docs/k6/latest/set-up/install-k6/) and Go.
