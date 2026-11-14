@@ -65,21 +65,34 @@ tests ran against the old and the new code.
 | Report ingestion, 80 ms round trip, pool of 20 | not measured | 19 a second |
 | Report ingestion, 80 ms round trip, pool of 60 | not measured | about 37 a second |
 
-Hosted (Render and Neon), **before** these changes, 100 dashboard users for 90 seconds
-with `load/k6-hosted.js`: no failures, p95 984 ms (the target is 800 ms), p99 1.29 s.
-The full 10,000-user run has not been done: the hosted service is still running the
-old code, and deploying this branch means merging it, which starts a Render deploy.
+### Hosted results (Render and Neon, run 2026-11-14 from a home PC, after the merge)
+
+| Test | Result |
+| --- | --- |
+| 100 dashboard users, 90 s | no failures; p95 850 ms (984 ms on the old code). Most of that is the network trip: the median is 259 ms |
+| 2,000 live streams | 1,998 connected, none turned away, live batches delivered, `/healthz` steady at about 0.4 s |
+| **10,000 live streams** | **9,999 held** for the whole run, none turned away, 18,012 pushed batches delivered |
+| 10,000 streams + 1,000 dashboard users + ingestion at up to 20 a second | streams held; ingestion 13.8 a second, 98.9% accepted, p95 6.6 s; **dashboard users failed: 17.6% errors, p95 58 s**; `/healthz` slowed to 15-19 s at the peak and recovered |
+| 1,000 dashboard users alone (no streams) | **failed too: 15.7% errors, p95 58 s**, so the streams are not the cause |
+| Same 1,000-user script against the local 0.1 CPU rig, from the same PC | no failures; p95 2.6 s; container at 1.9% CPU |
+
+What this shows: the hosted service holds 10,000 idle-ish live streams. It does **not**
+yet serve 1,000 simultaneously active dashboard users within the target, and the cause is
+not the code's CPU use (the rig passes at 1.9% CPU). The remaining suspects, none of
+them tested: Render's proxy or its CPU throttling on the free tier, Neon's latency or a
+cold compute, and the test PC's own downlink and uplink while 1,000 simulated browsers
+download at once. Running the same script from a cloud machine near Render would
+separate the client from the server.
 
 ### What these numbers do not say
 
-- 10,000 held streams were tested with an idle stream, not while thousands of reports
-  a minute were pushing rows to them. The delivery cost per frame grows with the
-  audience; the hub lengthens its tick to compensate (`hub.go`), but that has not been
-  measured under combined load.
+- On the hosted run the streams were not idle: the demo event producer pushed batches
+  throughout (18,012 frames delivered), but never a steady flow of thousands of reports
+  a minute.
 - The rig's database is on the same machine, so its queries are faster than Neon's.
   The round-trip time is simulated, not Neon's real latency.
-- Render's proxy sits in front of the hosted service. Whether it keeps 10,000 idle
-  connections open, and for how long, is untested.
+- The hosted 10,000 streams were held for about 4 minutes, not hours; heartbeats
+  every 25 s are meant to keep Render's proxy from closing them, but a long hold is untested.
 - The new frontend has been typechecked but not run in a browser.
 - Ingestion still costs about six database round trips per report. At the 80 ms
   round trip of a distant Neon region that is the ceiling, not the CPU. Fewer
@@ -124,9 +137,13 @@ by your own machine's file descriptors and uplink before it is limited by the se
 
 ## Still open
 
-1. Run the hosted 10,000-user test after this branch is deployed, and watch Neon's
-   compute-hours while it runs.
-2. Measure delivery under combined load (10,000 streams plus a steady report flow).
-3. Cut ingestion round trips further.
+1. Find why 1,000 simultaneously active dashboard users fail on the hosted service when
+   the rig passes: rerun from a cloud machine near Render, and check Render's CPU and
+   Neon's compute state during the run.
+2. Measure delivery with 10,000 streams and a steady flow of thousands of reports a minute.
+3. Cut ingestion round trips further (about six per report today); only a test against
+   the real Neon region can show how much that is worth.
 4. Click through the dashboard in a browser with the new live stream.
 5. Cross-check Render's and Neon's bandwidth and transfer allowances.
+6. The load test wrote about 2,000 'Load test report' rows into the hosted database.
+   Remove them, or turn on `RETENTION_DAYS`.
