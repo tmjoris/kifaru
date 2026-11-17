@@ -1,0 +1,137 @@
+name: Hosted load test
+
+# A short load test of the hosted API, run from a GitHub runner. A runner has a fast
+# datacenter link and 4 CPUs, which a home connection does not, so it shows what the
+# service can do once the test machine stops being the limit. This is testing the
+# project's own software; it is not how the service is hosted.
+#
+# Run it from the Actions tab (Run workflow), or by pushing to the branch
+# `run-load-test`. Results are the log and the downloadable `results` artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: API address
+        default: https://kifaru-api.onrender.com
+      users:
+        description: Simulated dashboard users
+        default: "1000"
+      rows:
+        description: History rows per snapshot
+        default: "500"
+      seconds:
+        description: Seconds to hold the load
+        default: "90"
+      streams:
+        description: Live streams to hold as well (0 for none)
+        default: "0"
+  push:
+    branches: [run-load-test]
+
+permissions:
+  contents: read
+
+env:
+  BASE: ${{ inputs.base_url || 'https://kifaru-api.onrender.com' }}
+  USERS: ${{ inputs.users || '1000' }}
+  ROWS: ${{ inputs.rows || '500' }}
+  HOLD_SECONDS: ${{ inputs.seconds || '90' }}
+  STREAMS: ${{ inputs.streams || '0' }}
+
+jobs:
+  load:
+    name: Load test from a runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: false
+
+      - name: Install k6
+        run: |
+          version=v2.3.0
+          curl -fsSLO "https://github.com/grafana/k6/releases/download/$version/k6-$version-linux-amd64.tar.gz"
+          curl -fsSLO "https://github.com/grafana/k6/releases/download/$version/k6-$version-checksums.txt"
+          sha256sum --check --ignore-missing "k6-$version-checksums.txt"
+          tar -xzf "k6-$version-linux-amd64.tar.gz"
+          echo "$PWD/k6-$version-linux-amd64" >> "$GITHUB_PATH"
+          mkdir -p results
+
+      - name: Runner downlink, as a control
+        run: |
+          # Four parallel downloads from GitHub's own CDN. This is the ceiling the test
+          # machine can reach, to compare with what it pulls from the service.
+          for i in 1 2 3 4; do
+            curl -sL -o /dev/null --max-time 60 -w "%{speed_download}\n" \
+              https://github.com/grafana/k6/releases/download/v2.3.0/k6-v2.3.0-linux-amd64.tar.gz > "dl_$i.txt" &
+          done
+          wait
+          python3 - <<'PY' | tee results/runner-downlink.txt
+          import glob
+          v = [float(open(f).read() or 0) for f in glob.glob('dl_*.txt')]
+          print("runner downlink, 4 parallel downloads: %.0f Mbit/s total" % (sum(v) * 8 / 1e6))
+          PY
+          nproc | sed 's/^/runner cores: /' | tee -a results/runner-downlink.txt
+
+      - name: Wake the service
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$BASE/healthz" || true)
+            echo "healthz: $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 5
+          done
+          echo "the service did not wake up"; exit 1
+
+      - name: Sign in the demo accounts
+        run: node load/make-tokens.mjs "$BASE" > load/tokens.json
+
+      - name: Server metrics before
+        run: node load/metrics-diff.mjs "$BASE" snapshot > before.json
+
+      - name: Light crowd (no decompression, shows raw delivery)
+        run: |
+          cp load/tokens.json load/rawdl/tokens.json
+          cd load/rawdl
+          go run . -base "$BASE" -n "$USERS" -limit "$ROWS" -dur "${HOLD_SECONDS}s" | tee ../../results/light-crowd.txt
+
+      - name: k6 dashboard crowd
+        run: |
+          k6 run --summary-export=results/k6-summary.json \
+            -e BASE="$BASE" -e VUS="$USERS" -e LIMIT="$ROWS" \
+            -e RAMP_UP=30s -e DURATION="${HOLD_SECONDS}s" load/k6-hosted.js | tee results/k6.txt || true
+
+      - name: Hold live streams
+        if: ${{ env.STREAMS != '0' }}
+        run: |
+          go run ./load/sseload -base "$BASE" -tokens load/tokens.json -n "$STREAMS" -rate 200 -hold 60s | tee results/streams.txt
+
+      - name: Server metrics after
+        if: always()
+        run: node load/metrics-diff.mjs "$BASE" diff before.json | tee results/server-view.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Hosted load test from a runner"
+            echo "Service: \`$BASE\`  users: $USERS  rows: $ROWS  hold: ${HOLD_SECONDS}s  streams: $STREAMS"
+            for f in runner-downlink light-crowd server-view; do
+              echo "### $f"; echo '```'; cat "results/$f.txt" 2>/dev/null || echo "(not produced)"; echo '```'
+            done
+            echo "### k6"; echo '```'; grep -E "p\(95\)|http_req_failed|iterations\.|checks_succeeded" results/k6.txt 2>/dev/null || echo "(not produced)"; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the results (never the tokens)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results
+          path: results/
