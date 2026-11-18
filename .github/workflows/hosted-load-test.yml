@@ -6,7 +6,7 @@ name: Hosted load test
 # project's own software; it is not how the service is hosted.
 #
 # Run it from the Actions tab (Run workflow), or by pushing to the branch
-# `run-load-test`. Results are the log and the downloadable `results` artifact.
+# `run-hosted-test`. Results are the log and the downloadable `results` artifact.
 
 on:
   workflow_dispatch:
@@ -27,7 +27,7 @@ on:
         description: Live streams to hold as well (0 for none)
         default: "0"
   push:
-    branches: [run-load-test]
+    branches: [run-hosted-test]
 
 permissions:
   contents: read

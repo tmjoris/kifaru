@@ -1,0 +1,156 @@
+name: Combined load test (backend inside the job)
+
+# Starts the backend INSIDE this job, limited to the same 0.1 CPU and 512 MB as Render's
+# free tier, beside a throwaway Postgres, and load-tests it over loopback from the same
+# runner. It is a test of the project's own software, like the smoke and load checks in CI,
+# and nothing is exposed to the internet. Loopback means the test machine's network is not
+# in the way, which is what limited the earlier hosted runs.
+#
+# It answers what the hosted tests could not: 10,000 live streams held while 1,000
+# dashboard users and live report ingestion run at the same time.
+#
+# Run it from the Actions tab, or by pushing to the branch `run-load-test`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      streams:
+        description: Live streams to hold
+        default: "10000"
+      users:
+        description: Simulated dashboard users
+        default: "1000"
+      ingest_rate:
+        description: Reports ingested per second
+        default: "20"
+  push:
+    branches: [run-load-test]
+
+permissions:
+  contents: read
+
+env:
+  BASE: http://127.0.0.1:8000
+  STREAMS: ${{ inputs.streams || '10000' }}
+  USERS: ${{ inputs.users || '1000' }}
+  INGEST_RATE: ${{ inputs.ingest_rate || '20' }}
+  PGPASSWORD: bench
+
+jobs:
+  combined:
+    name: API in the job at 0.1 CPU and 512 MB
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: bench
+          POSTGRES_DB: kifaru
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U postgres -d kifaru"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: backend/go.sum
+
+      - name: Install k6
+        run: |
+          version=v2.3.0
+          curl -fsSLO "https://github.com/grafana/k6/releases/download/$version/k6-$version-linux-amd64.tar.gz"
+          curl -fsSLO "https://github.com/grafana/k6/releases/download/$version/k6-$version-checksums.txt"
+          sha256sum --check --ignore-missing "k6-$version-checksums.txt"
+          tar -xzf "k6-$version-linux-amd64.tar.gz"
+          echo "$PWD/k6-$version-linux-amd64" >> "$GITHUB_PATH"
+          mkdir -p results bin
+          echo "open files allowed: $(ulimit -n)" | tee results/environment.txt
+          echo "runner cores: $(nproc)" | tee -a results/environment.txt
+
+      - name: Build the API and the stream holder
+        run: |
+          (cd backend && CGO_ENABLED=0 go build -o ../bin/kifaru-api .)
+          (cd load/sseload && go build -o ../../bin/sseload .)
+
+      - name: Start the API at 0.1 CPU and 512 MB
+        run: |
+          docker run -d --name api --network host --cpus 0.1 --memory 512m --memory-swap 512m \
+            -w /app -v "$PWD/bin:/app/bin:ro" -v "$PWD/backend/data:/app/data:ro" \
+            --ulimit nofile=65536:65536 \
+            -e DATABASE_URL="postgres://postgres:bench@127.0.0.1:5432/kifaru?sslmode=disable" -e PORT=8000 \
+            alpine:3.20 /app/bin/kifaru-api
+          for i in $(seq 1 60); do
+            curl -fsS "$BASE/healthz" >/dev/null 2>&1 && { echo "API up after ${i}s"; break; }
+            sleep 1
+          done
+          curl -fsS "$BASE/health"; echo
+          docker logs api 2>&1 | grep -E "runtime tuned" || true
+
+      - name: Seed 375,000 synthetic reports and demo sessions
+        run: |
+          psql -h 127.0.0.1 -U postgres -d kifaru -v ON_ERROR_STOP=1 -f load/seed-bench.sql | tail -4
+          psql -h 127.0.0.1 -U postgres -d kifaru -qAt -c "SELECT json_agg(json_build_object('token','bench-'||user_id::text,'csrf','csrf-'||user_id::text,'role',role,'inst',COALESCE(institution_code,'*'))) FROM auth_users" > load/tokens.json
+          python3 -c "import json;t=json.load(open('load/tokens.json'));print(len(t),'sessions')"
+
+      - name: Phase A, dashboards alone (1,000 users, 500-row snapshots)
+        run: |
+          node load/metrics-diff.mjs "$BASE" snapshot > before-a.json
+          k6 run --summary-export=results/phase-a-summary.json \
+            -e BASE="$BASE" -e VUS="$USERS" -e LIMIT=500 -e RAMP_UP=30s -e DURATION=90s load/k6-hosted.js | tee results/phase-a-k6.txt || true
+          node load/metrics-diff.mjs "$BASE" diff before-a.json | tee results/phase-a-server.txt
+
+      - name: Phase B, everything at once (streams + dashboards + ingestion)
+        run: |
+          ulimit -n 65536 || true
+          node load/metrics-diff.mjs "$BASE" snapshot > before-b.json
+          ./bin/sseload -base "$BASE" -tokens load/tokens.json -n "$STREAMS" -rate 250 -hold 150s > results/phase-b-streams.txt 2>&1 &
+          streams=$!
+          sleep $(( STREAMS / 250 + 20 ))   # let the streams connect first
+          docker stats --no-stream --format "container at full stream load: cpu={{.CPUPerc}} mem={{.MemUsage}}" api | tee results/phase-b-container.txt
+          k6 run --summary-export=results/phase-b-dashboards-summary.json \
+            -e BASE="$BASE" -e VUS="$USERS" -e LIMIT=500 -e RAMP_UP=20s -e DURATION=60s load/k6-hosted.js > results/phase-b-dashboards.txt 2>&1 &
+          dashboards=$!
+          k6 run --summary-export=results/phase-b-ingest-summary.json \
+            -e BASE="$BASE" -e RATE_START=5 -e RATE_END="$INGEST_RATE" -e DUR=30s -e HOLD=50s load/k6-ingest.js > results/phase-b-ingest.txt 2>&1 &
+          ingest=$!
+          wait $dashboards $ingest || true
+          wait $streams || true
+          node load/metrics-diff.mjs "$BASE" diff before-b.json | tee results/phase-b-server.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Combined load test, API inside the job at 0.1 CPU / 512 MB"
+            echo "streams: $STREAMS  dashboard users: $USERS  ingestion: up to $INGEST_RATE reports/s"
+            echo "### Environment"; echo '```'; cat results/environment.txt 2>/dev/null; echo '```'
+            for f in phase-a-k6 phase-a-server phase-b-streams phase-b-container phase-b-server; do
+              echo "### $f"; echo '```'
+              if [[ "$f" == *k6 ]]; then grep -E "p\(95\)|http_req_failed|iterations\." "results/$f.txt" 2>/dev/null; else cat "results/$f.txt" 2>/dev/null; fi
+              echo '```'
+            done
+            for f in phase-b-dashboards phase-b-ingest; do
+              echo "### $f"; echo '```'; grep -E "p\(95\)|http_req_failed|iterations\.|checks_succeeded" "results/$f.txt" 2>/dev/null; echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: API log tail
+        if: always()
+        run: docker logs --tail 15 api 2>&1 | tee results/api-log-tail.txt || true
+
+      - name: Keep the results (never the tokens)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: combined-results
+          path: results/
